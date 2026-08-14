@@ -8,19 +8,42 @@ import { GoogleGenAI } from "@google/genai";
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 let yt: Innertube | null = null;
-let ytSession: any = null;
+let ytInstancePromise: Promise<Innertube> | null = null;
 
 async function getYt() {
-  if (!yt) {
-    yt = await Innertube.create({ 
-      cache: new UniversalCache(false),
-      location: 'JP',
-      lang: 'ja'
-    });
+  if (yt) return yt;
+  if (ytInstancePromise) return ytInstancePromise;
+
+  ytInstancePromise = (async () => {
+    let attempts = 0;
+    const maxAttempts = 3;
     
-    // Attempt to load session if we saved it (optional for now, we'll use in-memory for this session)
-  }
-  return yt;
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        console.log(`[YT] Initializing Innertube (Attempt ${attempts})...`);
+        const instance = await Innertube.create({ 
+          cache: new UniversalCache(false),
+          location: 'JP',
+          lang: 'ja',
+          retrieve_player: false
+        });
+        yt = instance;
+        console.log("[YT] Innertube initialized successfully");
+        return instance;
+      } catch (err) {
+        console.error(`[YT] Initialization error (Attempt ${attempts}):`, err);
+        if (attempts >= maxAttempts) {
+          ytInstancePromise = null;
+          throw err;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    throw new Error("Failed to initialize YT after multiple attempts");
+  })();
+
+  return ytInstancePromise;
 }
 
 function parseCount(text?: string | null): number {
@@ -58,27 +81,63 @@ async function startServer() {
 
   app.use(express.json());
 
+  // Request logger
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+
+  // Health Check
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      yt_initialized: !!yt,
+      timestamp: new Date().toISOString(),
+      node_version: process.version
+    });
+  });
+
   // YouTubei.js Login API
   let currentAuthFlow: any = null;
+  let authFlowExpiry: number = 0;
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
       const youtube = await getYt();
       currentAuthFlow = await youtube.session.signIn();
+      authFlowExpiry = Date.now() + 10 * 60 * 1000; // 10 mins
+      
       res.json({
         userCode: currentAuthFlow.user_code,
         verificationUrl: currentAuthFlow.verification_url
       });
     } catch (err) {
       console.error("SignIn error:", err);
-      res.status(500).json({ error: "Failed to start sign in" });
+      res.status(500).json({ error: "ログイン処理の開始に失敗しました。時間をおいて再度お試しください。" });
     }
   });
 
   app.get("/api/auth/poll", async (req, res) => {
-    if (!currentAuthFlow) return res.status(400).json({ error: "No active auth flow" });
+    if (!currentAuthFlow || Date.now() > authFlowExpiry) {
+      console.warn(`[Auth] Poll rejected: ${!currentAuthFlow ? 'No flow' : 'Flow expired'}`);
+      return res.status(400).json({ error: "認証セッションが無効または期限切れです。再度ログインしてください。" });
+    }
+    
     try {
-      await currentAuthFlow.waitForResult();
+      console.log(`[Auth] Polling for flow: ${currentAuthFlow.user_code}`);
+      // Non-blocking check with timeout
+      const result = await Promise.race([
+        currentAuthFlow.waitForResult(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('pending')), 15000))
+      ]).catch(err => {
+        if (err.message === 'pending') return { status: 'pending' };
+        throw err;
+      });
+
+      if (result.status === 'pending') {
+        return res.json({ success: false, status: 'pending' });
+      }
+
       const youtube = await getYt();
       const info = await youtube.account.getInfo() as any;
       const userName = info.contents?.on_response_received_endpoints?.[0]?.append_contributions_renderer?.user_name?.text || "YouTube User";
@@ -95,7 +154,7 @@ async function startServer() {
       currentAuthFlow = null;
     } catch (err) {
       console.error("Auth poll error:", err);
-      res.status(401).json({ error: "Authentication failed or timed out" });
+      res.status(401).json({ error: "認証に失敗しました。再度お試しください。" });
     }
   });
 
@@ -669,6 +728,8 @@ async function startServer() {
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
+    // Warm up YouTube client
+    getYt().catch(err => console.error("Initial YT warmup failed:", err));
   });
 
   return app;

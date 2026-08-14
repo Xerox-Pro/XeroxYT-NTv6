@@ -304,7 +304,17 @@ export default function App() {
             isPollingRef.current = false;
             success = true;
             setView('home');
+          } else if (data.status === 'pending') {
+            // Still waiting for user, just continue polling
+            console.log('Login pending...');
           }
+        } else {
+          // If error (401, 400, etc.), stop polling
+          const errorData = await res.json().catch(() => ({}));
+          console.error('Poll error response:', errorData);
+          setIsPolling(false);
+          isPollingRef.current = false;
+          break;
         }
       } catch (err) {
         console.error('Poll error:', err);

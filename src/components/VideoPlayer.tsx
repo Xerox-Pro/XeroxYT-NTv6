@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Video, Comment, ChannelSubscription } from '../types';
 import { formatNumberJP, formatDuration } from '../utils';
 import { localAI } from '../lib/intelligence';
-import { ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, Bell, ChevronDown, ChevronUp, Download, Heart, MessageSquare, Send, Plus } from 'lucide-react';
+import { ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, Bell, ChevronDown, ChevronUp, Download, Heart, MessageSquare, Send, Plus, ListMusic } from 'lucide-react';
 import Avatar from './Avatar';
 
 interface VideoPlayerProps {
