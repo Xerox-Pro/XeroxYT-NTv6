@@ -245,26 +245,26 @@ export default function App() {
     });
   };
 
-  // 閲覧履歴からキーワード抽出
+  // 閲覧履歴からキーワード抽出（登録チャンネルや高評価動画、視聴履歴を深層分析）
   const getHistoryKeywords = (): string => {
-    const historyData = watchHistory.slice(0, 8);
+    const historyData = watchHistory.slice(0, 20);
     
     // AIの提案履歴があればそれを優先的に含める
-    let baseKeywords = aiInterests.slice(0, 3).join(' ');
+    let baseKeywords = aiInterests.slice(0, 5).join(' ');
     
     // ローカルAIの分析結果も加味する (独自AIによる分析)
-    const localKeywords = localAI.getTopSuggestedQueries(5).join(' ');
+    const localKeywords = localAI.getTopSuggestedQueries(8).join(' ');
     if (localKeywords) baseKeywords += ' ' + localKeywords;
 
-    if (historyData.length === 0 && !searchQuery && !baseKeywords) return "";
+    if (historyData.length === 0 && !searchQuery && !baseKeywords && subscriptions.length === 0) return "";
 
-    // タイトルから単語を抽出 (簡易版)
+    // タイトルから単語を抽出
     const words = historyData
       .map(h => h.title)
       .join(' ')
       .replace(/[【】\[\]\(\)（）!！?？、。]/g, ' ')
       .split(/\s+/)
-      .filter(w => w.length >= 2 && !['動画', '最新', 'の', 'は', 'で'].includes(w));
+      .filter(w => w.length >= 2 && !['動画', '最新', 'の', 'は', 'で', 'を', 'に', 'と', 'が', 'て', 'た', '！', '#shorts', 'shorts'].includes(w.toLowerCase()));
 
     // 出現頻度順にソートして上位を取得
     const counts: Record<string, number> = {};
@@ -272,14 +272,16 @@ export default function App() {
     
     const sortedKeywords = Object.entries(counts)
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
+      .slice(0, 8)
       .map(([w]) => w);
 
-    // チャンネル名も追加
-    const channels = Array.from(new Set(historyData.map(h => h.author))).slice(0, 2);
+    // 視聴履歴のチャンネル名＋登録チャンネル名
+    const historyChannels = historyData.map(h => h.author);
+    const subChannels = subscriptions.map(s => s.title);
+    const allChannels = Array.from(new Set([...historyChannels, ...subChannels])).slice(0, 6);
 
     const base = searchQuery ? [searchQuery] : [];
-    const finalKeywords = Array.from(new Set([...base, ...sortedKeywords, ...channels])).join(' ');
+    const finalKeywords = Array.from(new Set([...base, ...sortedKeywords, ...allChannels])).join(' ');
     
     return finalKeywords;
   };
@@ -371,6 +373,17 @@ export default function App() {
     }
   };
 
+  const handleGoHome = useCallback(() => {
+    setSelectedCategory('すべて');
+    setPage(1);
+    if (location.pathname !== '/') {
+      navigate('/');
+    } else {
+      setView('home');
+      fetchRecommendations(1, false);
+    }
+  }, [location.pathname, navigate]);
+
   const fetchRecommendations = async (pageNum: number = 1, append: boolean = false) => {
     if (append) {
       setLoadingMore(true);
@@ -381,7 +394,8 @@ export default function App() {
 
     try {
       const keywords = getHistoryKeywords();
-      const historyIds = watchHistory.slice(0, 5).map(h => h.videoId).join(',');
+      const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).join(',');
+      const refreshNonce = Date.now() + Math.floor(Math.random() * 1000000);
       let data = [];
       
       // If logged in, prioritize liked content for the first page
@@ -394,7 +408,7 @@ export default function App() {
         }
       }
 
-      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${historyIds}&page=${pageNum}`);
+      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
       const publicData = result.videos || [];
       
       // AIの分析結果を保存
@@ -410,7 +424,7 @@ export default function App() {
       // Remove duplicates
       const uniqueMap = new Map();
       combinedData.forEach(v => {
-        if (!uniqueMap.has(v.videoId)) {
+        if (v && v.videoId && !uniqueMap.has(v.videoId)) {
           uniqueMap.set(v.videoId, v);
         }
       });
@@ -419,7 +433,7 @@ export default function App() {
       if (append) {
         setVideos(prev => {
           const existingIds = new Set(prev.map(v => v.videoId));
-          const newVideos = finalData.filter((v: Video) => !existingIds.has(v.videoId));
+          const newVideos = finalData.filter((v: Video) => v && v.videoId && !existingIds.has(v.videoId));
           return [...prev, ...newVideos];
         });
       } else {
@@ -605,10 +619,7 @@ export default function App() {
       {/* ナビゲーションバー */}
       <Navbar
         onSearch={handleSearch}
-        onHome={() => {
-          setView('home');
-          setSelectedCategory('すべて');
-        }}
+        onHome={handleGoHome}
         toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
         initialSearchQuery={searchQuery}
         userInfo={userInfo}
@@ -622,10 +633,7 @@ export default function App() {
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
-          onHome={() => {
-            setView('home');
-            setSelectedCategory('すべて');
-          }}
+          onHome={handleGoHome}
           onShorts={() => setView('shorts')}
           onSubscriptions={() => setView('subscriptions')}
           onLibrary={() => setView('library')}

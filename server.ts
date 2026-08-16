@@ -45,6 +45,113 @@ async function getYt() {
   return ytInstancePromise;
 }
 
+const INVIDIOUS_INSTANCES = [
+  "https://inv.nadeko.net",
+  "https://invidious.nerdvpn.de",
+  "https://yt.drgnz.club",
+  "https://invidious.jing.rocks",
+  "https://invidious.private.coffee",
+  "https://invidious.drgns.space"
+];
+
+async function fetchInvidiousChannel(channelId: string) {
+  for (const instance of INVIDIOUS_INSTANCES) {
+    try {
+      const resp = await axios.get(`${instance}/api/v1/channels/${encodeURIComponent(channelId)}`, {
+        timeout: 3500,
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
+      });
+      if (resp.data && (resp.data.author || resp.data.authorId)) {
+        const d = resp.data;
+        const videos = (d.latestVideos || []).map((v: any) => ({
+          videoId: v.videoId,
+          title: v.title,
+          author: d.author || v.author || 'チャンネル',
+          authorId: d.authorId || channelId,
+          authorAvatar: d.authorThumbnails?.[d.authorThumbnails.length - 1]?.url || "",
+          viewCount: v.viewCount || 0,
+          publishedText: v.publishedText || "",
+          lengthSeconds: v.lengthSeconds || 0,
+          videoThumbnails: v.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`, width: 480, height: 360 }],
+          type: 'video'
+        })).filter((v: any) => v && v.videoId);
+
+        const shorts = videos.filter((v: any) => v && v.title && (v.title.toLowerCase().includes('short') || (v.lengthSeconds > 0 && v.lengthSeconds <= 60)));
+        return {
+          id: d.authorId || channelId,
+          title: d.author || 'チャンネル',
+          description: d.description || '',
+          avatar: d.authorThumbnails?.[d.authorThumbnails.length - 1]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(d.author || 'C')}&background=random`,
+          banner: d.authorBanners?.[d.authorBanners.length - 1]?.url || '',
+          subCountText: d.subCount ? `${(d.subCount >= 10000 ? (d.subCount/10000).toFixed(1) + '万人' : d.subCount + '人')}のチャンネル登録者` : '',
+          videosCountText: `${videos.length} 本の動画`,
+          featuredVideo: videos[0] || null,
+          videos: videos,
+          shortVideos: shorts,
+          playlists: []
+        };
+      }
+    } catch (e) {
+      // try next instance
+    }
+  }
+  return null;
+}
+
+async function fetchYouTubeRssChannel(channelId: string) {
+  try {
+    const url = channelId.startsWith('UC')
+      ? `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`
+      : `https://www.youtube.com/feeds/videos.xml?user=${channelId}`;
+    const resp = await axios.get(url, { timeout: 3500 });
+    const xml = resp.data;
+    if (typeof xml === 'string' && xml.includes('<entry>')) {
+      const channelTitleMatch = xml.match(/<title>([^<]+)<\/title>/);
+      const channelTitle = channelTitleMatch ? channelTitleMatch[1].replace(' - YouTube', '') : 'チャンネル';
+      
+      const entries = xml.split('<entry>').slice(1);
+      const videos = entries.map(entry => {
+        const idMatch = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/);
+        const titleMatch = entry.match(/<title>([^<]+)<\/title>/);
+        const publishedMatch = entry.match(/<published>([^<]+)<\/published>/);
+        const videoId = idMatch ? idMatch[1] : null;
+        const title = titleMatch ? titleMatch[1] : 'タイトルなし';
+        if (!videoId) return null;
+        return {
+          videoId,
+          title,
+          author: channelTitle,
+          authorId: channelId,
+          authorAvatar: '',
+          viewCount: 0,
+          publishedText: publishedMatch ? new Date(publishedMatch[1]).toLocaleDateString('ja-JP') : '',
+          lengthSeconds: 0,
+          videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, width: 480, height: 360 }],
+          type: 'video'
+        };
+      }).filter(Boolean);
+
+      const shorts = videos.filter((v: any) => v && v.title && v.title.toLowerCase().includes('short'));
+      return {
+        id: channelId,
+        title: channelTitle,
+        description: '',
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(channelTitle)}&background=random`,
+        banner: '',
+        subCountText: '',
+        videosCountText: `${videos.length} 本の動画`,
+        featuredVideo: videos[0] || null,
+        videos: videos,
+        shortVideos: shorts,
+        playlists: []
+      };
+    }
+  } catch (e) {
+    // RSS failed
+  }
+  return null;
+}
+
 function parseCount(text?: string | null): number {
   if (!text) return 0;
   // 万、億 などの日本語単位を処理
@@ -249,6 +356,31 @@ async function startServer() {
 
   // 安全なサムネイル生成関数
   function formatVideoObject(v: any, defaultAuthor: string = 'Channel', channelId?: string) {
+    if (!v) return null;
+    if (v.type === 'LockupView') {
+      const parts = v.metadata?.metadata?.metadata_rows?.[0]?.metadata_parts || [];
+      let lengthSeconds = 0;
+      const bottomOverlay = v.content_image?.overlays?.find((o:any) => o.type === 'ThumbnailBottomOverlayView');
+      const timeBadge = bottomOverlay?.badges?.[0]?.text;
+      if (timeBadge) {
+        const timeParts = timeBadge.split(':').reverse();
+        lengthSeconds = timeParts.reduce((acc: number, val: string, idx: number) => acc + parseInt(val) * Math.pow(60, idx), 0);
+      }
+      return {
+        videoId: v.content_id,
+        playlistId: undefined,
+        type: 'video',
+        title: v.metadata?.title?.text || 'タイトルなし',
+        author: defaultAuthor,
+        authorId: channelId,
+        authorAvatar: undefined,
+        viewCount: parseCount(parts[0]?.text?.text) || 0,
+        publishedText: parts[1]?.text?.text || '',
+        lengthSeconds: lengthSeconds,
+        videoThumbnails: v.content_image?.image || []
+      };
+    }
+
     const isPlaylist = v.type === 'Playlist' || v.type === 'Mix' || v.type === 'CompactPlaylist';
     const videoId = isPlaylist ? (v.first_video_id || undefined) : (v.id || v.videoId);
     const playlistId = isPlaylist ? (v.id || v.playlistId) : (v.playlistId || undefined);
@@ -276,38 +408,73 @@ async function startServer() {
   // トレンド ＆ パーソナライズドおすすめAPI
   app.get("/api/recommendations", async (req, res) => {
     const keywords = (req.query.keywords as string) || "";
-    const historyIds = ((req.query.historyIds as string) || "").split(",").filter(id => id.length > 0);
+    const historyIds = ((req.query.historyIds as string) || "").split(",").filter(id => id && id.trim().length > 0);
     const page = parseInt((req.query.page as string) || "1", 10);
+    const clientSeed = parseInt((req.query.seed || req.query.refreshNonce) as string, 10);
+    const seed = Number.isFinite(clientSeed) ? clientSeed : (Date.now() + Math.floor(Math.random() * 100000));
+
+    // シード付き疑似乱数生成器
+    const getSeedRandom = (offset: number = 0) => {
+      const s = (seed + offset * 9301 + 49297) % 233280;
+      const x = Math.sin(s) * 10000;
+      return x - Math.floor(x);
+    };
 
     try {
       const youtube = await getYt();
       
       let geminiKeywords: string[] = [];
       let usedAi = false;
-      
-      // Gemini Flashを使用して興味関心を分析 (リクエスト節約のため1ページ目のみ)
-      if (page === 1 && process.env.GEMINI_API_KEY && (keywords.length > 5 || historyIds.length > 0)) {
+      let historyVideoTitles: string[] = [];
+      let historyAuthors: string[] = [];
+
+      // 視聴履歴の動画情報を取得 (最大12件に拡張)
+      if (historyIds.length > 0) {
         try {
-          const historyInfo = await Promise.all(historyIds.slice(0, 5).map(async id => {
-            const info = await youtube.getBasicInfo(id);
-            return info.basic_info.title;
-          }));
+          const sampleHistory = historyIds.slice(0, 12);
+          const historyDetails = await Promise.all(
+            sampleHistory.map(async (id) => {
+              try {
+                const info = await youtube.getBasicInfo(id);
+                return {
+                  title: info.basic_info.title || '',
+                  author: info.basic_info.author || ''
+                };
+              } catch {
+                return null;
+              }
+            })
+          );
+          historyVideoTitles = historyDetails.filter(Boolean).map(h => h!.title).filter(t => t.length > 0);
+          historyAuthors = Array.from(new Set(historyDetails.filter(Boolean).map(h => h!.author).filter(a => a.length > 0)));
+        } catch (e) {
+          console.warn("[Recs] Error fetching history details:", e);
+        }
+      }
+
+      // Gemini Flashでユーザーの好みを予測してクエリ生成 (1ページ目)
+      if (page === 1 && process.env.GEMINI_API_KEY && (historyVideoTitles.length > 0 || keywords.length > 3)) {
+        try {
+          const promptInput = `
+            あなたはYouTubeのおすすめレコメンドAIです。
+            ユーザーの直近の視聴履歴と興味関心キーワードから、今このユーザーが「見たい！」と思うような魅力的で具体的なYouTube検索クエリ（日本語）を8つ予測して生成してください。
+            
+            毎回ホームに戻るたびに新鮮でワクワクする体験ができるよう、履歴の直接的な関連（同じ投稿者やシリーズ）だけでなく、潜在的な興味（関連ジャンル、類似トピック、最新トレンド、コラボ動画）も含めてバラエティ豊かにしてください。
+            除外対象: 作業用BGM、長時間メドレー、まとめ動画、スパム的な内容。
+
+            【コンテキスト】
+            - ユーザーが最近見た動画: ${historyVideoTitles.join(" / ") || "なし"}
+            - 好きなクリエイター/チャンネル: ${historyAuthors.join(" / ") || "なし"}
+            - 興味関心キーワード: ${keywords || "なし"}
+            - リフレッシュ乱数シード: ${seed}
+
+            返信は以下のJSON形式の配列のみを出力してください:
+            ["クエリ1", "クエリ2", "クエリ3", "クエリ4", "クエリ5", "クエリ6", "クエリ7", "クエリ8"]
+          `;
 
           const interaction = await genAI.interactions.create({ 
             model: "gemini-3.7-flash",
-            input: `
-              ユーザーの視聴履歴と興味関心キーワードから、次にユーザーが見たくなりそうなYouTubeの検索クエリ（日本語）を5つ提案してください。
-              
-              目的: ユーザーを飽きさせない、多様で質の高いパーソナライズされたフィードを作成すること。
-              除外対象: メドレー、作業用BGM、まとめ動画、広告、スパム的な内容。
-              
-              コンテキスト:
-              - 最近の視聴履歴: ${historyInfo.join(" | ")}
-              - ユーザーの検索キーワード: ${keywords}
-              
-              返信は以下のJSON形式の配列のみにしてください:
-              ["クエリ1", "クエリ2", "クエリ3", "クエリ4", "クエリ5"]
-            `,
+            input: promptInput,
             response_format: {
               type: "application/json"
             }
@@ -325,125 +492,195 @@ async function startServer() {
 
           if (text) {
             const parsed = JSON.parse(text);
-            if (Array.isArray(parsed)) {
+            if (Array.isArray(parsed) && parsed.length > 0) {
               geminiKeywords = parsed;
               usedAi = true;
             }
           }
         } catch (e) {
-          console.warn("Gemini recommendation analysis failed, falling back to original logic", e);
+          console.warn("[Recs] Gemini recommendation analysis skipped/failed:", e);
         }
       }
 
-      // フォールバック & 2ページ目以降: 従来のカテゴリーベース + キーワード抽出
-      const originalQueryPool = [
+      // 多彩な一般ジャンルプール（ベース）
+      const categoryPool = [
         "日本 トレンド 総合 2026",
-        "YouTube Music Charts 日本 トップソング",
-        "日本 人気 ゲーム実況 最新",
-        "日本 エンタメ バラエティ 人気",
-        "日本 スポーツ ハイライト 最新",
-        "日本 最新 ガジェット レビュー",
-        "日本 アニメ 話題 2026",
-        "日本 料理 レシピ 人気",
-        "日本 旅行 観光 スポット 2026",
-        "日本 ニュース 速報 注目"
+        "YouTube Music 日本 話題の曲",
+        "人気 ゲーム実況 最新",
+        "エンタメ 話題 バラエティ",
+        "最新 ガジェット レビュー",
+        "アニメ 話題 2026",
+        "料理 レシピ 簡単 人気",
+        "アウトドア キャンプ 旅行",
+        "最新 ニュース 解説 注目",
+        "お笑い コント 漫才 人気",
+        "VTuber 切り抜き 話題",
+        "テクノロジー AI プログラミング",
+        "スポーツ ハイライト 名シーン",
+        "ライフハック 便利な裏技"
       ];
 
-      let selectedPool = [...originalQueryPool];
-
-      // キーワードがある場合はプールに追加
+      // 履歴から動的に大量のパーソナライズクエリを生成（3倍以上に強化）
+      const dynamicPersonalizedQueries: string[] = [];
+      if (historyAuthors.length > 0) {
+        historyAuthors.forEach(author => {
+          dynamicPersonalizedQueries.push(`${author} 最新動画`);
+          dynamicPersonalizedQueries.push(`${author} おすすめ`);
+          dynamicPersonalizedQueries.push(`${author} 人気`);
+        });
+      }
       if (keywords.length > 0) {
-        const extracted = keywords.split(/[\s,、]+/).filter(k => k.length >= 2).slice(0, 3);
+        const extracted = keywords.split(/[\s,、]+/).filter(k => k.length >= 2).slice(0, 8);
         extracted.forEach(k => {
-          selectedPool.unshift(`${k} おすすめ`);
-          selectedPool.unshift(`${k} トレンド`);
+          dynamicPersonalizedQueries.push(`${k} おすすめ`);
+          dynamicPersonalizedQueries.push(`${k} トレンド`);
+          dynamicPersonalizedQueries.push(`${k} 最新`);
+          dynamicPersonalizedQueries.push(`${k} 名シーン`);
+        });
+      }
+      if (historyVideoTitles.length > 0) {
+        historyVideoTitles.slice(0, 5).forEach(title => {
+          const cleanTitle = title.replace(/[【】\[\]\(\)（）!！?？、。]/g, ' ').split(/\s+/).filter(w => w.length >= 2).slice(0, 3).join(' ');
+          if (cleanTitle) {
+            dynamicPersonalizedQueries.push(`${cleanTitle} 関連`);
+          }
         });
       }
 
-      // AIの結果がある場合はそれを最優先にする
+      // プールの結合（ユーザーに合わせたクエリを圧倒的最優先にする）
+      let personalizedCandidateQueries: string[] = [];
       if (usedAi && geminiKeywords.length > 0) {
-        selectedPool = [...geminiKeywords, ...selectedPool];
+        personalizedCandidateQueries.push(...geminiKeywords);
+      }
+      if (dynamicPersonalizedQueries.length > 0) {
+        personalizedCandidateQueries.push(...dynamicPersonalizedQueries);
       }
 
-      // ページごとに2つの異なるカテゴリーをランダムに選択
-      const getSeedRandom = (seed: number) => {
-        const x = Math.sin(seed) * 10000;
-        return x - Math.floor(x);
-      };
+      // パーソナライズクエリをシャッフル
+      for (let i = personalizedCandidateQueries.length - 1; i > 0; i--) {
+        const j = Math.floor(getSeedRandom(page * 19 + i) * (i + 1));
+        [personalizedCandidateQueries[i], personalizedCandidateQueries[j]] = [personalizedCandidateQueries[j], personalizedCandidateQueries[i]];
+      }
 
+      // パーソナライズクエリをメインに8〜10件、一般トレンドを2件選択（合計10〜12並列検索で3倍以上の動画ソースを確保）
       const selectedQueries: string[] = [];
-      const poolCopy = [...selectedPool];
-      
-      const selectCount = Math.min(3, poolCopy.length);
-      for (let i = 0; i < selectCount; i++) {
-        const randomIndex = Math.floor(getSeedRandom(page + i) * poolCopy.length);
-        selectedQueries.push(poolCopy.splice(randomIndex, 1)[0]);
+      const personalizedCount = Math.min(personalizedCandidateQueries.length, 9);
+      selectedQueries.push(...personalizedCandidateQueries.slice(0, personalizedCount));
+
+      // 残りを一般カテゴリーから補充
+      const shuffledCategories = [...categoryPool];
+      for (let i = shuffledCategories.length - 1; i > 0; i--) {
+        const j = Math.floor(getSeedRandom(page * 13 + i) * (i + 1));
+        [shuffledCategories[i], shuffledCategories[j]] = [shuffledCategories[j], shuffledCategories[i]];
+      }
+      const neededCatCount = Math.max(2, 11 - selectedQueries.length);
+      selectedQueries.push(...shuffledCategories.slice(0, neededCatCount));
+
+      // 履歴動画から「関連動画 (watch_next_feed)」を大量取得 (最大8件の動画から並行取得して3倍増)
+      let sampledHistoryIds: string[] = [];
+      if (historyIds.length > 0) {
+        const hCopy = [...historyIds];
+        for (let i = hCopy.length - 1; i > 0; i--) {
+          const j = Math.floor(getSeedRandom(page * 7 + i) * (i + 1));
+          [hCopy[i], hCopy[j]] = [hCopy[j], hCopy[i]];
+        }
+        sampledHistoryIds = hCopy.slice(0, 8);
       }
 
-      // 履歴に基づいた関連動画の取得 (最新の2件を使用)
-      const relatedTasks = historyIds.slice(0, 2).map(async (id) => {
+      const relatedTasks = sampledHistoryIds.map(async (id) => {
         try {
           const info = await youtube.getInfo(id);
           return info.watch_next_feed || [];
-        } catch (e) {
+        } catch {
           return [];
         }
       });
 
-      const searchTasks = selectedQueries.map(q => youtube.search(q, { type: "video", prioritize: "popularity" }).catch(() => null));
+      const searchTasks = selectedQueries.map(q => 
+        youtube.search(q, { type: "video", prioritize: "popularity" }).catch(() => null)
+      );
       
       const [searchResults, relatedResults] = await Promise.all([
         Promise.all(searchTasks),
         Promise.all(relatedTasks)
       ]);
 
-      let combinedVideos: any[] = [];
+      let personalizedVideos: any[] = [];
+      let generalVideos: any[] = [];
       
-      // 検索結果の処理
-      searchResults.forEach(r => {
-        if (r && r.videos) {
-          combinedVideos.push(...r.videos);
-        }
-      });
-
-      // 関連動画の処理
+      // 関連動画（100% ユーザー履歴由来のパーソナライズ動画）
       relatedResults.forEach(vList => {
-        if (vList) {
-          combinedVideos.push(...vList);
+        if (vList && Array.isArray(vList)) {
+          personalizedVideos.push(...vList);
         }
       });
 
-      const filteredVideos = combinedVideos
-        .filter(v => v.type === 'Video' && !isUnwantedVideo(v))
-        .map((v: any) => formatVideoObject(v))
-        .filter(v => v !== null);
-
-      if (filteredVideos.length > 0) {
-        // 重複削除
-        const uniqueMap = new Map();
-        filteredVideos.forEach(item => {
-          if (!uniqueMap.has(item.videoId)) {
-            uniqueMap.set(item.videoId, item);
+      // 検索結果（パーソナライズクエリ由来と一般クエリ由来に分類）
+      searchResults.forEach((r, idx) => {
+        if (r && r.videos && Array.isArray(r.videos)) {
+          if (idx < personalizedCount) {
+            personalizedVideos.push(...r.videos);
+          } else {
+            generalVideos.push(...r.videos);
           }
-        });
-        const unique = Array.from(uniqueMap.values());
-        
-        // フィッシャー–イェーツのシャッフルでランダム性を出す
-        for (let i = unique.length - 1; i > 0; i--) {
-          const j = Math.floor(getSeedRandom(page + i * 7) * (i + 1));
-          [unique[i], unique[j]] = [unique[j], unique[i]];
+        }
+      });
+
+      const formattedPersonalized = personalizedVideos
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
+
+      const formattedGeneral = generalVideos
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
+
+      // 重複排除マップ
+      const uniqueMap = new Map();
+      
+      // パーソナライズ動画を最優先で登録
+      formattedPersonalized.forEach(item => {
+        if (!uniqueMap.has(item.videoId)) {
+          uniqueMap.set(item.videoId, item);
+        }
+      });
+
+      // 一般動画も追加
+      formattedGeneral.forEach(item => {
+        if (!uniqueMap.has(item.videoId)) {
+          uniqueMap.set(item.videoId, item);
+        }
+      });
+
+      const allUnique = Array.from(uniqueMap.values());
+
+      if (allUnique.length > 0) {
+        // シードに基づくフィッシャー–イェーツのシャッフル（毎回異なる並び順）
+        for (let i = allUnique.length - 1; i > 0; i--) {
+          const j = Math.floor(getSeedRandom(page * 31 + i * 17) * (i + 1));
+          [allUnique[i], allUnique[j]] = [allUnique[j], allUnique[i]];
         }
         
-        return res.json({
-          videos: unique,
-          aiKeywords: geminiKeywords 
+        return res.json({ 
+          videos: allUnique,
+          aiKeywords: geminiKeywords,
+          seed: seed
         });
       }
 
-      res.json([]);
+      // フォールバック: デフォルト検索
+      const fallbackSearch = await youtube.search("日本 人気動画 2026", { type: "video" });
+      const fallbackVideos = (fallbackSearch.videos || [])
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v && v.videoId);
+
+      res.json({
+        videos: fallbackVideos,
+        aiKeywords: [],
+        seed: seed
+      });
     } catch (err) {
-      console.error("Recommendations API error:", err);
-      res.json([]);
+      console.error("[Recs] Recommendations API error:", err);
+      res.json({ videos: [], aiKeywords: [], seed: seed });
     }
   });
 
@@ -668,70 +905,139 @@ async function startServer() {
   });
 
   app.get("/api/channel/:id", async (req, res) => {
+    const rawId = decodeURIComponent(req.params.id || '');
+    let channelId = rawId;
+
     try {
       const youtube = await getYt();
-      let channelId = req.params.id;
-      let channel: any;
+      let channel: any = null;
+
+      // 1. YouTube.js による直接取得
       try {
         channel = await youtube.getChannel(channelId);
       } catch (e) {
-        const search = await youtube.search(channelId, { type: 'channel' });
-        if (search.channels && search.channels[0]) {
-          channelId = search.channels[0].id;
-          channel = await youtube.getChannel(channelId);
-        }
-      }
-
-      if (!channel) {
-        throw new Error("Channel not found");
-      }
-
-      const meta = channel.metadata || {};
-      const header = channel.header || {};
-      const channelTitle = meta.title || header.title?.text || req.params.id || 'チャンネル';
-      let videosList: any[] = [];
-
-      try {
-        const videosObj = await channel.getVideos();
-        if (videosObj && videosObj.videos && videosObj.videos.length > 0) {
-          videosList = videosObj.videos.map((v: any) => formatVideoObject(v, channelTitle, channelId));
-        }
-      } catch (e) {
-        console.error("Error fetching channel videos:", e);
-      }
-
-      // チャンネル動画が少ない・空の場合はチャンネル名で動画検索
-      if (videosList.length === 0) {
+        // ID検索またはハンドル名で検索して再取得
         try {
-          const searchRes = await youtube.search(channelTitle, { type: 'video' });
-          if (searchRes.videos && searchRes.videos.length > 0) {
-            videosList = searchRes.videos.map((v: any) => formatVideoObject(v, channelTitle, channelId));
+          const search = await youtube.search(channelId, { type: 'channel' });
+          if (search.channels && search.channels[0]) {
+            channelId = search.channels[0].id;
+            channel = await youtube.getChannel(channelId);
+          }
+        } catch {
+          // search also failed
+        }
+      }
+
+      // YouTube.jsでチャンネル情報が取得できた場合
+      if (channel) {
+        const meta = channel.metadata || {};
+        const header = channel.header || {};
+        const channelTitle = 
+          header.content?.title?.text?.text || 
+          header.title?.text || 
+          meta.title || 
+          rawId || 
+          'チャンネル';
+        
+        let videosList: any[] = [];
+
+        try {
+          const videosObj = await channel.getVideos();
+          if (videosObj && videosObj.videos && Array.isArray(videosObj.videos) && videosObj.videos.length > 0) {
+            videosList = videosObj.videos
+              .map((v: any) => formatVideoObject(v, channelTitle, channelId))
+              .filter((v: any) => v && v.videoId);
           }
         } catch (e) {
-          console.error("Search for channel videos error:", e);
+          console.warn("[Channel] Error calling channel.getVideos():", e);
         }
+
+        // 動画リストが空ならチャンネル名で動画検索
+        if (videosList.length === 0) {
+          try {
+            const searchRes = await youtube.search(channelTitle, { type: 'video' });
+            if (searchRes.videos && searchRes.videos.length > 0) {
+              videosList = searchRes.videos
+                .map((v: any) => formatVideoObject(v, channelTitle, channelId))
+                .filter((v: any) => v && v.videoId);
+            }
+          } catch (e) {
+            console.warn("[Channel] Search fallback for channel videos error:", e);
+          }
+        }
+
+        const shortVideos = videosList.filter((v: any) => 
+          v && v.title && (v.title.toLowerCase().includes('short') || (v.lengthSeconds > 0 && v.lengthSeconds <= 60))
+        );
+
+        return res.json({
+          id: channelId,
+          title: channelTitle,
+          description: meta.description || header.content?.description?.description?.text || '',
+          avatar: header.content?.image?.avatar?.[0]?.url || meta.avatar?.[0]?.url || meta.thumbnail?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(channelTitle)}&background=random`,
+          banner: header.content?.banner?.image?.[0]?.url || meta.banner?.[0]?.url || header.banner?.[0]?.url || "",
+          subCountText: header.content?.metadata?.metadata_rows?.[1]?.metadata_parts?.[0]?.text?.text || header.subscriber_count?.text || meta.subscriber_count || '',
+          videosCountText: `${videosList.length} 本の動画`,
+          featuredVideo: videosList[0] || null,
+          videos: videosList,
+          shortVideos: shortVideos,
+          playlists: []
+        });
       }
 
-      // ショート動画を抽出（#shortsが含まれるもの、または短い動画）
-      const shortVideos = videosList
-        .filter(v => v.title.toLowerCase().includes('short') || v.lengthSeconds <= 60);
+      // 2. 非公式 Invidious API フォールバック
+      console.log(`[Channel] YouTube.js failed for ${rawId}, trying Invidious fallback...`);
+      const invidiousData = await fetchInvidiousChannel(rawId);
+      if (invidiousData && invidiousData.title) {
+        return res.json(invidiousData);
+      }
+
+      // 3. YouTube RSS Feed フォールバック
+      console.log(`[Channel] Invidious failed for ${rawId}, trying YouTube RSS fallback...`);
+      const rssData = await fetchYouTubeRssChannel(rawId);
+      if (rssData && rssData.videos.length > 0) {
+        return res.json(rssData);
+      }
+
+      // 4. 最終フォールバック: YouTube動画検索でチャンネル枠を構築
+      console.log(`[Channel] RSS failed for ${rawId}, constructing from search results...`);
+      const finalSearch = await youtube.search(rawId, { type: 'video' });
+      const searchVideos = (finalSearch.videos || [])
+        .map((v: any) => formatVideoObject(v, rawId, channelId))
+        .filter((v: any) => v && v.videoId);
+
+      const firstVideo = searchVideos[0];
+      const authorName = firstVideo ? firstVideo.author : rawId;
+      const authorAvatar = firstVideo ? firstVideo.authorAvatar : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random`;
 
       res.json({
         id: channelId,
-        title: channelTitle,
-        description: meta.description || '',
-        avatar: meta.avatar?.[0]?.url || meta.thumbnail?.[0]?.url || "",
-        banner: header.banner?.[0]?.url || meta.banner?.[0]?.url || "",
-        subCountText: header.subscriber_count?.text || meta.subscriber_count || '',
-        videosCountText: `${videosList.length} 本の動画`,
-        featuredVideo: videosList[0] || null,
-        videos: videosList,
-        shortVideos: shortVideos,
+        title: authorName,
+        description: '',
+        avatar: authorAvatar,
+        banner: '',
+        subCountText: '',
+        videosCountText: `${searchVideos.length} 本の動画`,
+        featuredVideo: searchVideos[0] || null,
+        videos: searchVideos,
+        shortVideos: searchVideos.filter((v: any) => v && v.title && v.title.toLowerCase().includes('short')),
         playlists: []
       });
-    } catch (err) {
-      console.error("Channel API error:", err);
-      res.status(404).json({ error: "Channel not found" });
+    } catch (err: any) {
+      console.error("[Channel] Final channel handler error:", err);
+      res.json({
+        id: req.params.id,
+        title: req.params.id,
+        description: '',
+        avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(req.params.id)}&background=random`,
+        banner: '',
+        subCountText: '',
+        videosCountText: '0 本の動画',
+        featuredVideo: null,
+        videos: [],
+        shortVideos: [],
+        playlists: []
+      });
     }
   });
 
