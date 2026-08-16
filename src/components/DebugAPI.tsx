@@ -42,7 +42,7 @@ export default function DebugAPI() {
     setError('');
     setResult(null);
     try {
-      const data = await fetchJSON('/api/health');
+      const data = await fetchJSON(`/api/health?t=${Date.now()}`);
       setResult(data);
     } catch (err: any) {
       setError(err.message);

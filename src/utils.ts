@@ -33,7 +33,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         errorMessage = errorData.error || errorData.message || errorMessage;
       } else {
         const text = await res.text().catch(() => '');
-        if (text.includes('A server error occurred')) {
+        if (text.includes('A server error')) {
           errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
         } else if (text) {
           errorMessage += `\n詳細: ${text.substring(0, 100)}`;
