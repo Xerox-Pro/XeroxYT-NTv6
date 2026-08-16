@@ -3,6 +3,7 @@ import { ChannelSubscription, Video } from '../types';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
 import { Loader2, BellRing, Sparkles, Check } from 'lucide-react';
+import { fetchJSON } from '../utils';
 
 interface SubscriptionsFeedProps {
   subscriptions: ChannelSubscription[];
@@ -28,11 +29,8 @@ export default function SubscriptionsFeed({
       setLoading(true);
       try {
         const channelTitles = subscriptions.map(s => s.title).join(',');
-        const res = await fetch(`/api/subscriptions/feed?channels=${encodeURIComponent(channelTitles)}`);
-        if (res.ok) {
-          const data = await res.json();
-          setFeedVideos(data);
-        }
+        const data = await fetchJSON(`/api/subscriptions/feed?channels=${encodeURIComponent(channelTitles)}`);
+        setFeedVideos(data);
       } catch (err) {
         console.error('Failed to fetch subscriptions feed:', err);
       } finally {

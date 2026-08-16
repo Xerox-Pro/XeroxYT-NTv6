@@ -736,6 +736,18 @@ async function startServer() {
     }
   });
 
+  // 500 Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("[Fatal Error]", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({ 
+      error: "サーバー内部でエラーが発生しました。",
+      message: err.message
+    });
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

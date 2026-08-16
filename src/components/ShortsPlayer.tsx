@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { ShortVideo, ChannelSubscription } from '../types';
 import { ThumbsUp, ThumbsDown, MessageSquare, Share2, Music, ChevronUp, ChevronDown, Bell, Loader2, Play, Volume2, VolumeX } from 'lucide-react';
+import { fetchJSON } from '../utils';
 import Avatar from './Avatar';
 
 interface ShortsPlayerProps {
@@ -32,13 +33,10 @@ export default function ShortsPlayer({
       setLoading(true);
       try {
         const query = historyKeywords ? encodeURIComponent(historyKeywords) : '';
-        const res = await fetch(`/api/shorts?keywords=${query}`);
-        if (res.ok) {
-          const data = await res.json();
-          setShortsList(data);
-          if (onCacheShorts) {
-            onCacheShorts(data);
-          }
+        const data = await fetchJSON(`/api/shorts?keywords=${query}`);
+        setShortsList(data);
+        if (onCacheShorts) {
+          onCacheShorts(data);
         }
       } catch (err) {
         console.error("Failed to load shorts", err);

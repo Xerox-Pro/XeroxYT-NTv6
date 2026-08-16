@@ -21,3 +21,35 @@ export function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+export async function fetchJSON(url: string, options?: RequestInit) {
+  try {
+    const res = await fetch(url, options);
+    const contentType = res.headers.get('content-type');
+    
+    if (!res.ok) {
+      let errorMessage = `Server error: ${res.status}`;
+      if (contentType && contentType.includes('application/json')) {
+        const errorData = await res.json().catch(() => ({}));
+        errorMessage = errorData.error || errorData.message || errorMessage;
+      } else {
+        const text = await res.text().catch(() => '');
+        if (text.includes('A server error occurred')) {
+          errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
+        }
+      }
+      throw new Error(errorMessage);
+    }
+
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error('サーバーから不正なレスポンスが返されました（JSONではありません）');
+    }
+
+    return await res.json();
+  } catch (err: any) {
+    if (err.message.includes('Unexpected token')) {
+      throw new Error('サーバーからの応答を解析できませんでした。');
+    }
+    throw err;
+  }
+}
+

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Search, Info, Play, Loader2 } from 'lucide-react';
+import { fetchJSON } from '../utils';
 
 export default function DebugAPI() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,8 +14,7 @@ export default function DebugAPI() {
     setError('');
     setResult(null);
     try {
-      const res = await fetch(`/api/debug/search?q=${encodeURIComponent(searchQuery)}`);
-      const data = await res.json();
+      const data = await fetchJSON(`/api/debug/search?q=${encodeURIComponent(searchQuery)}`);
       setResult(data);
     } catch (err: any) {
       setError(err.message);
@@ -28,8 +28,7 @@ export default function DebugAPI() {
     setError('');
     setResult(null);
     try {
-      const res = await fetch(`/api/debug/video?id=${encodeURIComponent(videoId)}`);
-      const data = await res.json();
+      const data = await fetchJSON(`/api/debug/video?id=${encodeURIComponent(videoId)}`);
       setResult(data);
     } catch (err: any) {
       setError(err.message);
@@ -43,8 +42,7 @@ export default function DebugAPI() {
     setError('');
     setResult(null);
     try {
-      const res = await fetch('/api/health');
-      const data = await res.json();
+      const data = await fetchJSON('/api/health');
       setResult(data);
     } catch (err: any) {
       setError(err.message);

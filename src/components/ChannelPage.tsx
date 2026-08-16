@@ -3,7 +3,7 @@ import { Channel, ChannelSubscription, Video } from '../types';
 import { Loader2, Bell, AlertCircle, Play, Layers, Search, ChevronRight, Zap } from 'lucide-react';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
-import { formatNumberJP, formatDuration } from '../utils';
+import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 
 interface ChannelPageProps {
   channelId: string;
@@ -31,9 +31,7 @@ export default function ChannelPage({
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`/api/channel/${encodeURIComponent(channelId)}`);
-        if (!res.ok) throw new Error('チャンネルデータの取得に失敗しました');
-        const data = await res.json();
+        const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}`);
         setChannelData(data);
       } catch (err: any) {
         setError(err.message || 'エラーが発生しました');

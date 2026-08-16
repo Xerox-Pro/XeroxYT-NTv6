@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Video, Comment, ChannelSubscription } from '../types';
-import { formatNumberJP, formatDuration } from '../utils';
+import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 import { localAI } from '../lib/intelligence';
 import { ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, Bell, ChevronDown, ChevronUp, Download, Heart, MessageSquare, Send, Plus, ListMusic } from 'lucide-react';
 import Avatar from './Avatar';
@@ -44,9 +44,7 @@ export default function VideoPlayer({
       setLoading(true);
       setError('');
       try {
-        const res = await fetch(`/api/video/${videoId}`);
-        if (!res.ok) throw new Error('動画情報の読み込みに失敗しました');
-        const data = await res.json();
+        const data = await fetchJSON(`/api/video/${videoId}`);
         setVideoData(data);
         
         // Local Intelligence Analysis
@@ -69,15 +67,12 @@ export default function VideoPlayer({
     const fetchComments = async () => {
       setLoadingComments(true);
       try {
-        const res = await fetch(`/api/video/${videoId}/comments`);
-        if (res.ok) {
-          const data = await res.json();
-          setComments(data);
-          
-          // Local Intelligence Context Analysis
-          if (videoData && videoData.recommendedVideos) {
-            localAI.processMetadataAnalysis(videoId, data, videoData.recommendedVideos);
-          }
+        const data = await fetchJSON(`/api/video/${videoId}/comments`);
+        setComments(data);
+        
+        // Local Intelligence Context Analysis
+        if (videoData && videoData.recommendedVideos) {
+          localAI.processMetadataAnalysis(videoId, data, videoData.recommendedVideos);
         }
       } catch (err) {
         console.error("Failed to load comments", err);

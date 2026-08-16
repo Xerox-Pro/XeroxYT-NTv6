@@ -21,6 +21,7 @@ import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo,
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { fetchJSON } from './utils';
 
 declare global {
   interface Window {
@@ -319,17 +320,16 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      const res = await fetch('/api/auth/signin');
-      if (!res.ok) throw new Error('Failed to start login');
-      const data = await res.json();
+      const data = await fetchJSON('/api/auth/signin');
       setAuthFlow(data);
       setIsPolling(true);
       isPollingRef.current = true;
       
       // Start polling
       startPolling();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
+      setError(err.message);
     }
   };
 
@@ -337,30 +337,23 @@ export default function App() {
     let success = false;
     while (!success && isPollingRef.current) {
       try {
-        const res = await fetch('/api/auth/poll');
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success) {
-            setUserInfo(data.user);
-            setAuthFlow(null);
-            setIsPolling(false);
-            isPollingRef.current = false;
-            success = true;
-            setView('home');
-          } else if (data.status === 'pending') {
-            // Still waiting for user, just continue polling
-            console.log('Login pending...');
-          }
-        } else {
-          // If error (401, 400, etc.), stop polling
-          const errorData = await res.json().catch(() => ({}));
-          console.error('Poll error response:', errorData);
+        const data = await fetchJSON('/api/auth/poll');
+        if (data.success) {
+          setUserInfo(data.user);
+          setAuthFlow(null);
           setIsPolling(false);
           isPollingRef.current = false;
-          break;
+          success = true;
+          setView('home');
+        } else if (data.status === 'pending') {
+          // Still waiting for user, just continue polling
+          console.log('Login pending...');
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('Poll error:', err);
+        setIsPolling(false);
+        isPollingRef.current = false;
+        break;
       }
       if (!success && isPollingRef.current) {
         await new Promise(resolve => setTimeout(resolve, 5000));
@@ -370,7 +363,7 @@ export default function App() {
 
   const handleLogout = async () => {
     try {
-      await fetch('/api/auth/logout', { method: 'POST' });
+      await fetchJSON('/api/auth/logout', { method: 'POST' });
       setUserInfo(null);
       setSubscriptions([]);
     } catch (err) {
@@ -394,19 +387,14 @@ export default function App() {
       // If logged in, prioritize liked content for the first page
       if (userInfo && pageNum === 1) {
         try {
-          const likedRes = await fetch('/api/user/liked-videos');
-          if (likedRes.ok) {
-            data = await likedRes.json();
-            updateCache(data);
-          }
+          data = await fetchJSON('/api/user/liked-videos');
+          updateCache(data);
         } catch (err) {
           console.warn('Failed to fetch liked videos for recommendations', err);
         }
       }
 
-      const res = await fetch(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${historyIds}&page=${pageNum}`);
-      if (!res.ok) throw new Error('おすすめ動画の取得に失敗しました');
-      const result = await res.json();
+      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${historyIds}&page=${pageNum}`);
       const publicData = result.videos || [];
       
       // AIの分析結果を保存
@@ -459,9 +447,7 @@ export default function App() {
     setError('');
 
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
-      if (!res.ok) throw new Error('検索結果の取得に失敗しました');
-      const data = await res.json();
+      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
       updateCache(data);
 
       if (append) {
