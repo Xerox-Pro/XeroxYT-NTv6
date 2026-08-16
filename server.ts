@@ -105,7 +105,7 @@ async function startServer() {
       const search = await youtube.search(q);
       res.json(search);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err.message || "サーバー内部エラー" });
     }
   });
 
@@ -117,7 +117,7 @@ async function startServer() {
       const info = await youtube.getInfo(id);
       res.json(info);
     } catch (err: any) {
-      res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err.message || "サーバー内部エラー" });
     }
   });
 

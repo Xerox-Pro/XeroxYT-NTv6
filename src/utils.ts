@@ -27,7 +27,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const contentType = res.headers.get('content-type');
     
     if (!res.ok) {
-      let errorMessage = `Server error: ${res.status}`;
+      let errorMessage = `サーバーエラー (${res.status}): ${url} へのリクエストに失敗しました`;
       if (contentType && contentType.includes('application/json')) {
         const errorData = await res.json().catch(() => ({}));
         errorMessage = errorData.error || errorData.message || errorMessage;
@@ -35,6 +35,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         const text = await res.text().catch(() => '');
         if (text.includes('A server error occurred')) {
           errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
+        } else if (text) {
+          errorMessage += `\n詳細: ${text.substring(0, 100)}`;
         }
       }
       throw new Error(errorMessage);
