@@ -97,6 +97,30 @@ async function startServer() {
     });
   });
 
+  // Debug API: Raw Search
+  app.get("/api/debug/search", async (req, res) => {
+    const q = (req.query.q as string) || "";
+    try {
+      const youtube = await getYt();
+      const search = await youtube.search(q);
+      res.json(search);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Debug API: Raw Video Info
+  app.get("/api/debug/video", async (req, res) => {
+    const id = (req.query.id as string) || "";
+    try {
+      const youtube = await getYt();
+      const info = await youtube.getInfo(id);
+      res.json(info);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // YouTubei.js Login API
   let currentAuthFlow: any = null;
   let authFlowExpiry: number = 0;

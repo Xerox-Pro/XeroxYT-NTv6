@@ -4,6 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
@@ -14,6 +15,7 @@ import ShortsPlayer from './components/ShortsPlayer';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
+import DebugAPI from './components/DebugAPI';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
@@ -27,7 +29,11 @@ declare global {
 }
 
 export default function App() {
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'shorts' | 'subscriptions' | 'library' | 'history'>('home');
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams] = useSearchParams();
+
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'shorts' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
@@ -72,6 +78,43 @@ export default function App() {
   const [error, setError] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1280);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const path = location.pathname;
+    if (path === '/') {
+      setView('home');
+      fetchRecommendations(1, false);
+    } else if (path === '/results') {
+      const q = searchParams.get('search_query');
+      if (q) {
+        setSearchQuery(q);
+        setView('search');
+        fetchSearch(q, 1, false);
+      }
+    } else if (path === '/watch') {
+      const v = searchParams.get('v');
+      const list = searchParams.get('list');
+      if (v) {
+        setCurrentVideoId(v);
+        setCurrentPlaylistId(list);
+        setView('video');
+      }
+    } else if (path.startsWith('/channel/')) {
+      const channelId = path.replace('/channel/', '');
+      setSelectedChannelId(channelId);
+      setView('channel');
+    } else if (path === '/shorts') {
+      setView('shorts');
+    } else if (path === '/feed/subscriptions') {
+      setView('subscriptions');
+    } else if (path === '/feed/library') {
+      setView('library');
+    } else if (path === '/feed/history') {
+      setView('history');
+    } else if (path === '/debug/api') {
+      setView('debug');
+    }
+  }, [location.pathname, searchParams]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -477,41 +520,31 @@ export default function App() {
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
-    setSearchQuery(q);
-    localAI.processSearch(q);
-    setPage(1);
-    fetchSearch(q, 1, false);
+    navigate(`/results?search_query=${encodeURIComponent(q)}`);
   };
 
   const handleSelectCategory = (category: string) => {
-    setSelectedCategory(category || 'すべて');
-    setPage(1);
     if (!category || category === 'すべて' || category === 'あなたへのおすすめ') {
-      setView('home');
-      fetchRecommendations(1, false);
+      navigate('/');
     } else {
-      setSearchQuery(category);
-      fetchSearch(category, 1, false);
+      navigate(`/results?search_query=${encodeURIComponent(category)}`);
     }
   };
 
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
     if (videoObj) {
       localAI.processVideoInteraction(videoObj, 1.0);
-      setCurrentPlaylistId(videoObj.playlistId || null);
+      updateCache([videoObj]);
     } else if (videoId && videoCache[videoId]) {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
-      setCurrentPlaylistId((videoCache[videoId] as Video).playlistId || null);
-    } else {
-      setCurrentPlaylistId(null);
     }
-    setCurrentVideoId(videoId);
-    setView('video');
+    
+    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
+    navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
   };
 
   const handleSelectChannel = (channelIdOrName: string) => {
-    setSelectedChannelId(channelIdOrName);
-    setView('channel');
+    navigate(`/channel/${channelIdOrName}`);
   };
 
   // プレイリスト操作関数群
@@ -613,6 +646,7 @@ export default function App() {
           onHistory={() => setView('history')}
           subscriptions={subscriptions}
           onSelectChannel={handleSelectChannel}
+          onDebugAPI={() => navigate('/debug/api')}
         />
 
         {/* メインコンテンツビュー */}
@@ -696,6 +730,8 @@ export default function App() {
               onRemoveHistoryItem={(id) => setWatchHistory(prev => prev.filter(i => i.videoId !== id))}
               onSelectChannel={handleSelectChannel}
             />
+          ) : view === 'debug' ? (
+            <DebugAPI />
           ) : loading && videos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] gap-3 bg-white">
               <Loader2 className="w-10 h-10 text-red-600 animate-spin" />

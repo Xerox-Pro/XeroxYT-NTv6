@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Zap, PlaySquare, Folder, History, ThumbsUp } from 'lucide-react';
+import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
 import { ChannelSubscription } from '../types';
 import Avatar from './Avatar';
 
@@ -12,6 +12,7 @@ interface SidebarProps {
   onSubscriptions?: () => void;
   onLibrary?: () => void;
   onHistory?: () => void;
+  onDebugAPI?: () => void;
   subscriptions?: ChannelSubscription[];
   onSelectChannel?: (channelId: string) => void;
 }
@@ -36,6 +37,7 @@ export default function Sidebar({
   onSubscriptions,
   onLibrary,
   onHistory,
+  onDebugAPI,
   subscriptions = [], 
   onSelectChannel 
 }: SidebarProps) {
@@ -56,6 +58,8 @@ export default function Sidebar({
       onLibrary();
     } else if (activeValue === 'history' && onHistory) {
       onHistory();
+    } else if (activeValue === 'debug' && onDebugAPI) {
+      onDebugAPI();
     }
 
     if (window.innerWidth < 768 && onClose) {
@@ -123,6 +127,22 @@ export default function Sidebar({
                 ライブラリ & 履歴
               </h4>
               {section2.map(renderLink)}
+              
+              <button
+                onClick={() => handleClick('debug')}
+                className={`w-full flex items-center ${
+                  isOpen ? 'gap-6 px-3 py-2.5 rounded-xl' : 'flex-col justify-center py-3 px-1 rounded-lg gap-1'
+                } transition-colors ${
+                  currentView === 'debug'
+                    ? 'bg-gray-100 text-black font-semibold'
+                    : 'text-gray-800 hover:bg-gray-100 font-normal'
+                }`}
+              >
+                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className="shrink-0 text-blue-600" />
+                <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
+                  APIデバッグ
+                </span>
+              </button>
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
