@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface AvatarProps {
   src?: string;
@@ -14,12 +14,17 @@ const bgColors = [
 export default function Avatar({ src, name, className = "w-8 h-8 text-sm" }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
 
-  const initial = (name || 'U').charAt(0).toUpperCase();
+  useEffect(() => {
+    setImgError(false);
+  }, [src]);
+
+  const displayName = name || 'User';
+  const initial = displayName.charAt(0).toUpperCase();
   
   // Pick deterministic color based on name
   let hash = 0;
-  for (let i = 0; i < (name || '').length; i++) {
-    hash = (name || '').charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < displayName.length; i++) {
+    hash = displayName.charCodeAt(i) + ((hash << 5) - hash);
   }
   const colorIndex = Math.abs(hash) % bgColors.length;
   const bgColor = bgColors[colorIndex];
@@ -28,7 +33,8 @@ export default function Avatar({ src, name, className = "w-8 h-8 text-sm" }: Ava
     return (
       <img
         src={src}
-        alt={name}
+        alt={displayName}
+        referrerPolicy="no-referrer"
         onError={() => setImgError(true)}
         className={`${className} rounded-full object-cover shrink-0`}
       />

@@ -61,8 +61,8 @@ export default function Navbar({
         </div>
       </div>
       
-      {/* 中央: 検索バー & マイク */}
-      <form onSubmit={handleSubmit} className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center gap-3">
+      {/* 中央: 検索バー */}
+      <form onSubmit={handleSubmit} className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center">
         <div className="flex w-full bg-white rounded-full overflow-hidden border border-gray-300 focus-within:border-blue-600 shadow-xs">
           <input
             type="text"
@@ -79,31 +79,10 @@ export default function Navbar({
             <Search size={19} strokeWidth={2} />
           </button>
         </div>
-        <button 
-          type="button" 
-          className="w-10 h-10 flex items-center justify-center bg-gray-100 hover:bg-gray-200 active:bg-gray-300 rounded-full transition-colors shrink-0 text-gray-700"
-          title="音声検索"
-        >
-          <Mic size={19} strokeWidth={2} />
-        </button>
       </form>
 
-      {/* 右側: 作成 (Video)、通知 (Bell)、ログイン/アバター */}
+      {/* 右側: ログイン/アバター */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <button 
-          className="p-2.5 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-700"
-          title="作成"
-        >
-          <Video size={20} strokeWidth={1.8} />
-        </button>
-        <button 
-          className="p-2.5 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors text-gray-700 relative"
-          title="通知"
-        >
-          <Bell size={20} strokeWidth={1.8} />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-600 rounded-full"></span>
-        </button>
-
         {userInfo ? (
           <div className="relative" ref={dropdownRef}>
             <div 

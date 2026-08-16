@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
-import { Channel, ChannelSubscription, Video } from '../types';
-import { Loader2, Bell, AlertCircle, Play, Layers, Search, ChevronRight, Zap } from 'lucide-react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Channel, ChannelSubscription, Video, CommunityPost, ReleaseItem } from '../types';
+import { 
+  Loader2, Bell, AlertCircle, Play, Layers, ChevronRight, 
+  Zap, Radio, Disc, MessageSquare, ThumbsUp, Check, Users
+} from 'lucide-react';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
@@ -13,6 +16,8 @@ interface ChannelPageProps {
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
+type TabType = 'home' | 'videos' | 'shorts' | 'live' | 'releases' | 'community' | 'playlists';
+
 export default function ChannelPage({
   channelId,
   onVideoSelect,
@@ -23,8 +28,20 @@ export default function ChannelPage({
   const [channelData, setChannelData] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<'home' | 'videos' | 'shorts' | 'playlists'>('home');
+  const [activeTab, setActiveTab] = useState<TabType>('home');
   const [videoSort, setVideoSort] = useState<'latest' | 'popular'>('latest');
+
+  // Pagination state for Videos & Shorts
+  const [videoList, setVideoList] = useState<Video[]>([]);
+  const [shortList, setShortList] = useState<Video[]>([]);
+  const [videoPage, setVideoPage] = useState(1);
+  const [shortPage, setShortPage] = useState(1);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMoreVideos, setHasMoreVideos] = useState(true);
+  const [hasMoreShorts, setHasMoreShorts] = useState(true);
+
+  // Poll vote state for community tab
+  const [votedPolls, setVotedPolls] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const fetchChannel = async () => {
@@ -33,6 +50,12 @@ export default function ChannelPage({
       try {
         const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}`);
         setChannelData(data);
+        setVideoList(data.videos || []);
+        setShortList(data.shortVideos || []);
+        setVideoPage(1);
+        setShortPage(1);
+        setHasMoreVideos(true);
+        setHasMoreShorts(true);
       } catch (err: any) {
         setError(err.message || 'エラーが発生しました');
       } finally {
@@ -42,6 +65,72 @@ export default function ChannelPage({
 
     fetchChannel();
   }, [channelId]);
+
+  // Load next page of videos or shorts
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !channelData) return;
+    const targetChannelParam = channelData.id || channelId || channelData.title;
+
+    if (activeTab === 'videos' && hasMoreVideos) {
+      setLoadingMore(true);
+      try {
+        const nextPage = videoPage + 1;
+        const res = await fetchJSON(`/api/channel/${encodeURIComponent(targetChannelParam)}/tab/videos?page=${nextPage}`);
+        if (res.videos && res.videos.length > 0) {
+          setVideoList((prev) => {
+            const existingIds = new Set(prev.map(v => v.videoId));
+            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            return [...prev, ...newItems];
+          });
+          setVideoPage(nextPage);
+        } else {
+          setHasMoreVideos(false);
+        }
+      } catch (e) {
+        console.error('Failed to load more videos', e);
+        setHasMoreVideos(false);
+      } finally {
+        setLoadingMore(false);
+      }
+    } else if (activeTab === 'shorts' && hasMoreShorts) {
+      setLoadingMore(true);
+      try {
+        const nextPage = shortPage + 1;
+        const res = await fetchJSON(`/api/channel/${encodeURIComponent(targetChannelParam)}/tab/shorts?page=${nextPage}`);
+        if (res.videos && res.videos.length > 0) {
+          setShortList((prev) => {
+            const existingIds = new Set(prev.map(v => v.videoId));
+            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            return [...prev, ...newItems];
+          });
+          setShortPage(nextPage);
+        } else {
+          setHasMoreShorts(false);
+        }
+      } catch (e) {
+        console.error('Failed to load more shorts', e);
+        setHasMoreShorts(false);
+      } finally {
+        setLoadingMore(false);
+      }
+    }
+  }, [activeTab, loadingMore, channelData, videoPage, shortPage, hasMoreVideos, hasMoreShorts, channelId]);
+
+  // Infinite scroll event listener
+  useEffect(() => {
+    const handleScroll = () => {
+      if (activeTab !== 'videos' && activeTab !== 'shorts') return;
+      const scrollPosition = window.innerHeight + window.scrollY;
+      const threshold = document.documentElement.offsetHeight - 400;
+
+      if (scrollPosition >= threshold) {
+        loadMore();
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [activeTab, loadMore]);
 
   if (loading) {
     return (
@@ -79,12 +168,19 @@ export default function ChannelPage({
     return vList;
   };
 
-  const tabs = [
+  const tabs: { id: TabType; label: string; icon?: React.ReactNode }[] = [
     { id: 'home', label: 'ホーム' },
     { id: 'videos', label: '動画' },
-    { id: 'shorts', label: 'ショート' },
-    { id: 'playlists', label: '再生リスト' }
+    { id: 'shorts', label: 'ショート', icon: <Zap size={14} className="text-red-500 fill-red-500" /> },
+    { id: 'live', label: 'ライブ配信', icon: <Radio size={14} className="text-red-500" /> },
+    { id: 'releases', label: 'リリース', icon: <Disc size={14} /> },
+    { id: 'community', label: 'コミュニティ', icon: <MessageSquare size={14} /> },
+    { id: 'playlists', label: '再生リスト', icon: <Layers size={14} /> }
   ];
+
+  const handleVote = (pollId: string, optionIndex: number) => {
+    setVotedPolls(prev => ({ ...prev, [pollId]: optionIndex }));
+  };
 
   return (
     <div className="flex-1 max-w-[1600px] w-full mx-auto pb-16 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)] select-none">
@@ -123,7 +219,7 @@ export default function ChannelPage({
               <span>•</span>
               <span>{channelData.subCountText || '登録者数 非公開'}</span>
               <span>•</span>
-              <span>{channelData.videosCountText || `${channelData.videos.length} 本の動画`}</span>
+              <span>{channelData.videosCountText || `${videoList.length} 本の動画`}</span>
             </p>
 
             {channelData.description && (
@@ -153,21 +249,21 @@ export default function ChannelPage({
         </div>
       </div>
 
-      {/* 3. タブナビゲーション (ホーム, 動画, ショート, 再生リスト) */}
+      {/* 3. タブナビゲーション */}
       <div className="px-4 md:px-12 border-b border-gray-200 bg-white sticky top-14 z-20">
-        <div className="flex items-center gap-8 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-6 md:gap-8 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`py-3.5 text-sm sm:text-base font-bold relative transition-colors duration-200 whitespace-nowrap ${
+                onClick={() => setActiveTab(tab.id)}
+                className={`py-3.5 text-sm sm:text-base font-bold relative transition-colors duration-200 whitespace-nowrap flex items-center gap-1.5 ${
                   isActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'
                 }`}
               >
-                {tab.label}
-                {/* アクティブ表示のスムーズな下線インジケーター */}
+                {tab.icon}
+                <span>{tab.label}</span>
                 {isActive && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-full transition-all duration-300 animate-in fade-in"></div>
                 )}
@@ -182,7 +278,7 @@ export default function ChannelPage({
         {/* ================= タブ: ホーム ================= */}
         {activeTab === 'home' && (
           <div className="flex flex-col gap-10">
-            {/* 1. フィーチャード動画 (YouTube公式風大カード) */}
+            {/* フィーチャード動画 */}
             {channelData.featuredVideo && (
               <div className="flex flex-col md:flex-row gap-6 p-4 sm:p-6 bg-gray-50 rounded-2xl border border-gray-200/80 hover:border-gray-300 transition-all duration-300">
                 <div 
@@ -228,32 +324,33 @@ export default function ChannelPage({
               </div>
             )}
 
-            {/* 2. おすすめ動画グリッド */}
+            {/* おすすめ動画グリッド（チャンネル一覧内はチャンネル名非表示） */}
             <div>
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-bold text-gray-900">おすすめ</h2>
+                <h2 className="text-lg font-bold text-gray-900">おすすめ動画</h2>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
-                {channelData.videos.slice(0, 8).map((video) => (
+                {videoList.slice(0, 8).map((video) => (
                   <VideoCard
                     key={video.videoId}
                     video={video}
                     onClick={() => onVideoSelect(video.videoId)}
                     onSelectChannel={onSelectChannel}
+                    hideChannelInfo={true}
                   />
                 ))}
               </div>
             </div>
 
-            {/* 3. ショート動画ピックアップ */}
-            {channelData.shortVideos && channelData.shortVideos.length > 0 && (
+            {/* ショート動画ピックアップ */}
+            {shortList.length > 0 && (
               <div className="pt-4 border-t border-gray-100">
                 <div className="flex items-center gap-2 mb-4">
                   <Zap size={20} className="text-red-600 fill-red-600" />
-                  <h2 className="text-lg font-bold text-gray-900">ショート</h2>
+                  <h2 className="text-lg font-bold text-gray-900">ショート動画</h2>
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                  {channelData.shortVideos.slice(0, 6).map((short) => (
+                  {shortList.slice(0, 6).map((short) => (
                     <div
                       key={short.videoId}
                       onClick={() => onVideoSelect(short.videoId)}
@@ -303,20 +400,40 @@ export default function ChannelPage({
                 </button>
               </div>
               <span className="text-xs text-gray-500 font-medium">
-                {channelData.videos.length} 本の動画
+                {videoList.length} 本の動画
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-              {getSortedVideos(channelData.videos).map((video) => (
+              {getSortedVideos(videoList).map((video) => (
                 <VideoCard
                   key={video.videoId}
                   video={video}
                   onClick={() => onVideoSelect(video.videoId)}
                   onSelectChannel={onSelectChannel}
+                  hideChannelInfo={true}
                 />
               ))}
             </div>
+
+            {/* スクロール時の2ページ目読み込みインジケーター */}
+            {loadingMore && (
+              <div className="flex items-center justify-center py-10 gap-2 text-gray-600">
+                <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+                <span className="text-xs font-bold">次の動画を読み込んでいます...</span>
+              </div>
+            )}
+
+            {!loadingMore && hasMoreVideos && (
+              <div className="text-center pt-8">
+                <button
+                  onClick={loadMore}
+                  className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-full transition-colors border border-gray-200"
+                >
+                  もっと動画を読み込む
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -324,7 +441,7 @@ export default function ChannelPage({
         {activeTab === 'shorts' && (
           <div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {(channelData.shortVideos || channelData.videos.slice(0, 6)).map((short) => (
+              {shortList.map((short) => (
                 <div
                   key={short.videoId}
                   onClick={() => onVideoSelect(short.videoId)}
@@ -346,6 +463,187 @@ export default function ChannelPage({
                 </div>
               ))}
             </div>
+
+            {loadingMore && (
+              <div className="flex items-center justify-center py-10 gap-2 text-gray-600">
+                <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+                <span className="text-xs font-bold">次のショートを読み込んでいます...</span>
+              </div>
+            )}
+
+            {!loadingMore && hasMoreShorts && (
+              <div className="text-center pt-8">
+                <button
+                  onClick={loadMore}
+                  className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-800 text-xs font-bold rounded-full transition-colors border border-gray-200"
+                >
+                  もっとショートを読み込む
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= タブ: ライブ配信 ================= */}
+        {activeTab === 'live' && (
+          <div>
+            {(channelData.liveVideos && channelData.liveVideos.length > 0) ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                {channelData.liveVideos.map((live) => (
+                  <div 
+                    key={live.videoId} 
+                    onClick={() => onVideoSelect(live.videoId)}
+                    className="group cursor-pointer flex flex-col gap-2"
+                  >
+                    <div className="aspect-video rounded-xl overflow-hidden bg-black relative border border-gray-200 shadow-2xs">
+                      <img
+                        src={live.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${live.videoId}/hqdefault.jpg`}
+                        alt={live.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                      {live.isLive ? (
+                        <>
+                          <div className="absolute top-2 left-2 bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-xs animate-pulse">
+                            <span className="w-1.5 h-1.5 bg-white rounded-full"></span>
+                            <span>LIVE</span>
+                          </div>
+                          {live.liveViewerCount && live.liveViewerCount > 0 ? (
+                            <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                              <Users size={11} />
+                              <span>{formatNumberJP(live.liveViewerCount)}人 視聴中</span>
+                            </div>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="absolute bottom-2 right-2 bg-black/80 text-white text-[10px] px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                          <span>{live.lengthSeconds > 0 ? formatDuration(live.lengthSeconds) : 'アーカイブ'}</span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <h4 className="font-bold text-gray-900 text-sm group-hover:text-blue-600 transition-colors line-clamp-2 leading-snug">
+                        {live.title}
+                      </h4>
+                      <span className="text-xs text-gray-500">
+                        {live.isLive ? '配信中' : (live.publishedText ? `${live.publishedText} • ライブ配信アーカイブ` : 'ライブ配信アーカイブ')}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-16 text-center text-gray-500 flex flex-col items-center gap-2">
+                <Radio className="w-10 h-10 text-gray-400" />
+                <p className="text-sm font-medium">現在配信中のライブまたはアーカイブはありません</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================= タブ: リリース ================= */}
+        {activeTab === 'releases' && (
+          <div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+              {(channelData.releases || []).map((rel) => (
+                <div key={rel.id} className="group cursor-pointer flex flex-col gap-2.5 p-3 rounded-2xl bg-gray-50 border border-gray-200/80 hover:border-gray-300 transition-all">
+                  <div className="aspect-square rounded-xl overflow-hidden bg-gray-200 relative shadow-2xs">
+                    <img
+                      src={rel.thumbnail}
+                      alt={rel.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute bottom-2 right-2 bg-black/70 text-white text-[10px] font-bold px-2 py-0.5 rounded">
+                      {rel.type}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5">
+                    <h4 className="font-bold text-gray-900 text-sm group-hover:text-blue-600 transition-colors line-clamp-2">
+                      {rel.title}
+                    </h4>
+                    <span className="text-xs text-gray-500">{rel.releaseDate} • {rel.trackCount}曲</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ================= タブ: コミュニティ ================= */}
+        {activeTab === 'community' && (
+          <div className="max-w-2xl mx-auto flex flex-col gap-6">
+            {(channelData.communityPosts || []).map((post: CommunityPost) => {
+              const selectedOption = votedPolls[post.id];
+              return (
+                <div key={post.id} className="p-5 bg-white rounded-2xl border border-gray-200 shadow-2xs flex flex-col gap-4">
+                  {/* 投稿者ヘッダー */}
+                  <div className="flex items-center gap-3">
+                    <Avatar src={post.authorAvatar || channelData.avatar} name={post.author} className="w-10 h-10 text-sm" />
+                    <div className="flex flex-col">
+                      <span className="font-bold text-sm text-gray-900">{post.author}</span>
+                      <span className="text-xs text-gray-500">{post.publishedTime}</span>
+                    </div>
+                  </div>
+
+                  {/* 投稿本文 */}
+                  <p className="text-sm text-gray-800 font-normal leading-relaxed whitespace-pre-wrap">
+                    {post.text}
+                  </p>
+
+                  {/* アンケート */}
+                  {post.votePoll && (
+                    <div className="p-4 bg-gray-50 rounded-xl border border-gray-200/80 flex flex-col gap-2.5">
+                      <p className="font-bold text-xs text-gray-800">{post.votePoll.question}</p>
+                      <div className="flex flex-col gap-2">
+                        {post.votePoll.options.map((opt, idx) => {
+                          const isSelected = selectedOption === idx;
+                          const isVoted = selectedOption !== undefined;
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleVote(post.id, idx)}
+                              className={`relative overflow-hidden w-full text-left p-3 rounded-xl text-xs font-semibold border transition-all ${
+                                isSelected
+                                  ? 'border-blue-600 bg-blue-50/50 text-blue-900'
+                                  : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-50'
+                              }`}
+                            >
+                              {isVoted && (
+                                <div 
+                                  className="absolute left-0 top-0 bottom-0 bg-blue-100/60 -z-0 transition-all duration-500"
+                                  style={{ width: `${opt.votesPercent}%` }}
+                                />
+                              )}
+                              <div className="relative z-10 flex items-center justify-between">
+                                <span className="flex items-center gap-1.5">
+                                  {isSelected && <Check size={14} className="text-blue-600 font-bold" />}
+                                  {opt.text}
+                                </span>
+                                {isVoted && (
+                                  <span className="font-bold text-gray-700">{opt.votesPercent}%</span>
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <span className="text-[11px] text-gray-500">{post.votePoll.totalVotes.toLocaleString()} 票</span>
+                    </div>
+                  )}
+
+                  {/* フッター */}
+                  <div className="flex items-center gap-6 pt-2 border-t border-gray-100 text-xs text-gray-500">
+                    <button className="flex items-center gap-1.5 hover:text-gray-900 font-bold">
+                      <ThumbsUp size={15} />
+                      <span>{formatNumberJP(post.likeCount)}</span>
+                    </button>
+                    <button className="flex items-center gap-1.5 hover:text-gray-900 font-bold">
+                      <MessageSquare size={15} />
+                      <span>{formatNumberJP(post.commentCount)}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 

@@ -678,6 +678,7 @@ export default function App() {
               onRecordHistory={handleRecordHistory}
               onOpenAddToPlaylist={(video) => setPlaylistModalVideo(video)}
               onCacheVideo={(v) => updateCache([v])}
+              watchHistory={watchHistory}
             />
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
@@ -751,7 +752,7 @@ export default function App() {
                 </h2>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
                 {videos.map((video, idx) => (
                   <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard
@@ -764,7 +765,7 @@ export default function App() {
                         e.stopPropagation();
                         setPlaylistModalVideo(video);
                       }}
-                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
+                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
                       title="再生リストに保存"
                     >
                       + 保存

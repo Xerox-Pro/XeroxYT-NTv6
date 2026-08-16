@@ -8,9 +8,10 @@ interface VideoCardProps {
   video: Video;
   onClick: () => void;
   onSelectChannel?: (channelIdOrName: string) => void;
+  hideChannelInfo?: boolean;
 }
 
-const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel }) => {
+const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, hideChannelInfo }) => {
   const isPlaylist = video.type === 'playlist' || video.type === 'mix' || !!video.playlistId;
   const initialThumb = video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
   const [imgSrc, setImgSrc] = useState(initialThumb);
@@ -19,10 +20,12 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel }
     setImgSrc(video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : ''));
   }, [video]);
 
+  const authorName = video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル';
+
   const handleChannelClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onSelectChannel) {
-      onSelectChannel(video.authorId || video.author);
+      onSelectChannel(video.authorId || authorName);
     }
   };
 
@@ -44,6 +47,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel }
         {imgSrc ? (
           <img
             src={imgSrc}
+            referrerPolicy="no-referrer"
             onError={handleImgError}
             alt={video.title}
             className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
@@ -61,10 +65,10 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel }
           </div>
         ) : null}
 
-        <div className="absolute bottom-1.5 right-1.5 bg-black/80 backdrop-blur-xs text-white text-[11px] px-1.5 py-0.5 rounded font-semibold tracking-wide flex items-center gap-1">
+        <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs text-white text-xs px-2 py-0.5 rounded font-semibold tracking-wide flex items-center gap-1">
           {isPlaylist ? (
             <>
-              <ListMusic size={12} />
+              <ListMusic size={13} />
               <span>{video.type === 'mix' ? 'MIX' : 'PLAYLIST'}</span>
             </>
           ) : (
@@ -74,34 +78,38 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel }
       </div>
       
       {/* 情報エリア */}
-      <div className="mt-3 flex items-start space-x-3">
-        <button 
-          onClick={handleChannelClick}
-          className="shrink-0 hover:opacity-80 transition-opacity mt-0.5"
-          title={`${video.author}のチャンネルを開く`}
-        >
-          <Avatar 
-            src={video.authorAvatar} 
-            name={video.author} 
-            className="w-9 h-9 text-sm ring-1 ring-gray-200" 
-          />
-        </button>
+      <div className="mt-3.5 flex items-start space-x-3">
+        {!hideChannelInfo && (
+          <button 
+            onClick={handleChannelClick}
+            className="shrink-0 hover:opacity-80 transition-opacity mt-0.5"
+            title={`${authorName}のチャンネルを開く`}
+          >
+            <Avatar 
+              src={video.authorAvatar} 
+              name={authorName} 
+              className="w-10 h-10 text-sm ring-1 ring-gray-200" 
+            />
+          </button>
+        )}
 
-        <div className="flex flex-col gap-0.5 overflow-hidden flex-1">
+        <div className="flex flex-col gap-1 overflow-hidden flex-1">
           <h3 
             onClick={onClick}
-            className="font-semibold text-gray-900 leading-snug line-clamp-2 text-[14px] sm:text-[15px] group-hover:text-blue-600 transition-colors"
+            className="font-semibold text-gray-900 leading-snug line-clamp-2 text-[15px] sm:text-[16px] group-hover:text-blue-600 transition-colors"
           >
             {video.title}
           </h3>
-          <div className="flex flex-col text-xs sm:text-sm text-gray-600 mt-0.5">
-            <span 
-              onClick={handleChannelClick} 
-              className="hover:text-gray-900 transition-colors flex items-center gap-1 font-normal cursor-pointer"
-            >
-              <span className="truncate">{video.author}</span>
-              <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
-            </span>
+          <div className="flex flex-col text-xs sm:text-[13px] text-gray-600">
+            {!hideChannelInfo && (
+              <span 
+                onClick={handleChannelClick} 
+                className="hover:text-gray-900 transition-colors flex items-center gap-1 font-normal cursor-pointer text-gray-700"
+              >
+                <span className="truncate">{authorName}</span>
+                <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
+              </span>
+            )}
             <span onClick={onClick} className="text-gray-500 text-xs mt-0.5">
               {formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}
             </span>

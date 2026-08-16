@@ -1,9 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { Video, Comment, ChannelSubscription } from '../types';
+import React, { useEffect, useState, useRef } from 'react';
+import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 import { localAI } from '../lib/intelligence';
-import { ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, Bell, ChevronDown, ChevronUp, Download, Heart, MessageSquare, Send, Plus, ListMusic } from 'lucide-react';
+import { 
+  ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
+  ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile
+} from 'lucide-react';
 import Avatar from './Avatar';
+
+interface LiveChatMessage {
+  id: string;
+  author: string;
+  authorAvatar?: string;
+  message: string;
+  timestamp: string;
+  isSuperChat?: boolean;
+  superChatAmount?: string;
+  superChatColor?: string;
+  badge?: string;
+}
 
 interface VideoPlayerProps {
   videoId: string;
@@ -15,6 +31,7 @@ interface VideoPlayerProps {
   onRecordHistory?: (video: Video) => void;
   onOpenAddToPlaylist?: (video: Video) => void;
   onCacheVideo?: (video: Video) => void;
+  watchHistory?: WatchHistoryItem[];
 }
 
 export default function VideoPlayer({
@@ -26,19 +43,53 @@ export default function VideoPlayer({
   onToggleSubscribe,
   onRecordHistory,
   onOpenAddToPlaylist,
-  onCacheVideo
+  onCacheVideo,
+  watchHistory = []
 }: VideoPlayerProps) {
   const [videoData, setVideoData] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
+
+  // Watch duration tracker
+  const watchSecondsRef = useRef<number>(0);
+  const activeVideoRef = useRef<Video | null>(null);
 
   // Comments state
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
 
+  // Live Chat state
+  const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
+  const [newLiveMessage, setNewLiveMessage] = useState('');
+  const [showSuperChatModal, setShowSuperChatModal] = useState(false);
+  const [superChatAmount, setSuperChatAmount] = useState('1000');
+  const [superChatMessage, setSuperChatMessage] = useState('');
+  const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  // Track video viewing duration for recommendation AI
+  useEffect(() => {
+    watchSecondsRef.current = 0;
+    const interval = setInterval(() => {
+      watchSecondsRef.current += 1;
+      // Periodic engagement update every 20 seconds
+      if (watchSecondsRef.current % 20 === 0 && activeVideoRef.current) {
+        localAI.processWatchDuration(activeVideoRef.current, watchSecondsRef.current);
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(interval);
+      if (activeVideoRef.current && watchSecondsRef.current > 0) {
+        localAI.processWatchDuration(activeVideoRef.current, watchSecondsRef.current);
+      }
+    };
+  }, [videoId]);
+
+  // Fetch video metadata
   useEffect(() => {
     const fetchVideo = async () => {
       setLoading(true);
@@ -46,16 +97,25 @@ export default function VideoPlayer({
       try {
         const data = await fetchJSON(`/api/video/${videoId}`);
         setVideoData(data);
+        activeVideoRef.current = data;
         
         // Local Intelligence Analysis
         if (data) {
-          localAI.processVideoInteraction(data, 1.5); // Play is a strong signal
+          localAI.processVideoInteraction(data, 1.5);
           if (onRecordHistory) {
             onRecordHistory(data);
           }
         }
         if (onCacheVideo && data) {
           onCacheVideo(data);
+        }
+
+        // If it's a real live stream, auto-switch sidebar to live chat
+        if (data?.isLive && !data?.isPremiere && !data?.isUpcoming) {
+          setSidebarTab('liveChat');
+          initLiveChat(data.author || 'チャンネル');
+        } else {
+          setSidebarTab('related');
         }
       } catch (err: any) {
         setError(err.message || 'エラーが発生しました');
@@ -70,7 +130,6 @@ export default function VideoPlayer({
         const data = await fetchJSON(`/api/video/${videoId}/comments`);
         setComments(data);
         
-        // Local Intelligence Context Analysis
         if (videoData && videoData.recommendedVideos) {
           localAI.processMetadataAnalysis(videoId, data, videoData.recommendedVideos);
         }
@@ -85,6 +144,73 @@ export default function VideoPlayer({
     fetchComments();
     setIsDescExpanded(false);
   }, [videoId]);
+
+  // Initialize live chat
+  const initLiveChat = (channelName: string) => {
+    setLiveChatMessages([
+      {
+        id: 'system-1',
+        author: 'システム',
+        message: `${channelName} のライブ配信です。チャットメッセージを送信できます。`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        badge: '案内'
+      }
+    ]);
+  };
+
+  useEffect(() => {
+    if (sidebarTab === 'liveChat') {
+      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [liveChatMessages, sidebarTab]);
+
+  const handleSendLiveMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLiveMessage.trim()) return;
+
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    setLiveChatMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        author: 'あなた',
+        message: newLiveMessage.trim(),
+        timestamp: timeStr,
+        badge: 'あなた'
+      }
+    ]);
+    setNewLiveMessage('');
+  };
+
+  const handleSendSuperChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    const colors: Record<string, string> = {
+      '500': 'bg-cyan-600',
+      '1000': 'bg-emerald-600',
+      '5000': 'bg-amber-600',
+      '10000': 'bg-red-600',
+    };
+    const now = new Date();
+    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    setLiveChatMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        author: 'あなた',
+        message: superChatMessage || '配信応援しています！🎉',
+        timestamp: timeStr,
+        isSuperChat: true,
+        superChatAmount: `¥${parseInt(superChatAmount).toLocaleString()}`,
+        superChatColor: colors[superChatAmount] || 'bg-emerald-600',
+        badge: 'あなた'
+      }
+    ]);
+    setShowSuperChatModal(false);
+    setSuperChatMessage('');
+  };
 
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -118,6 +244,8 @@ export default function VideoPlayer({
     );
   }
 
+  const isLive = !!(videoData.isLive && !videoData.isPremiere && !videoData.isUpcoming);
+
   const isSubscribed = subscriptions.some(s => 
     s.id === videoData.authorId || s.title === videoData.author
   );
@@ -130,11 +258,49 @@ export default function VideoPlayer({
     });
   };
 
+  // 過去の視聴履歴（現在再生中の動画を除く最大5件）
+  const pastHistoryVideos = watchHistory
+    .filter(h => h.videoId !== videoId)
+    .slice(0, 5)
+    .map(h => ({
+      videoId: h.videoId,
+      title: h.title,
+      author: h.author || 'チャンネル',
+      authorAvatar: h.authorAvatar,
+      videoThumbnails: [{ url: h.thumbnailUrl || `https://i.ytimg.com/vi/${h.videoId}/hqdefault.jpg`, width: 480, height: 360 }],
+      viewCount: 0,
+      publishedText: '視聴済み',
+      lengthSeconds: 0,
+      type: 'video'
+    }));
+
+  // 通常の関連動画リストの中にしれっと過去履歴をブレンド
+  const blendedRecommendations: any[] = [];
+  const baseRecs = videoData.recommendedVideos || [];
+  let histIdx = 0;
+
+  if (baseRecs.length === 0) {
+    blendedRecommendations.push(...pastHistoryVideos);
+  } else {
+    baseRecs.forEach((item, index) => {
+      blendedRecommendations.push(item);
+      // 2つ目、5つ目、8つ目... の位置にしれっと履歴動画を差し込む
+      if ((index % 3 === 1) && histIdx < pastHistoryVideos.length) {
+        blendedRecommendations.push(pastHistoryVideos[histIdx]);
+        histIdx++;
+      }
+    });
+    while (histIdx < pastHistoryVideos.length) {
+      blendedRecommendations.push(pastHistoryVideos[histIdx]);
+      histIdx++;
+    }
+  }
+
   return (
     <div className="flex-1 max-w-[1800px] mx-auto p-4 lg:p-6 flex flex-col xl:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0">
-        <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-md border border-gray-200">
+        <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-md border border-gray-200 relative">
           <iframe
             src={playlistId && !videoId 
               ? `https://www.youtube-nocookie.com/embed/videoseries?list=${playlistId}&autoplay=1`
@@ -147,6 +313,22 @@ export default function VideoPlayer({
         </div>
         
         <div className="mt-4 flex flex-col">
+          {/* 実際のライブ配信時のみバッジを表示 */}
+          {isLive && (
+            <div className="flex items-center gap-2 mb-2">
+              <span className="inline-flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-xs animate-pulse">
+                <span className="w-2 h-2 bg-white rounded-full"></span>
+                ライブ配信中
+              </span>
+              {videoData.liveViewerCount && videoData.liveViewerCount > 0 ? (
+                <span className="text-xs text-gray-600 font-medium flex items-center gap-1 bg-gray-100 px-2.5 py-1 rounded-full">
+                  <Users size={13} className="text-gray-500" />
+                  {formatNumberJP(videoData.liveViewerCount)} 人が視聴中
+                </span>
+              ) : null}
+            </div>
+          )}
+
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug">
             {videoData.title}
           </h1>
@@ -181,74 +363,84 @@ export default function VideoPlayer({
 
               <button
                 onClick={handleSubClick}
-                className={`ml-4 px-5 py-2.5 rounded-full text-sm font-bold transition-all duration-200 flex items-center gap-2 shadow-xs ${
-                  isSubscribed
-                    ? 'bg-gray-100 hover:bg-gray-200 text-gray-900 border border-gray-300'
-                    : 'bg-black hover:bg-gray-800 text-white active:scale-95'
+                className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 ${
+                  isSubscribed 
+                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
+                    : 'bg-gray-900 hover:bg-black text-white'
                 }`}
               >
-                {isSubscribed ? (
-                  <>
-                    <Bell size={16} />
-                    <span>登録済み</span>
-                  </>
-                ) : (
-                  <span>チャンネル登録</span>
-                )}
+                {isSubscribed ? '登録済み' : 'チャンネル登録'}
               </button>
             </div>
-            
-            {/* アクションボタン群 */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 select-none">
-              <div className="flex items-center bg-gray-100 rounded-full h-10 border border-gray-200">
-                <button className="flex items-center gap-1.5 px-4 hover:bg-gray-200 transition-colors h-full rounded-l-full font-bold text-gray-800 text-sm">
-                  <ThumbsUp size={18} strokeWidth={2} />
-                  <span>{videoData.likeCount ? formatNumberJP(videoData.likeCount) : '高評価'}</span>
+
+            {/* アクションボタン */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors">
+                  <ThumbsUp size={15} />
+                  <span>{formatNumberJP(videoData.likeCount || 0)}</span>
                 </button>
-                <div className="w-[1px] h-6 bg-gray-300"></div>
-                <button className="flex items-center gap-1.5 px-3 hover:bg-gray-200 transition-colors h-full rounded-r-full font-bold text-gray-800 text-sm">
-                  <ThumbsDown size={18} strokeWidth={2} />
+                <div className="w-[1px] h-4 bg-gray-300"></div>
+                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors">
+                  <ThumbsDown size={15} />
                 </button>
               </div>
-              
+
+              <button 
+                onClick={() => {
+                  if (navigator.share) {
+                    navigator.share({ title: videoData.title, url: window.location.href }).catch(() => {});
+                  } else {
+                    navigator.clipboard.writeText(window.location.href);
+                    alert('リンクをクリップボードにコピーしました！');
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
+              >
+                <Share2 size={15} />
+                <span>共有</span>
+              </button>
+
               {onOpenAddToPlaylist && (
-                <button
+                <button 
                   onClick={() => onOpenAddToPlaylist(videoData)}
-                  className="flex items-center gap-1.5 px-4 h-10 bg-black hover:bg-gray-800 text-white border border-black transition-colors rounded-full font-bold text-sm shrink-0 shadow-2xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
                 >
-                  <Plus size={18} strokeWidth={2.5} />
+                  <Plus size={15} />
                   <span>保存</span>
                 </button>
               )}
 
-              <button className="flex items-center gap-2 px-4 h-10 bg-gray-100 hover:bg-gray-200 border border-gray-200 transition-colors rounded-full font-bold text-gray-800 text-sm shrink-0">
-                <Share2 size={18} strokeWidth={2} />
-                <span>共有</span>
-              </button>
-              
-              <button className="flex items-center gap-2 px-4 h-10 bg-gray-100 hover:bg-gray-200 border border-gray-200 transition-colors rounded-full font-bold text-gray-800 text-sm shrink-0">
-                <Download size={18} strokeWidth={2} />
-                <span>オフライン</span>
-              </button>
-
-              <button className="flex items-center gap-2 px-4 h-10 bg-gray-100 hover:bg-gray-200 border border-gray-200 transition-colors rounded-full font-bold text-gray-800 text-sm shrink-0">
-                <Heart size={18} strokeWidth={2} className="text-red-500" />
-                <span>Thanks</span>
-              </button>
+              {isLive && (
+                <button
+                  onClick={() => setShowSuperChatModal(true)}
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95"
+                >
+                  <DollarSign size={14} />
+                  <span>Super Chat</span>
+                </button>
+              )}
             </div>
           </div>
-          
+
           {/* 概要欄 */}
-          <div 
-            onClick={() => setIsDescExpanded(!isDescExpanded)}
-            className="mt-4 bg-gray-100 hover:bg-gray-200/80 transition-all duration-200 rounded-xl p-4 text-sm text-gray-900 cursor-pointer select-none"
-          >
-            <div className="font-bold text-gray-900 mb-1.5 flex items-center justify-between">
-              <span>{formatNumberJP(videoData.viewCount)}回視聴 • {videoData.publishedText || '投稿日不明'}</span>
+          <div className="mt-4 p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-sm border border-gray-200">
+            <div className="flex items-center gap-3 font-semibold text-gray-800 text-xs mb-2">
+              <span>{formatNumberJP(videoData.viewCount)} 回視聴</span>
+              <span>{videoData.publishedText}</span>
+              {isLive && <span className="text-red-600 font-bold">● リアルタイム配信</span>}
             </div>
-            <p className={`whitespace-pre-wrap leading-relaxed font-normal text-gray-700 transition-all ${isDescExpanded ? '' : 'line-clamp-3'}`}>
+            <p className={`text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm ${isDescExpanded ? '' : 'line-clamp-3'}`}>
               {videoData.description || '動画の概要説明はありません。'}
             </p>
+            {videoData.description && videoData.description.length > 120 && (
+              <button
+                onClick={() => setIsDescExpanded(!isDescExpanded)}
+                className="mt-2 text-xs font-bold text-gray-900 hover:underline block"
+              >
+                {isDescExpanded ? '一部を表示' : 'もっと見る'}
+              </button>
+            )}
           </div>
 
           {/* コメントセクション */}
@@ -331,30 +523,130 @@ export default function VideoPlayer({
         </div>
       </div>
       
-      {/* 関連動画サイドバー */}
-      <div className={`w-full xl:w-[380px] shrink-0 flex flex-col gap-4 ${isRelatedOpen ? '' : 'xl:w-auto'}`}>
-        <div className="flex items-center justify-between border-b border-gray-200 pb-2">
-          <h3 className="font-bold text-gray-900 text-base">関連動画</h3>
+      {/* 関連動画 & ライブチャット サイドバー */}
+      <div className={`w-full xl:w-[400px] shrink-0 flex flex-col gap-4 ${isRelatedOpen ? '' : 'xl:w-auto'}`}>
+        {/* サイドバーヘッダー・タブ切替 */}
+        <div className={`flex items-center ${isLive ? 'justify-between' : 'justify-end'} border-b border-gray-100 pb-2`}>
+          {isLive && (
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              <button
+                onClick={() => setSidebarTab('liveChat')}
+                className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all ${
+                  sidebarTab === 'liveChat' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Radio size={13} className="text-red-500 animate-pulse" />
+                <span>チャット</span>
+              </button>
+              <button
+                onClick={() => setSidebarTab('related')}
+                className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all ${
+                  sidebarTab === 'related' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <span>関連動画</span>
+              </button>
+            </div>
+          )}
+
           <button 
             onClick={() => setIsRelatedOpen(!isRelatedOpen)} 
-            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors shrink-0 text-gray-800 border border-gray-200"
-            title={isRelatedOpen ? "関連動画を折りたたむ" : "関連動画を展開する"}
+            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors shrink-0 text-gray-700 border border-gray-200"
+            title={isRelatedOpen ? "折りたたむ" : "展開する"}
           >
             {isRelatedOpen ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
           </button>
         </div>
         
-        {isRelatedOpen && (
+        {isRelatedOpen && sidebarTab === 'liveChat' && (
+          <div className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs">
+            {/* チャットヘッダー */}
+            <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping"></span>
+                <span className="text-xs font-bold text-gray-900">ライブチャット</span>
+              </div>
+              <button
+                onClick={() => setShowSuperChatModal(true)}
+                className="text-[11px] font-bold text-amber-600 hover:text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1 transition-colors"
+              >
+                <DollarSign size={12} />
+                <span>Super Chat</span>
+              </button>
+            </div>
+
+            {/* チャットメッセージスクロール領域 */}
+            <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs">
+              {liveChatMessages.map((msg) => (
+                <div 
+                  key={msg.id} 
+                  className={`flex items-start gap-2 ${
+                    msg.isSuperChat 
+                      ? `${msg.superChatColor || 'bg-emerald-600'} text-white p-2.5 rounded-lg shadow-xs` 
+                      : 'hover:bg-gray-50 p-1 rounded transition-colors'
+                  }`}
+                >
+                  <Avatar name={msg.author} className="w-6 h-6 text-[10px] shrink-0" />
+                  <div className="flex flex-col flex-1 overflow-hidden">
+                    <div className="flex items-center gap-1.5">
+                      <span className={`font-bold truncate ${msg.isSuperChat ? 'text-white' : 'text-gray-700'}`}>
+                        {msg.author}
+                      </span>
+                      {msg.badge && (
+                        <span className="bg-blue-100 text-blue-800 text-[9px] px-1 py-0.2 rounded font-bold">
+                          {msg.badge}
+                        </span>
+                      )}
+                      {msg.isSuperChat && (
+                        <span className="bg-white/30 text-white text-[10px] font-black px-1.5 rounded">
+                          {msg.superChatAmount}
+                        </span>
+                      )}
+                      <span className={`text-[10px] ml-auto ${msg.isSuperChat ? 'text-white/80' : 'text-gray-400'}`}>
+                        {msg.timestamp}
+                      </span>
+                    </div>
+                    <p className={`mt-0.5 leading-snug break-words ${msg.isSuperChat ? 'text-white font-medium text-xs' : 'text-gray-900'}`}>
+                      {msg.message}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              <div ref={chatBottomRef} />
+            </div>
+
+            {/* チャット送信フォーム */}
+            <form onSubmit={handleSendLiveMessage} className="p-2.5 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
+              <input
+                type="text"
+                value={newLiveMessage}
+                onChange={(e) => setNewLiveMessage(e.target.value)}
+                placeholder="チャットメッセージを送信..."
+                className="flex-1 bg-white border border-gray-300 rounded-full px-3.5 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-600"
+              />
+              <button
+                type="submit"
+                disabled={!newLiveMessage.trim()}
+                className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-full transition-colors shrink-0 shadow-xs"
+              >
+                <Send size={13} />
+              </button>
+            </form>
+          </div>
+        )}
+
+        {isRelatedOpen && sidebarTab === 'related' && (
           <div className="flex flex-col gap-3">
-            {videoData.recommendedVideos?.map((recVideo) => (
+            {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
+            {blendedRecommendations.map((recVideo, idx) => (
               <div 
-                key={`${recVideo.videoId}-${recVideo.playlistId || ''}`} 
-                className="flex gap-2 group cursor-pointer"
+                key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
+                className="flex gap-2.5 group cursor-pointer"
                 onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
               >
                 <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
                   <img 
-                    src={recVideo.videoThumbnails?.[0]?.url || 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop'}
+                    src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
                     alt={recVideo.title}
                     className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
                   />
@@ -371,18 +663,18 @@ export default function VideoPlayer({
                     {recVideo.title}
                   </h4>
                   <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
-                    <span className="truncate hover:text-gray-900">{recVideo.author || 'YouTube'}</span>
+                    <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
                     <div className="flex items-center gap-1">
                       {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
                         <span className="text-red-600 font-bold uppercase text-[9px] bg-red-50 px-1 rounded border border-red-100">
                           {recVideo.type === 'mix' ? 'MIX' : 'PLAYLIST'}
                         </span>
-                      ) : (
+                      ) : recVideo.viewCount > 0 ? (
                         <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
-                      )}
+                      ) : null}
                       {recVideo.publishedText && (
                         <>
-                          <span className="text-[8px] opacity-50">•</span>
+                          {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
                           <span>{recVideo.publishedText}</span>
                         </>
                       )}
@@ -394,6 +686,82 @@ export default function VideoPlayer({
           </div>
         )}
       </div>
+
+      {/* Super Chat Modal */}
+      {showSuperChatModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Sparkles className="text-amber-500" size={20} />
+                <h3 className="text-base font-bold text-gray-900">Super Chat を送信</h3>
+              </div>
+              <button 
+                onClick={() => setShowSuperChatModal(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-gray-600">
+              {videoData.author} さんの配信にメッセージと応援を送ります。
+            </p>
+
+            {/* 金額選択 */}
+            <div className="grid grid-cols-4 gap-2">
+              {[
+                { amount: '500', color: 'border-cyan-500 bg-cyan-50 text-cyan-800' },
+                { amount: '1000', color: 'border-emerald-500 bg-emerald-50 text-emerald-800' },
+                { amount: '5000', color: 'border-amber-500 bg-amber-50 text-amber-800' },
+                { amount: '10000', color: 'border-red-500 bg-red-50 text-red-800' },
+              ].map((tier) => (
+                <button
+                  key={tier.amount}
+                  type="button"
+                  onClick={() => setSuperChatAmount(tier.amount)}
+                  className={`py-2 px-1 rounded-xl font-bold text-xs border text-center transition-all ${
+                    superChatAmount === tier.amount 
+                      ? `${tier.color} ring-2 ring-blue-600 shadow-xs` 
+                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  ¥{parseInt(tier.amount).toLocaleString()}
+                </button>
+              ))}
+            </div>
+
+            {/* メッセージ入力 */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-gray-700">応援メッセージ</label>
+              <textarea
+                value={superChatMessage}
+                onChange={(e) => setSuperChatMessage(e.target.value)}
+                placeholder="配信最高です！応援してます！"
+                rows={3}
+                className="w-full border border-gray-300 rounded-xl p-3 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSuperChatModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-full"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={handleSendSuperChat}
+                className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-amber-500 to-red-500 text-white rounded-full shadow-xs hover:from-amber-600 hover:to-red-600 transition-all active:scale-95"
+              >
+                ¥{parseInt(superChatAmount).toLocaleString()} で送信
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

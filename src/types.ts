@@ -21,6 +21,33 @@ export interface Video {
   subCount?: number;
   likeCount?: number;
   recommendedVideos?: Video[];
+  isLive?: boolean;
+  liveViewerCount?: number;
+}
+
+export interface CommunityPost {
+  id: string;
+  author: string;
+  authorAvatar?: string;
+  publishedTime: string;
+  text: string;
+  images?: string[];
+  likeCount: number;
+  commentCount: number;
+  votePoll?: {
+    question: string;
+    options: { text: string; votesPercent: number }[];
+    totalVotes: number;
+  };
+}
+
+export interface ReleaseItem {
+  id: string;
+  title: string;
+  thumbnail: string;
+  releaseDate: string;
+  trackCount: number;
+  type: 'Album' | 'Single' | 'EP';
 }
 
 export interface ShortVideo {
@@ -63,6 +90,9 @@ export interface Channel {
   videos: Video[];
   shortVideos?: Video[];
   playlists?: Playlist[];
+  releases?: ReleaseItem[];
+  liveVideos?: Video[];
+  communityPosts?: CommunityPost[];
 }
 
 export interface ChannelSubscription {
