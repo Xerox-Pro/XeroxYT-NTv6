@@ -142,8 +142,7 @@ export default function App() {
   useEffect(() => {
     if (view === 'home') {
       const width = window.innerWidth;
-      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-      if (width >= 768 || isLandscape) {
+      if (width >= 1280) {
         setIsSidebarOpen(true);
       } else {
         setIsSidebarOpen(false);
@@ -160,7 +159,7 @@ export default function App() {
       const mobile = width < 768 && !isLandscape;
       setIsMobile(mobile);
       if (view === 'home') {
-        if (width >= 768 || isLandscape) {
+        if (width >= 1280) {
           setIsSidebarOpen(true);
         } else {
           setIsSidebarOpen(false);

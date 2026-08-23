@@ -96,20 +96,23 @@ export default function Sidebar({
 
   return (
     <>
-      {/* モバイル用オーバーレイ */}
+      {/* モバイル・タブレット用オーバーレイ */}
       <div 
-        className={`fixed inset-0 bg-black/50 z-40 md:hidden transition-opacity duration-300 ${
+        className={`fixed inset-0 top-0 md:top-[56px] bg-black/50 z-30 xl:hidden transition-opacity duration-300 ${
           isOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         }`}
         onClick={() => onClose?.()}
       />
 
+      {/* レイアウトスペース確保用プレースホルダー (タブレット以下の画面幅でサイドバーがfixedになった時もmain要素がズレないようにする) */}
+      <div className="hidden md:block xl:hidden shrink-0 w-[72px]" />
+
       <aside
-        className={`bg-white text-gray-900 z-40 transition-all duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
+        className={`bg-white text-gray-900 z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
           isOpen 
-            ? 'w-56 p-2.5 fixed md:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] translate-x-0' 
-            : 'w-18 p-1.5 fixed md:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] -translate-x-full md:translate-x-0'
-        } ${!isOpen ? 'md:block' : ''}`}
+            ? 'w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none' 
+            : 'w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0'
+        }`}
       >
       <div className="flex flex-col gap-1">
         {/* セクション 1 */}
