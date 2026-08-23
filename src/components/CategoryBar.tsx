@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { localAI } from '../lib/intelligence';
-import { BrainCircuit, Hash } from 'lucide-react';
 
 interface CategoryBarProps {
   onSelectCategory?: (category: string) => void;
@@ -68,8 +67,6 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'ã™ã
                 : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
             }`}
           >
-            {isDynamic && <BrainCircuit size={13} className={isActive ? 'text-white' : 'text-purple-600'} />}
-            {isHashtag && <Hash size={13} className={isActive ? 'text-white' : 'text-blue-600'} />}
             {cat}
           </button>
         );

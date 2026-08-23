@@ -77,8 +77,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(window.innerWidth >= 1280);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(
+    window.innerWidth >= 1280 || (window.innerWidth >= 768 && window.matchMedia('(orientation: landscape)').matches)
+  );
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768 && !window.matchMedia('(orientation: landscape)').matches);
 
   useEffect(() => {
     const path = location.pathname;
@@ -118,19 +120,58 @@ export default function App() {
   }, [location.pathname, searchParams]);
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [location.pathname, location.search, view, currentVideoId, selectedChannelId, selectedCategory]);
+
+  useEffect(() => {
+    if (view === 'search' && searchQuery) {
+      document.title = `${searchQuery} - XeroxYT-NTv6`;
+    } else if (view === 'home') {
+      document.title = 'XeroxYT-NTv6';
+    } else if (view === 'shorts') {
+      document.title = 'Shorts - XeroxYT-NTv6';
+    } else if (view === 'subscriptions') {
+      document.title = '登録チャンネル - XeroxYT-NTv6';
+    } else if (view === 'library') {
+      document.title = 'ライブラリ - XeroxYT-NTv6';
+    } else if (view === 'history') {
+      document.title = '履歴 - XeroxYT-NTv6';
+    }
+  }, [view, searchQuery]);
+
+  useEffect(() => {
+    if (view === 'home') {
+      const width = window.innerWidth;
+      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+      if (width >= 768 || isLandscape) {
+        setIsSidebarOpen(true);
+      } else {
+        setIsSidebarOpen(false);
+      }
+    } else {
+      setIsSidebarOpen(false);
+    }
+  }, [view]);
+
+  useEffect(() => {
     const handleResize = () => {
       const width = window.innerWidth;
-      const mobile = width < 768;
+      const isLandscape = window.matchMedia('(orientation: landscape)').matches;
+      const mobile = width < 768 && !isLandscape;
       setIsMobile(mobile);
-      if (width < 1280) {
-        setIsSidebarOpen(false);
+      if (view === 'home') {
+        if (width >= 768 || isLandscape) {
+          setIsSidebarOpen(true);
+        } else {
+          setIsSidebarOpen(false);
+        }
       } else {
-        setIsSidebarOpen(true);
+        setIsSidebarOpen(false);
       }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [view]);
 
   // 無限スクロール用ページ制御
   const [page, setPage] = useState(1);
@@ -602,6 +643,18 @@ export default function App() {
     }));
   };
 
+  const handleImportYouTubePlaylist = (importedPlaylist: UserPlaylist) => {
+    setPlaylists(prev => [importedPlaylist, ...prev]);
+  };
+
+  const handleUpdatePlaylistInfo = (id: string, title: string, description?: string) => {
+    setPlaylists(prev => prev.map(p => p.id === id ? { ...p, title, description, updatedAt: Date.now() } : p));
+  };
+
+  const handleAddVideosToPlaylist = (playlistId: string, videos: Video[]) => {
+    setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, videos, updatedAt: Date.now() } : p));
+  };
+
   const handleStartPlaylistPlay = (playlist: UserPlaylist, shuffle: boolean = false) => {
     let playList = [...playlist.videos];
     if (shuffle) {
@@ -616,19 +669,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
-      {/* ナビゲーションバー */}
-      <Navbar
-        onSearch={handleSearch}
-        onHome={handleGoHome}
-        toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-        initialSearchQuery={searchQuery}
-        userInfo={userInfo}
-        onLogin={handleLogin}
-        onLogout={handleLogout}
-      />
+      {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
+      <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
+        <Navbar
+          onSearch={handleSearch}
+          onHome={handleGoHome}
+          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          initialSearchQuery={searchQuery}
+          userInfo={userInfo}
+          onLogin={handleLogin}
+          onLogout={handleLogout}
+        />
+      </div>
 
-      <div className="flex flex-1 pt-14">
-        {/* サイドバー */}
+      <div className="flex flex-1 relative items-start">
+        {/* サイドバー: Desktopではsticky、モバイルではfixed overlay */}
         <Sidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
@@ -645,9 +700,7 @@ export default function App() {
 
         {/* メインコンテンツビュー */}
         <main
-          className={`flex-1 transition-all duration-200 min-w-0 ${
-            isSidebarOpen ? 'md:ml-64' : (isMobile ? 'ml-0' : 'md:ml-18')
-          }`}
+          className="flex-1 transition-all duration-200 min-w-0"
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -716,6 +769,9 @@ export default function App() {
               onStartPlaylistPlay={handleStartPlaylistPlay}
               onVideoSelect={(id) => handleVideoSelect(id)}
               onNavigateToHistory={() => setView('history')}
+              onImportYouTubePlaylist={handleImportYouTubePlaylist}
+              onUpdatePlaylistInfo={handleUpdatePlaylistInfo}
+              onAddVideosToPlaylist={handleAddVideosToPlaylist}
             />
           ) : view === 'history' ? (
             <HistoryPage
@@ -752,7 +808,7 @@ export default function App() {
                 </h2>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 md:landscape:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
                 {videos.map((video, idx) => (
                   <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard

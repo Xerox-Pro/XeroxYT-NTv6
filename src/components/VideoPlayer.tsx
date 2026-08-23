@@ -5,7 +5,7 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw
 } from 'lucide-react';
 import Avatar from './Avatar';
 
@@ -52,6 +52,78 @@ export default function VideoPlayer({
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
+  const [eduKey, setEduKey] = useState<string>('');
+  const [refreshingEduKey, setRefreshingEduKey] = useState(false);
+  const [cooldownSec, setCooldownSec] = useState(0);
+  const [downloading, setDownloading] = useState(false);
+  const [relatedFilter, setRelatedFilter] = useState('all');
+
+  // EduKey 取得
+  useEffect(() => {
+    const fetchEduKey = async () => {
+      try {
+        const res = await fetchJSON('/api/edukey');
+        if (res && res.key) {
+          setEduKey(res.key);
+        }
+      } catch (e) {
+        console.error('Failed to load edukey:', e);
+      }
+    };
+    fetchEduKey();
+  }, []);
+
+  // 再読み込みボタンのクールダウンカウントダウン
+  useEffect(() => {
+    if (cooldownSec <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSec((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSec]);
+
+  // EduKey 再取得・プレイヤー再読み込み
+  const handleReloadEduKey = async () => {
+    if (refreshingEduKey || cooldownSec > 0) return;
+    setRefreshingEduKey(true);
+    setCooldownSec(15); // 15秒のクールダウンをセット
+    try {
+      const res = await fetchJSON('/api/edukey?refresh=true');
+      if (res && res.key) {
+        setEduKey(res.key);
+      }
+    } catch (e) {
+      console.error('Failed to reload edukey:', e);
+    } finally {
+      setRefreshingEduKey(false);
+    }
+  };
+
+  // ドキュメントタイトルの更新 (動画表示時: タイトル - XeroxYT-NTv6)
+  useEffect(() => {
+    if (videoData && videoData.title) {
+      document.title = `${videoData.title} - XeroxYT-NTv6`;
+    }
+  }, [videoData]);
+
+  // ダウンロード処理 (https://min-plum.vercel.app/360/G5fbV3KefbQ プロキシ経由)
+  const handleDownload = async () => {
+    if (downloading || !videoId) return;
+    setDownloading(true);
+    try {
+      const res = await fetchJSON(`/api/download-link?videoId=${encodeURIComponent(videoId)}`);
+      if (res && res.url) {
+        window.open(res.url, '_blank');
+      } else {
+        alert('ダウンロードリンクを取得できませんでした。');
+      }
+    } catch (err) {
+      console.error('Download error:', err);
+      alert('ダウンロードリンクの取得に失敗しました。');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   // Watch duration tracker
   const watchSecondsRef = useRef<number>(0);
@@ -297,14 +369,14 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className="flex-1 max-w-[1800px] mx-auto p-4 lg:p-6 flex flex-col xl:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
+    <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
-      <div className="flex-1 min-w-0">
-        <div className="w-full aspect-video bg-black rounded-xl overflow-hidden shadow-md border border-gray-200 relative">
+      <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
+        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
           <iframe
             src={playlistId && !videoId 
-              ? `https://www.youtube-nocookie.com/embed/videoseries?list=${playlistId}&autoplay=1`
-              : `https://www.youtube-nocookie.com/embed/${videoId}?autoplay=1${playlistId ? `&list=${playlistId}` : ''}`}
+              ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey}`
+              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}${playlistId ? `&list=${playlistId}` : ''}`}
             className="w-full h-full border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
@@ -399,6 +471,34 @@ export default function VideoPlayer({
               >
                 <Share2 size={15} />
                 <span>共有</span>
+              </button>
+
+              <button 
+                onClick={handleDownload}
+                disabled={downloading}
+                title="動画をダウンロード"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50"
+              >
+                {downloading ? (
+                  <Loader2 size={15} className="animate-spin text-red-600" />
+                ) : (
+                  <Download size={15} />
+                )}
+                <span>ダウンロード</span>
+              </button>
+
+              <button 
+                onClick={handleReloadEduKey}
+                disabled={refreshingEduKey || cooldownSec > 0}
+                title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのEduKeyを再取得してプレイヤーを再読み込み"}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {refreshingEduKey ? (
+                  <Loader2 size={15} className="animate-spin text-blue-600" />
+                ) : (
+                  <RotateCw size={15} className={cooldownSec > 0 ? "opacity-50" : ""} />
+                )}
+                <span>{cooldownSec > 0 ? `再読み込み (${cooldownSec}s)` : '再読み込み'}</span>
               </button>
 
               {onOpenAddToPlaylist && (
@@ -524,10 +624,10 @@ export default function VideoPlayer({
       </div>
       
       {/* 関連動画 & ライブチャット サイドバー */}
-      <div className={`w-full xl:w-[400px] shrink-0 flex flex-col gap-4 ${isRelatedOpen ? '' : 'xl:w-auto'}`}>
-        {/* サイドバーヘッダー・タブ切替 */}
-        <div className={`flex items-center ${isLive ? 'justify-between' : 'justify-end'} border-b border-gray-100 pb-2`}>
-          {isLive && (
+      <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
+        {/* サイドバーヘッダー・タブ切替（ライブ時のみ表示） */}
+        {isLive && (
+          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
             <div className="flex bg-gray-100 p-1 rounded-lg">
               <button
                 onClick={() => setSidebarTab('liveChat')}
@@ -547,16 +647,8 @@ export default function VideoPlayer({
                 <span>関連動画</span>
               </button>
             </div>
-          )}
-
-          <button 
-            onClick={() => setIsRelatedOpen(!isRelatedOpen)} 
-            className="p-1.5 hover:bg-gray-100 rounded-full transition-colors shrink-0 text-gray-700 border border-gray-200"
-            title={isRelatedOpen ? "折りたたむ" : "展開する"}
-          >
-            {isRelatedOpen ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
-          </button>
-        </div>
+          </div>
+        )}
         
         {isRelatedOpen && sidebarTab === 'liveChat' && (
           <div className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs">
@@ -637,6 +729,29 @@ export default function VideoPlayer({
 
         {isRelatedOpen && sidebarTab === 'related' && (
           <div className="flex flex-col gap-3">
+            {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+              {[
+                { id: 'all', label: 'すべて' },
+                { id: 'author', label: `提供: ${videoData?.author || 'チャンネル'}` },
+                { id: 'related', label: '関連動画' },
+                { id: 'recommended', label: 'おすすめ' },
+                { id: 'recent', label: '最近アップロード' },
+              ].map((chip) => (
+                <button
+                  key={chip.id}
+                  onClick={() => setRelatedFilter(chip.id)}
+                  className={`px-3 py-1.5 rounded-lg font-medium whitespace-nowrap transition-colors text-xs ${
+                    relatedFilter === chip.id
+                      ? 'bg-gray-900 text-white font-bold'
+                      : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
+
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (
               <div 

@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
+import { batchAvatarFetcher, BatchResponseItem } from '../utils/batchAvatarFetcher';
 
 interface AvatarProps {
   src?: string;
   name: string;
+  channelId?: string;
+  videoId?: string;
   className?: string;
+  onResolved?: (info: BatchResponseItem) => void;
 }
 
 const bgColors = [
@@ -11,13 +15,38 @@ const bgColors = [
   'bg-amber-600', 'bg-teal-600', 'bg-indigo-600', 'bg-rose-600'
 ];
 
-export default function Avatar({ src, name, className = "w-8 h-8 text-sm" }: AvatarProps) {
+export default function Avatar({ src, name, channelId, videoId, className = "w-8 h-8 text-sm", onResolved }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
+  const [fetchedAvatar, setFetchedAvatar] = useState<string | null>(null);
 
   useEffect(() => {
     setImgError(false);
+    setFetchedAvatar(null);
   }, [src]);
 
+  // If src is missing, is a placeholder, or errored out, trigger batch avatar fetcher
+  useEffect(() => {
+    const isPlaceholder = !src || src.includes('ui-avatars.com');
+    if ((isPlaceholder || imgError) && !fetchedAvatar) {
+      const key = channelId || videoId || (name && name !== 'チャンネル' && name !== 'Unknown' ? name : '');
+      if (key) {
+        batchAvatarFetcher.register(
+          { key, channelId, videoId, author: name },
+          (data) => {
+            if (data.authorAvatar) {
+              setFetchedAvatar(data.authorAvatar);
+              setImgError(false);
+            }
+            if (onResolved) {
+              onResolved(data);
+            }
+          }
+        );
+      }
+    }
+  }, [src, imgError, fetchedAvatar, channelId, videoId, name, onResolved]);
+
+  const activeSrc = fetchedAvatar || src;
   const displayName = name || 'User';
   const initial = displayName.charAt(0).toUpperCase();
   
@@ -29,10 +58,10 @@ export default function Avatar({ src, name, className = "w-8 h-8 text-sm" }: Ava
   const colorIndex = Math.abs(hash) % bgColors.length;
   const bgColor = bgColors[colorIndex];
 
-  if (src && !imgError) {
+  if (activeSrc && !imgError) {
     return (
       <img
-        src={src}
+        src={activeSrc}
         alt={displayName}
         referrerPolicy="no-referrer"
         onError={() => setImgError(true)}

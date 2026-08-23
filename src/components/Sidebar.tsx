@@ -75,7 +75,7 @@ export default function Sidebar({
         onClick={() => handleClick(link.activeValue)}
         title={link.label}
         className={`w-full flex items-center ${
-          isOpen ? 'gap-6 px-3 py-2.5 rounded-xl' : 'flex-col justify-center py-3 px-1 rounded-lg gap-1'
+          isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
         } transition-colors ${
           isActive
             ? 'bg-gray-100 text-black font-semibold'
@@ -105,10 +105,10 @@ export default function Sidebar({
       />
 
       <aside
-        className={`fixed left-0 top-14 h-[calc(100vh-56px)] bg-white text-gray-900 z-50 transition-all duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 ${
+        className={`bg-white text-gray-900 z-40 transition-all duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
           isOpen 
-            ? 'w-64 p-3 translate-x-0' 
-            : 'w-18 p-1.5 md:translate-x-0 -translate-x-full'
+            ? 'w-56 p-2.5 fixed md:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] translate-x-0' 
+            : 'w-18 p-1.5 fixed md:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] -translate-x-full md:translate-x-0'
         } ${!isOpen ? 'md:block' : ''}`}
       >
       <div className="flex flex-col gap-1">
@@ -119,7 +119,7 @@ export default function Sidebar({
 
         {isOpen ? (
           <>
-            <hr className="border-gray-200 my-3" />
+            <hr className="border-gray-200 my-2" />
             
             {/* セクション 2 */}
             <div className="flex flex-col gap-0.5">
@@ -131,7 +131,7 @@ export default function Sidebar({
               <button
                 onClick={() => handleClick('debug')}
                 className={`w-full flex items-center ${
-                  isOpen ? 'gap-6 px-3 py-2.5 rounded-xl' : 'flex-col justify-center py-3 px-1 rounded-lg gap-1'
+                  isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
                 } transition-colors ${
                   currentView === 'debug'
                     ? 'bg-gray-100 text-black font-semibold'
@@ -146,9 +146,9 @@ export default function Sidebar({
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
-            <hr className="border-gray-200 my-3" />
+            <hr className="border-gray-200 my-2" />
             <div className="flex flex-col gap-0.5">
-              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                 登録チャンネル ({subscriptions.length})
               </h4>
               {subscriptions.length === 0 ? (
@@ -171,11 +171,11 @@ export default function Sidebar({
           </>
         ) : (
           <>
-            <hr className="border-gray-200 my-2" />
+            <hr className="border-gray-200 my-1.5" />
             <div className="flex flex-col gap-1">
               <button
                 onClick={() => handleClick('library')}
-                className="w-full flex flex-col items-center justify-center py-3 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
+                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
                 title="ライブラリ"
               >
                 <Folder size={20} strokeWidth={1.8} />
@@ -183,7 +183,7 @@ export default function Sidebar({
               </button>
               <button
                 onClick={() => handleClick('history')}
-                className="w-full flex flex-col items-center justify-center py-3 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
+                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
                 title="履歴"
               >
                 <History size={20} strokeWidth={1.8} />

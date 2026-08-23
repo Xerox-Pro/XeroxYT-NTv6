@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { ChannelSubscription, Video } from '../types';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
@@ -22,31 +22,84 @@ export default function SubscriptionsFeed({
 }: SubscriptionsFeedProps) {
   const [feedVideos, setFeedVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('all');
+  const isFetchingMore = useRef(false);
 
-  useEffect(() => {
-    const fetchFeed = async () => {
+  const getTargetChannelTitle = useCallback(() => {
+    if (selectedChannelId === 'all') return 'all';
+    const sub = subscriptions.find(s => s.id === selectedChannelId);
+    return sub ? sub.title : selectedChannelId;
+  }, [selectedChannelId, subscriptions]);
+
+  const fetchFeed = useCallback(async (pageNum: number = 1, append: boolean = false) => {
+    if (append) {
+      setLoadingMore(true);
+    } else {
       setLoading(true);
-      try {
-        const channelTitles = subscriptions.map(s => s.title).join(',');
-        const data = await fetchJSON(`/api/subscriptions/feed?channels=${encodeURIComponent(channelTitles)}`);
-        setFeedVideos(data);
-      } catch (err) {
-        console.error('Failed to fetch subscriptions feed:', err);
-      } finally {
-        setLoading(false);
+    }
+
+    try {
+      const channelTitles = subscriptions.map(s => s.title).join(',');
+      const selectedTitle = getTargetChannelTitle();
+      const url = `/api/subscriptions/feed?channels=${encodeURIComponent(channelTitles)}&selectedChannel=${encodeURIComponent(selectedTitle)}&page=${pageNum}`;
+      const data: Video[] = await fetchJSON(url);
+
+      if (append) {
+        setFeedVideos(prev => {
+          const existingIds = new Set(prev.map(v => v.videoId));
+          const newVideos = (data || []).filter(v => v && v.videoId && !existingIds.has(v.videoId));
+          return [...prev, ...newVideos];
+        });
+      } else {
+        setFeedVideos(data || []);
+      }
+
+      setHasMore((data || []).length > 0);
+    } catch (err) {
+      console.error('Failed to fetch subscriptions feed:', err);
+      if (!append) setFeedVideos([]);
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+      isFetchingMore.current = false;
+    }
+  }, [subscriptions, getTargetChannelTitle]);
+
+  // Selected channel / subscriptions change -> reload page 1
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    setPage(1);
+    setHasMore(true);
+    fetchFeed(1, false);
+  }, [selectedChannelId, subscriptions, fetchFeed]);
+
+  // Load next page
+  const loadMore = useCallback(() => {
+    if (loading || loadingMore || !hasMore || isFetchingMore.current) return;
+    isFetchingMore.current = true;
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchFeed(nextPage, true);
+  }, [loading, loadingMore, hasMore, page, fetchFeed]);
+
+  // Scroll listener for infinite scrolling
+  useEffect(() => {
+    const handleScroll = () => {
+      if (loading || loadingMore || !hasMore || isFetchingMore.current) return;
+      const scrollPosition = window.innerHeight + window.scrollY;
+      const threshold = document.documentElement.offsetHeight - 600;
+
+      if (scrollPosition >= threshold) {
+        loadMore();
       }
     };
 
-    fetchFeed();
-  }, [subscriptions]);
-
-  const filteredVideos = selectedChannelId === 'all'
-    ? feedVideos
-    : feedVideos.filter(v => {
-        const sub = subscriptions.find(s => s.id === selectedChannelId);
-        return sub ? v.author.toLowerCase().includes(sub.title.toLowerCase()) : true;
-      });
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [loading, loadingMore, hasMore, loadMore]);
 
   if (subscriptions.length === 0) {
     return (
@@ -113,34 +166,44 @@ export default function SubscriptionsFeed({
           <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
           <span className="text-sm font-medium text-gray-600">最新動画をロード中...</span>
         </div>
-      ) : filteredVideos.length === 0 ? (
+      ) : feedVideos.length === 0 ? (
         <div className="text-center py-20 text-gray-500">
           <p className="text-sm font-medium">指定したチャンネルの最新動画が見つかりませんでした。</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-          {filteredVideos.map((video) => (
-            <div key={video.videoId} className="relative group">
-              <VideoCard
-                video={video}
-                onClick={() => onVideoSelect(video.videoId, video)}
-                onSelectChannel={onSelectChannel}
-              />
-              {onOpenAddToPlaylist && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenAddToPlaylist(video);
-                  }}
-                  className="absolute top-2 right-2 bg-black/75 hover:bg-black text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold flex items-center gap-1 shadow-md"
-                  title="プレイリストに追加"
-                >
-                  + 保存
-                </button>
-              )}
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
+            {feedVideos.map((video, idx) => (
+              <div key={`${video.videoId}-${idx}`} className="relative group">
+                <VideoCard
+                  video={video}
+                  onClick={() => onVideoSelect(video.videoId, video)}
+                  onSelectChannel={onSelectChannel}
+                />
+                {onOpenAddToPlaylist && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenAddToPlaylist(video);
+                    }}
+                    className="absolute top-2 right-2 bg-black/75 hover:bg-black text-white p-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold flex items-center gap-1 shadow-md"
+                    title="プレイリストに追加"
+                  >
+                    + 保存
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* 無限スクロールローディングスピナー */}
+          {loadingMore && (
+            <div className="flex items-center justify-center py-10 gap-3 text-gray-600">
+              <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+              <span className="text-xs font-bold">次の動画を読み込んでいます...</span>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   );

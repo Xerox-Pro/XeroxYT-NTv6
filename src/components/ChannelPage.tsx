@@ -44,12 +44,16 @@ export default function ChannelPage({
   const [votedPolls, setVotedPolls] = useState<Record<string, number>>({});
 
   useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     const fetchChannel = async () => {
       setLoading(true);
       setError('');
       try {
         const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}`);
         setChannelData(data);
+        if (data && data.title) {
+          document.title = `${data.title} - XeroxYT-NTv6`;
+        }
         setVideoList(data.videos || []);
         setShortList(data.shortVideos || []);
         setVideoPage(1);

@@ -20,7 +20,13 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
     setImgSrc(video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : ''));
   }, [video]);
 
-  const authorName = video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル';
+  const [displayAuthor, setDisplayAuthor] = useState(video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル');
+
+  useEffect(() => {
+    setDisplayAuthor(video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル');
+  }, [video]);
+
+  const authorName = displayAuthor;
 
   const handleChannelClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -88,7 +94,14 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
             <Avatar 
               src={video.authorAvatar} 
               name={authorName} 
+              channelId={video.authorId}
+              videoId={video.videoId}
               className="w-10 h-10 text-sm ring-1 ring-gray-200" 
+              onResolved={(info) => {
+                if ((!video.author || video.author === 'チャンネル' || video.author === 'Unknown' || video.author === 'Channel') && info.author && info.author !== 'チャンネル') {
+                  setDisplayAuthor(info.author);
+                }
+              }}
             />
           </button>
         )}
