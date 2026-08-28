@@ -124,9 +124,7 @@ export interface WatchHistoryItem {
 
 export interface UserInfo {
   name: string;
-  email?: string;
-  picture?: string;
-  sub?: string;
-  id?: string;
-  isLoggedIn?: boolean;
+  email: string;
+  picture: string;
+  sub: string;
 }
