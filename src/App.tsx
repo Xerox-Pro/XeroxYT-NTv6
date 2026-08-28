@@ -214,12 +214,63 @@ export default function App() {
     }
   });
 
+  const [isSyncing, setIsSyncing] = useState(false);
+  const skipNextSync = useRef(false);
+
+  useEffect(() => {
+    const initSync = async () => {
+      const credentialId = localStorage.getItem('webauthn_credential_id');
+      if (credentialId) {
+        setUserInfo({ 
+          name: 'Sync User', 
+          email: 'Logged in with TouchID',
+          avatar: `https://ui-avatars.com/api/?name=User&background=random`
+        });
+        setIsSyncing(true);
+        try {
+          const res = await fetchJSON('/api/sync/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credentialId })
+          });
+          if (res.data) {
+            skipNextSync.current = true;
+            if (res.data.subscriptions) setSubscriptions(res.data.subscriptions);
+            if (res.data.watchHistory) setWatchHistory(res.data.watchHistory);
+            if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
+            setTimeout(() => { skipNextSync.current = false; }, 1000);
+          }
+        } catch (e) {
+          console.error('Initial sync failed', e);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
+    };
+    initSync();
+  }, []);
+
+  const performServerSync = async (data: any) => {
+    const credentialId = localStorage.getItem('webauthn_credential_id');
+    if (!credentialId || skipNextSync.current) return;
+    try {
+      await fetchJSON('/api/sync/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentialId, data })
+      });
+    } catch (e) {
+      console.error('Failed to sync to server', e);
+    }
+  };
+
   useEffect(() => {
     try {
       localStorage.setItem('xerox_subscriptions', JSON.stringify(subscriptions));
     } catch (e) {
       console.error(e);
     }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [subscriptions]);
 
   useEffect(() => {
@@ -228,6 +279,7 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [watchHistory]);
 
   useEffect(() => {
@@ -236,6 +288,7 @@ export default function App() {
     } catch (e) {
       console.error(e);
     }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [playlists]);
 
   // 閲覧履歴（通常動画）記録
@@ -362,55 +415,54 @@ export default function App() {
 
   const handleLogin = async () => {
     try {
-      const data = await fetchJSON('/api/auth/signin');
-      setAuthFlow(data);
-      setIsPolling(true);
-      isPollingRef.current = true;
+      setIsSyncing(true);
+      const { authenticatePasskey, registerPasskey } = await import('./utils/webauthn');
       
-      // Start polling
-      startPolling();
+      let credentialId: string;
+      try {
+        credentialId = await authenticatePasskey();
+      } catch (authErr) {
+        console.log('No existing passkey found, registering new one...');
+        credentialId = await registerPasskey();
+      }
+
+      localStorage.setItem('webauthn_credential_id', credentialId);
+      
+      // Load data from server
+      const res = await fetchJSON('/api/sync/load', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentialId })
+      });
+
+      if (res.data) {
+        skipNextSync.current = true;
+        if (res.data.subscriptions) setSubscriptions(res.data.subscriptions);
+        if (res.data.watchHistory) setWatchHistory(res.data.watchHistory);
+        if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
+        setTimeout(() => { skipNextSync.current = false; }, 1000);
+      } else {
+        // No data on server yet, do initial save
+        await performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
+      }
+
+      setUserInfo({ 
+        name: 'Sync User', 
+        email: 'Logged in with TouchID',
+        avatar: `https://ui-avatars.com/api/?name=User&background=random`
+      });
+
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.message);
-    }
-  };
-
-  const startPolling = async () => {
-    let success = false;
-    while (!success && isPollingRef.current) {
-      try {
-        const data = await fetchJSON('/api/auth/poll');
-        if (data.success) {
-          setUserInfo(data.user);
-          setAuthFlow(null);
-          setIsPolling(false);
-          isPollingRef.current = false;
-          success = true;
-          setView('home');
-        } else if (data.status === 'pending') {
-          // Still waiting for user, just continue polling
-          console.log('Login pending...');
-        }
-      } catch (err: any) {
-        console.error('Poll error:', err);
-        setIsPolling(false);
-        isPollingRef.current = false;
-        break;
-      }
-      if (!success && isPollingRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
+      setError(err.message || 'Login failed');
+    } finally {
+      setIsSyncing(false);
     }
   };
 
   const handleLogout = async () => {
-    try {
-      await fetchJSON('/api/auth/logout', { method: 'POST' });
-      setUserInfo(null);
-      setSubscriptions([]);
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
+    localStorage.removeItem('webauthn_credential_id');
+    setUserInfo(null);
   };
 
   const handleGoHome = useCallback(() => {

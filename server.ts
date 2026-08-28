@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import crypto from "crypto";
 import { Innertube, UniversalCache } from "youtubei.js";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
@@ -249,11 +250,101 @@ function extractViewCount(v: any): number {
   return 0;
 }
 
+const getGithubHeaders = () => ({
+  'Authorization': `token ${process.env.GITHUB_TOKEN}`,
+  'Accept': 'application/vnd.github.v3+json',
+});
+
+const encryptData = (data: any) => {
+  const secret = process.env.ENCRYPTION_KEY || 'default_secret_key_needs_to_be_32_bytes_long'.substring(0, 32);
+  const key = crypto.createHash('sha256').update(secret).digest();
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  let encrypted = cipher.update(JSON.stringify(data), 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  return { iv: iv.toString('hex'), authTag, encrypted };
+};
+
+const decryptData = (encryptedData: any) => {
+  const secret = process.env.ENCRYPTION_KEY || 'default_secret_key_needs_to_be_32_bytes_long'.substring(0, 32);
+  const key = crypto.createHash('sha256').update(secret).digest();
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(encryptedData.iv, 'hex'));
+  decipher.setAuthTag(Buffer.from(encryptedData.authTag, 'hex'));
+  let decrypted = decipher.update(encryptedData.encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return JSON.parse(decrypted);
+};
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
+
+  app.post('/api/sync/save', async (req, res) => {
+    const { credentialId, data } = req.body;
+    if (!credentialId || !data) return res.status(400).send('Missing args');
+    
+    if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_USERNAME || !process.env.GITHUB_REPO) {
+      return res.status(500).json({ error: 'GitHub credentials not configured on server' });
+    }
+
+    try {
+      const hashedId = crypto.createHash('sha256').update(credentialId).digest('hex');
+      const filename = `${hashedId}.json`;
+      const encryptedPayload = encryptData(data);
+      const fileContent = Buffer.from(JSON.stringify(encryptedPayload)).toString('base64');
+      
+      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
+      
+      let sha: string | undefined = undefined;
+      try {
+        const getRes = await axios.get(url, { headers: getGithubHeaders() });
+        sha = getRes.data.sha;
+      } catch (e: any) {
+        if (e.response?.status !== 404) throw e;
+      }
+
+      await axios.put(url, {
+        message: `Sync data for ${hashedId}`,
+        content: fileContent,
+        sha
+      }, { headers: getGithubHeaders() });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error('Save error:', err.response?.data || err.message);
+      res.status(500).json({ error: 'Failed to save to GitHub' });
+    }
+  });
+
+  app.post('/api/sync/load', async (req, res) => {
+    const { credentialId } = req.body;
+    if (!credentialId) return res.status(400).send('Missing args');
+
+    if (!process.env.GITHUB_TOKEN || !process.env.GITHUB_USERNAME || !process.env.GITHUB_REPO) {
+      return res.status(500).json({ error: 'GitHub credentials not configured on server' });
+    }
+
+    try {
+      const hashedId = crypto.createHash('sha256').update(credentialId).digest('hex');
+      const filename = `${hashedId}.json`;
+      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
+      
+      const getRes = await axios.get(url, { headers: getGithubHeaders() });
+      const encryptedPayload = JSON.parse(Buffer.from(getRes.data.content, 'base64').toString('utf8'));
+      
+      const data = decryptData(encryptedPayload);
+      res.json({ success: true, data });
+    } catch (err: any) {
+      if (err.response?.status === 404) {
+        return res.json({ success: true, data: null }); // No existing data
+      }
+      console.error('Load error:', err.response?.data || err.message);
+      res.status(500).json({ error: 'Failed to load from GitHub' });
+    }
+  });
 
   // Request logger
   app.use((req, res, next) => {
