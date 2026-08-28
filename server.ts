@@ -1909,6 +1909,212 @@ async function startServer() {
     });
   });
 
+  // --- Auth & Sync API (WebAuthn + GitHub) ---
+  const {
+    generateRegistrationOptions,
+    verifyRegistrationResponse,
+    generateAuthenticationOptions,
+    verifyAuthenticationResponse,
+  } = require('@simplewebauthn/server');
+  const jwt = require('jsonwebtoken');
+  const { hashId, encrypt, decrypt, getGitHubFile, putGitHubFile } = require('./github-db');
+
+  const JWT_SECRET = process.env.ENCRYPTION_KEY || 'default_jwt_secret_32_bytes_long_minimum!';
+  const challenges = new Map(); // Store WebAuthn challenges temporarily (userId -> challenge)
+
+  function getRpID(req: any) {
+    if (req.headers.origin) {
+      try { return new URL(req.headers.origin).hostname; } catch(e){}
+    }
+    return req.hostname;
+  }
+
+  // 1. Get Options (Registration or Authentication)
+  app.post('/api/auth/options', async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'User ID required' });
+
+    try {
+      const filename = `${hashId(userId)}.json`;
+      const fileData = await getGitHubFile(filename);
+      const rpID = getRpID(req);
+      const origin = req.headers.origin || `https://${rpID}`;
+
+      if (!fileData) {
+        // Needs Registration
+        const options = await generateRegistrationOptions({
+          rpName: 'XeroxYT-NTv6',
+          rpID,
+          userID: new Uint8Array(Buffer.from(userId)),
+          userName: userId,
+          attestationType: 'none',
+          authenticatorSelection: {
+            residentKey: 'discouraged',
+            userVerification: 'preferred',
+          },
+        });
+        challenges.set(userId, options.challenge);
+        return res.json({ type: 'register', options });
+      } else {
+        // Needs Authentication
+        const cred = fileData.content.webAuthnCredential;
+        if (!cred) {
+           return res.status(400).json({ error: 'Invalid account data format' });
+        }
+        const options = await generateAuthenticationOptions({
+          rpID,
+          allowCredentials: [{
+            id: new Uint8Array(Buffer.from(cred.id, 'base64url')),
+            type: 'public-key',
+            transports: cred.transports,
+          }],
+          userVerification: 'preferred',
+        });
+        challenges.set(userId, options.challenge);
+        return res.json({ type: 'authenticate', options });
+      }
+    } catch (err: any) {
+      console.error('Auth Options Error:', err.message);
+      res.status(500).json({ error: 'Failed to generate auth options' });
+    }
+  });
+
+  // 2. Verify Registration
+  app.post('/api/auth/verify-registration', async (req, res) => {
+    const { userId, response } = req.body;
+    const expectedChallenge = challenges.get(userId);
+    if (!expectedChallenge) return res.status(400).json({ error: 'Challenge not found' });
+    
+    const rpID = getRpID(req);
+    const expectedOrigin = req.headers.origin || `https://${rpID}`;
+
+    try {
+      const verification = await verifyRegistrationResponse({
+        response,
+        expectedChallenge,
+        expectedOrigin,
+        expectedRPID: rpID,
+      });
+
+      if (verification.verified && verification.registrationInfo) {
+        const { credentialID, credentialPublicKey, counter, credentialDeviceType, credentialBackedUp } = verification.registrationInfo;
+        
+        // Save to GitHub
+        const newDoc = {
+          webAuthnCredential: {
+            id: Buffer.from(credentialID).toString('base64url'),
+            publicKey: Buffer.from(credentialPublicKey).toString('base64'),
+            counter,
+            deviceType: credentialDeviceType,
+            backedUp: credentialBackedUp,
+            transports: response.response.transports || [],
+          },
+          userData: encrypt(JSON.stringify({})) // Initial empty encrypted data
+        };
+
+        const filename = `${hashId(userId)}.json`;
+        await putGitHubFile(filename, newDoc);
+        challenges.delete(userId);
+
+        const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ success: true, token, data: {} });
+      } else {
+        return res.status(400).json({ error: 'Verification failed' });
+      }
+    } catch (err: any) {
+      console.error('Verify Reg Error:', err.message);
+      res.status(500).json({ error: 'Registration verification failed' });
+    }
+  });
+
+  // 3. Verify Authentication
+  app.post('/api/auth/verify-authentication', async (req, res) => {
+    const { userId, response } = req.body;
+    const expectedChallenge = challenges.get(userId);
+    if (!expectedChallenge) return res.status(400).json({ error: 'Challenge not found' });
+
+    const rpID = getRpID(req);
+    const expectedOrigin = req.headers.origin || `https://${rpID}`;
+
+    try {
+      const filename = `${hashId(userId)}.json`;
+      const fileData = await getGitHubFile(filename);
+      if (!fileData) return res.status(404).json({ error: 'User not found' });
+      
+      const cred = fileData.content.webAuthnCredential;
+      const verification = await verifyAuthenticationResponse({
+        response,
+        expectedChallenge,
+        expectedOrigin,
+        expectedRPID: rpID,
+        authenticator: {
+          credentialID: new Uint8Array(Buffer.from(cred.id, 'base64url')),
+          credentialPublicKey: new Uint8Array(Buffer.from(cred.publicKey, 'base64')),
+          counter: cred.counter,
+          transports: cred.transports,
+        }
+      });
+
+      if (verification.verified) {
+        // Update counter
+        cred.counter = verification.authenticationInfo.newCounter;
+        await putGitHubFile(filename, fileData.content, fileData.sha);
+        challenges.delete(userId);
+
+        // Decrypt User Data
+        let decryptedData = {};
+        try {
+          if (fileData.content.userData) {
+            decryptedData = JSON.parse(decrypt(fileData.content.userData));
+          }
+        } catch (e) {
+          console.warn('Failed to decrypt user data', e);
+        }
+
+        const token = jwt.sign({ userId }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ success: true, token, data: decryptedData });
+      } else {
+        return res.status(400).json({ error: 'Verification failed' });
+      }
+    } catch (err: any) {
+      console.error('Verify Auth Error:', err.message);
+      res.status(500).json({ error: 'Authentication verification failed' });
+    }
+  });
+
+  // 4. Data Sync Endpoint
+  app.post('/api/user/sync', async (req, res) => {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ error: 'No token' });
+    
+    const token = authHeader.split(' ')[1];
+    let decoded: any;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (e) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const { userId } = decoded;
+    const syncData = req.body.data;
+    if (!syncData) return res.status(400).json({ error: 'No data provided' });
+
+    try {
+      const filename = `${hashId(userId)}.json`;
+      const fileData = await getGitHubFile(filename);
+      if (!fileData) return res.status(404).json({ error: 'User not found' });
+
+      // Update userData
+      fileData.content.userData = encrypt(JSON.stringify(syncData));
+      
+      const newSha = await putGitHubFile(filename, fileData.content, fileData.sha);
+      res.json({ success: true, sha: newSha });
+    } catch (err: any) {
+      console.error('Sync Error:', err.message);
+      res.status(500).json({ error: 'Failed to sync data' });
+    }
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({

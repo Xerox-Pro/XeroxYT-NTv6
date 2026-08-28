@@ -17,6 +17,7 @@ import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
+import LoginModal from './components/LoginModal';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -41,8 +42,6 @@ export default function App() {
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
-  const [authFlow, setAuthFlow] = useState<{ userCode: string, verificationUrl: string } | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
   
   // Cache for static video/channel data
   const [videoCache, setVideoCache] = useState<Record<string, Video | ShortVideo>>(() => {
@@ -73,6 +72,8 @@ export default function App() {
       return null;
     }
   });
+
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -238,6 +239,33 @@ export default function App() {
     }
   }, [playlists]);
 
+  // Sync state to GitHub
+  useEffect(() => {
+    if (!userInfo?.isLoggedIn) return;
+    const token = localStorage.getItem('authToken');
+    if (!token) return;
+
+    const syncData = {
+      subscriptions,
+      watchHistory,
+      playlists,
+      aiInterests
+    };
+
+    const timeoutId = setTimeout(() => {
+      fetch('/api/user/sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ data: syncData })
+      }).catch(err => console.error('Auto-sync failed:', err));
+    }, 3000);
+
+    return () => clearTimeout(timeoutId);
+  }, [subscriptions, watchHistory, playlists, aiInterests, userInfo]);
+
   // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {
     setWatchHistory(prev => {
@@ -358,59 +386,29 @@ export default function App() {
     });
   };
 
-  const isPollingRef = useRef(false);
+  const handleLogin = () => {
+    setIsLoginModalOpen(true);
+  };
 
-  const handleLogin = async () => {
-    try {
-      const data = await fetchJSON('/api/auth/signin');
-      setAuthFlow(data);
-      setIsPolling(true);
-      isPollingRef.current = true;
-      
-      // Start polling
-      startPolling();
-    } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message);
+  const handleLoginSuccess = (user: UserInfo, data: any) => {
+    setUserInfo(user);
+    localStorage.setItem('xerox_user_info', JSON.stringify(user));
+    if (data) {
+      if (data.subscriptions) setSubscriptions(data.subscriptions);
+      if (data.watchHistory) setWatchHistory(data.watchHistory);
+      if (data.playlists) setPlaylists(data.playlists);
+      if (data.aiInterests) setAiInterests(data.aiInterests);
     }
   };
 
-  const startPolling = async () => {
-    let success = false;
-    while (!success && isPollingRef.current) {
-      try {
-        const data = await fetchJSON('/api/auth/poll');
-        if (data.success) {
-          setUserInfo(data.user);
-          setAuthFlow(null);
-          setIsPolling(false);
-          isPollingRef.current = false;
-          success = true;
-          setView('home');
-        } else if (data.status === 'pending') {
-          // Still waiting for user, just continue polling
-          console.log('Login pending...');
-        }
-      } catch (err: any) {
-        console.error('Poll error:', err);
-        setIsPolling(false);
-        isPollingRef.current = false;
-        break;
-      }
-      if (!success && isPollingRef.current) {
-        await new Promise(resolve => setTimeout(resolve, 5000));
-      }
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      await fetchJSON('/api/auth/logout', { method: 'POST' });
-      setUserInfo(null);
-      setSubscriptions([]);
-    } catch (err) {
-      console.error('Logout error:', err);
-    }
+  const handleLogout = () => {
+    setUserInfo(null);
+    localStorage.removeItem('xerox_user_info');
+    localStorage.removeItem('authToken');
+    // We can also clear the state if we want to log out strictly
+    // setSubscriptions([]);
+    // setWatchHistory([]);
+    // setPlaylists([]);
   };
 
   const handleGoHome = useCallback(() => {
@@ -668,6 +666,11 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+      <LoginModal 
+        isOpen={isLoginModalOpen} 
+        onClose={() => setIsLoginModalOpen(false)} 
+        onSuccess={handleLoginSuccess} 
+      />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
         <Navbar
@@ -855,46 +858,7 @@ export default function App() {
         />
       )}
 
-      {/* YouTube Auth Flow Modal */}
-      {authFlow && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center"
-          >
-            <h2 className="text-2xl font-bold text-gray-900 mb-4 font-sans">YouTube ログイン</h2>
-            <p className="text-gray-600 mb-6 leading-relaxed text-sm">
-              以下のURLにアクセスし、お手元のデバイスでコードを入力して承認してください。
-            </p>
-            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6">
-              <a 
-                href={authFlow.verificationUrl} 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="text-red-600 font-bold text-lg hover:underline block mb-3 break-all"
-              >
-                {authFlow.verificationUrl}
-              </a>
-              <div className="text-3xl font-mono font-black text-gray-800 tracking-widest bg-white py-3 border border-gray-200 rounded-lg">
-                {authFlow.userCode}
-              </div>
-            </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-center gap-2 text-sm text-gray-500 font-medium">
-                <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
-                承認を待機中...
-              </div>
-              <button 
-                onClick={() => { setAuthFlow(null); setIsPolling(false); isPollingRef.current = false; }}
-                className="text-gray-500 text-xs hover:text-gray-800 font-bold uppercase tracking-wider mt-2"
-              >
-                キャンセル
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* Removed old YouTube Auth modal */}
     </div>
   );
 }
