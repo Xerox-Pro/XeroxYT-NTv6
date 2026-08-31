@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import fs from 'fs';
+const content = `import React, { useState, useEffect, useRef } from 'react';
 import { ThumbsUp, ThumbsDown, MessageSquare, Share2, Volume2, VolumeX, Loader2, Music } from 'lucide-react';
 import { ShortVideo, ChannelSubscription } from '../types';
 import Avatar from './Avatar';
@@ -101,7 +102,7 @@ export default function ShortsPlayer({
                 <video
                   ref={videoRefCallback}
                   data-id={short.videoId}
-                  src={`/api/video/${short.videoId}/stream`}
+                  src={\`/api/video/\${short.videoId}/stream\`}
                   className="w-full h-full object-cover"
                   loop
                   playsInline
@@ -134,7 +135,7 @@ export default function ShortsPlayer({
                     </button>
                     <button
                       onClick={() => onToggleSubscribe({ id: short.authorId || short.author, title: short.author, avatar: short.authorAvatar })}
-                      className={`px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm ${isSubscribed ? 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-md' : 'bg-white text-black hover:bg-gray-200'}`}
+                      className={\`px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm \${isSubscribed ? 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-md' : 'bg-white text-black hover:bg-gray-200'}\`}
                     >
                       {isSubscribed ? '登録済み' : 'チャンネル登録'}
                     </button>
@@ -149,7 +150,7 @@ export default function ShortsPlayer({
                 {/* 右側アクションボタン群 (絶対配置) */}
                 <div className="absolute right-2 sm:right-[-60px] bottom-20 flex flex-col gap-5 items-center sm:hidden">
                     <button onClick={() => toggleLike(short.videoId)} className="flex flex-col items-center gap-1 group">
-                      <div className={`p-3 rounded-full transition-colors ${liked[short.videoId] ? 'bg-red-600 text-white' : 'bg-black/50 hover:bg-black/70 text-white backdrop-blur-md'}`}>
+                      <div className={\`p-3 rounded-full transition-colors \${liked[short.videoId] ? 'bg-red-600 text-white' : 'bg-black/50 hover:bg-black/70 text-white backdrop-blur-md'}\`}>
                         <ThumbsUp size={22} className={liked[short.videoId] ? 'fill-current' : ''} />
                       </div>
                       <span className="text-xs font-bold drop-shadow-md text-white">{short.likeCount || '10万'}</span>
@@ -172,7 +173,7 @@ export default function ShortsPlayer({
               {/* 右側アクションボタン群 (デスクトップ版では動画の外に配置) */}
               <div className="hidden sm:flex flex-col gap-5 items-center justify-end h-full pb-8 ml-4">
                 <button onClick={() => toggleLike(short.videoId)} className="flex flex-col items-center gap-1 group">
-                  <div className={`p-3 rounded-full transition-colors ${liked[short.videoId] ? 'bg-red-600 text-white' : 'bg-white hover:bg-gray-200 text-gray-800 shadow-md border border-gray-200'}`}>
+                  <div className={\`p-3 rounded-full transition-colors \${liked[short.videoId] ? 'bg-red-600 text-white' : 'bg-white hover:bg-gray-200 text-gray-800 shadow-md border border-gray-200'}\`}>
                     <ThumbsUp size={22} className={liked[short.videoId] ? 'fill-current' : ''} />
                   </div>
                   <span className="text-xs font-bold text-gray-700">{short.likeCount || '10万'}</span>
@@ -204,3 +205,5 @@ export default function ShortsPlayer({
     </div>
   );
 }
+`;
+fs.writeFileSync('src/components/ShortsPlayer.tsx', content);
