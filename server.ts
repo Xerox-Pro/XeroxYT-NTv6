@@ -1077,9 +1077,10 @@ async function startServer() {
   // #shorts がついてる動画のみを厳格フィルタするショート動画API
   app.get("/api/shorts", async (req, res) => {
     const q = (req.query.q as string) || (req.query.keywords as string) || "";
+    const page = parseInt((req.query.page as string) || "1", 10);
     try {
       const youtube = await getYt();
-      const searchQuery = (q ? `${q} #shorts` : "#shorts 日本 トレンド バズ動画 2026");
+      const searchQuery = (q ? `${q} #shorts` : "#shorts 日本 トレンド バズ動画 2026") + (page > 1 ? ` ${page}` : "");
       const search = await youtube.search(searchQuery, { type: "video", prioritize: "relevance" });
 
       // タイトルに #shorts / #Shorts / #ショート が含まれているか、または短い動画を優先抽出
