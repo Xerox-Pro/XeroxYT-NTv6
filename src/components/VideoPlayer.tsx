@@ -1222,8 +1222,8 @@ export default function VideoPlayer({
           {/* 5秒カウントダウン オーバーレイ (YouTube公式風 自動再生カウントダウン) */}
           {autoPlayCountdown !== null && (
             <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-30 flex flex-col items-center justify-center text-white p-6 animate-fade-in">
-              <div className="text-xs font-semibold uppercase tracking-widest text-red-400 mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+              <div className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
                 次の動画を再生します ({autoPlayCountdown}秒)
               </div>
               <h3 className="text-base sm:text-lg font-bold text-center max-w-lg line-clamp-2 mb-6 text-gray-100">
@@ -1231,7 +1231,7 @@ export default function VideoPlayer({
               </h3>
 
               {/* カウントダウンタイマー数字 */}
-              <div className="w-16 h-16 mb-6 rounded-full bg-red-600/20 border-2 border-red-500 flex items-center justify-center text-2xl font-black text-white shadow-lg animate-pulse">
+              <div className="w-16 h-16 mb-6 rounded-full bg-blue-500/10 border-2 border-blue-500 flex items-center justify-center text-2xl font-black text-blue-400 shadow-lg animate-pulse">
                 {autoPlayCountdown}
               </div>
 
@@ -1244,7 +1244,7 @@ export default function VideoPlayer({
                 </button>
                 <button
                   onClick={playNextRecommendedVideo}
-                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
+                  className="px-6 py-2.5 bg-white hover:bg-gray-100 text-black font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
                 >
                   今すぐ再生
                 </button>
@@ -1320,14 +1320,14 @@ export default function VideoPlayer({
             </div>
 
             {/* アクションボタン */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0 whitespace-nowrap py-1">
+              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shrink-0 whitespace-nowrap">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors shrink-0">
                   <ThumbsUp size={15} />
                   <span>{formatNumberJP(activeVideo.likeCount || 0)}</span>
                 </button>
-                <div className="w-[1px] h-4 bg-gray-300"></div>
-                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors">
+                <div className="w-[1px] h-4 bg-gray-300 shrink-0"></div>
+                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors shrink-0">
                   <ThumbsDown size={15} />
                 </button>
               </div>
@@ -1341,7 +1341,7 @@ export default function VideoPlayer({
                     alert('リンクをクリップボードにコピーしました！');
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
               >
                 <Share2 size={15} />
                 <span>共有</span>
@@ -1351,10 +1351,10 @@ export default function VideoPlayer({
                 onClick={handleDownload}
                 disabled={downloading}
                 title="動画をダウンロード"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shrink-0 whitespace-nowrap"
               >
                 {downloading ? (
-                  <Loader2 size={15} className="animate-spin text-red-600" />
+                  <Loader2 size={15} className="animate-spin text-gray-700" />
                 ) : (
                   <Download size={15} />
                 )}
@@ -1365,7 +1365,7 @@ export default function VideoPlayer({
                 onClick={handleReloadEduKey}
                 disabled={refreshingEduKey || cooldownSec > 0}
                 title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのEduKeyを再取得してプレイヤーを再読み込み"}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
               >
                 {refreshingEduKey ? (
                   <Loader2 size={15} className="animate-spin text-blue-600" />
@@ -1378,7 +1378,7 @@ export default function VideoPlayer({
               {onOpenAddToPlaylist && (
                 <button 
                   onClick={() => onOpenAddToPlaylist(activeVideo)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
                 >
                   <Plus size={15} />
                   <span>保存</span>
@@ -1393,22 +1393,22 @@ export default function VideoPlayer({
                   if (!nextState) cancelAutoPlayCountdown();
                 }}
                 title={autoPlayEnabled ? "自動再生: オン (動画終了5秒後に関連動画へ進みます)" : "自動再生: オフ"}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all shrink-0 whitespace-nowrap ${
                   autoPlayEnabled 
-                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' 
-                    : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                    ? 'bg-gray-900 text-white border-gray-900 hover:bg-black shadow-xs' 
+                    : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
                 }`}
               >
                 <span>自動再生</span>
-                <div className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${autoPlayEnabled ? 'bg-red-600 justify-end' : 'bg-gray-300 justify-start'}`}>
-                  <div className="w-3 h-3 rounded-full bg-white shadow-xs" />
+                <div className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${autoPlayEnabled ? 'bg-blue-500 justify-end' : 'bg-gray-300 justify-start'}`}>
+                  <div className="w-2.5 h-2.5 rounded-full bg-white shadow-xs" />
                 </div>
               </button>
 
               {isLive && (
                 <button
                   onClick={() => setShowSuperChatModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95 shrink-0 whitespace-nowrap"
                 >
                   <DollarSign size={14} />
                   <span>Super Chat</span>
