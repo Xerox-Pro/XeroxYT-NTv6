@@ -166,14 +166,16 @@ export default function VideoPlayer({
   const [isLoop, setIsLoop] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const ytPlayerRef = useRef<any>(null);
+  const isYtReadyRef = useRef<boolean>(false);
+  const lastLoadedVideoIdRef = useRef<string>(videoId);
 
-  // ミックスリストデータ取得（同じリスト内でのスキップ時はリストを保持）
+  // ミックスリストデータ取得
   useEffect(() => {
     const targetPlaylistId = playlistId || (videoId && videoId.startsWith('RD') ? videoId : (playlistId ? playlistId : (videoId ? `RD${videoId}` : '')));
     
-    // すでに同じプレイリストが読み込まれているか、現在のリスト内にこの動画が存在する場合は再フェッチせず再利用
-    if (mixPlaylist && (mixPlaylist.playlistId === targetPlaylistId || mixPlaylist.items.some(it => it.videoId === videoId))) {
-      // 選択状態のみ同期
+    // すでに同じプレイリストIDが読み込まれている場合は選択状態のみ同期
+    if (mixPlaylist && mixPlaylist.playlistId === targetPlaylistId && mixPlaylist.items.some(it => it.videoId === videoId)) {
       setMixPlaylist(prev => {
         if (!prev) return null;
         return {
@@ -457,17 +459,18 @@ export default function VideoPlayer({
     };
   }, []);
 
-  // YouTube Iframe API による直接イベント監視
+  // YouTube Iframe API による直接イベント監視 (マウント時に1回初期化し、以降は再利用)
   useEffect(() => {
-    let ytPlayer: any = null;
     let checkTimer: any = null;
 
     const attachYT = () => {
-      if (iframeRef.current && (window as any).YT && (window as any).YT.Player) {
+      if (iframeRef.current && (window as any).YT && (window as any).YT.Player && !ytPlayerRef.current) {
         try {
-          ytPlayer = new (window as any).YT.Player(iframeRef.current, {
+          ytPlayerRef.current = new (window as any).YT.Player(iframeRef.current, {
             events: {
               onReady: (event: any) => {
+                isYtReadyRef.current = true;
+                ytPlayerRef.current = event.target;
                 try {
                   event.target.playVideo();
                 } catch (e) {}
@@ -511,10 +514,40 @@ export default function VideoPlayer({
 
     return () => {
       if (checkTimer) clearInterval(checkTimer);
-      if (ytPlayer && typeof ytPlayer.destroy === 'function') {
-        try { ytPlayer.destroy(); } catch {}
-      }
     };
+  }, []);
+
+  // videoId 変更時のシームレス自動再生 (iframe を破棄せず内部プレイヤーを更新)
+  useEffect(() => {
+    if (lastLoadedVideoIdRef.current !== videoId) {
+      lastLoadedVideoIdRef.current = videoId;
+
+      // 1. YouTube Player API による動画読み込み＆自動再生
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
+        try {
+          ytPlayerRef.current.loadVideoById(videoId);
+          ytPlayerRef.current.playVideo();
+        } catch (e) {
+          console.warn('[YT] loadVideoById error:', e);
+        }
+      }
+
+      // 2. postMessage による直接送信（iPad / Safari / WebKit での自動再生保証）
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        try {
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({
+            event: 'command',
+            func: 'loadVideoById',
+            args: [videoId, 0]
+          }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({
+            event: 'command',
+            func: 'playVideo',
+            args: []
+          }), '*');
+        } catch (e) {}
+      }
+    }
   }, [videoId]);
 
   // 保険としての再生時間タイマー (Watchdog)
@@ -1011,7 +1044,7 @@ export default function VideoPlayer({
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
           <iframe
             ref={iframeRef}
-            key={`player-${videoId}`}
+            key="main-persistent-yt-iframe"
             src={embedSrc}
             onLoad={handleIframeLoad}
             className="w-full h-full border-0"

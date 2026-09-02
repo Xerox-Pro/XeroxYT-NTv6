@@ -1455,7 +1455,7 @@ async function startServer() {
     }
   });
 
-  // YouTube ミックスリスト (Mix Playlist) 取得 API
+  // YouTube ミックスリスト (Mix Playlist) 取得 API (アーティスト特化＆スマートキュレーション)
   app.get("/api/mix-playlist", async (req, res) => {
     try {
       let videoId = (req.query.videoId as string) || '';
@@ -1473,95 +1473,162 @@ async function startServer() {
       }
 
       const youtube = await getYt();
-      const nextResult = await youtube.actions.execute('/next', {
-        videoId: videoId,
-        playlistId: playlistId
-      });
+      
+      // 1. 現在の動画情報とアーティストを取得
+      let currentTitle = '再生中の動画';
+      let currentAuthor = 'アーティスト';
+      let currentThumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      let currentDuration = '';
+      let channelId = '';
 
-      const playlistData = (nextResult.data as any)?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
-      if (playlistData) {
-        const title = playlistData.title || 'ミックスリスト';
-        const items = (playlistData.contents || []).map((c: any, index: number) => {
-          const v = c.playlistPanelVideoRenderer;
-          if (!v) return null;
-          const vId = v.videoId;
-          const vTitle = v.title?.simpleText || v.title?.runs?.[0]?.text || 'タイトルなし';
-          const vAuthor = v.longBylineText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text || 'チャンネル';
-          const thumbs = v.thumbnail?.thumbnails || [];
-          const vThumb = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
-          const vLength = v.lengthText?.simpleText || v.lengthText?.runs?.[0]?.text || '';
-
-          return {
-            index: index + 1,
-            videoId: vId,
-            title: vTitle,
-            author: vAuthor,
-            thumbnail: vThumb,
-            lengthText: vLength,
-            selected: Boolean(v.selected || vId === videoId)
-          };
-        }).filter(Boolean);
-
-        return res.json({
-          title: title,
-          playlistId: playlistId,
-          currentVideoId: videoId,
-          items: items
-        });
-      }
-
-      // フォールバック: 動画の関連動画や関連アーティストから25本のミックスリストを自動生成
       if (videoId) {
         try {
-          const videoInfo = await youtube.getInfo(videoId);
-          const currentTitle = (videoInfo.basic_info as any)?.title || '動画';
-          const currentAuthor = (videoInfo.basic_info as any)?.author || 'アーティスト';
-          const related = ((videoInfo as any).related_videos || (videoInfo as any).watch_next_feed || []).slice(0, 24);
-          
-          const fallbackItems = [
-            {
-              index: 1,
-              videoId: videoId,
-              title: currentTitle,
-              author: currentAuthor,
-              thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-              lengthText: '',
-              selected: true
-            },
-            ...related.map((r: any, idx: number) => {
-              const rId = r.id || r.video_id || r.videoId;
-              return {
-                index: idx + 2,
-                videoId: rId,
-                title: r.title?.text || r.title || '関連動画',
-                author: r.author?.name || r.author || currentAuthor,
-                thumbnail: r.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${rId}/hqdefault.jpg`,
-                lengthText: r.duration?.text || '',
-                selected: false
-              };
-            }).filter((it: any) => it.videoId && it.videoId !== videoId)
-          ];
-
-          return res.json({
-            title: `ミックスリスト - ${currentAuthor}、その他`,
-            playlistId: playlistId,
-            currentVideoId: videoId,
-            items: fallbackItems
-          });
-        } catch (fbErr) {
-          console.error('Mix playlist fallback error:', fbErr);
+          const vInfo = await youtube.getInfo(videoId);
+          const basic = vInfo.basic_info;
+          if (basic) {
+            currentTitle = basic.title || currentTitle;
+            currentAuthor = basic.author || currentAuthor;
+            channelId = basic.channel_id || '';
+            currentDuration = basic.duration ? `${Math.floor(basic.duration / 60)}:${(basic.duration % 60).toString().padStart(2, '0')}` : '';
+            if (basic.thumbnail?.length) {
+              currentThumb = basic.thumbnail[basic.thumbnail.length - 1]?.url || currentThumb;
+            }
+          }
+        } catch (e) {
+          console.warn("[Mix] Error getting video info for mix:", e);
         }
       }
 
+      const candidateMap = new Map<string, any>();
+      const artistTracks: any[] = [];
+      const genreTracks: any[] = [];
+
+      // 2. 同一アーティスト/チャンネルの人気曲を優先取得
+      if (currentAuthor && currentAuthor !== 'アーティスト' && currentAuthor !== 'YouTube') {
+        try {
+          const cleanAuthor = currentAuthor.split('/')[0].trim();
+          const authorSearch = await youtube.search(`${cleanAuthor} Official MV`, { type: 'video' });
+          const searchVideos = (authorSearch.videos || []).slice(0, 10);
+          for (const sv of searchVideos) {
+            const svId = sv.id || sv.videoId;
+            if (svId && svId !== videoId) {
+              const item = {
+                videoId: svId,
+                title: sv.title?.text || sv.title || '動画',
+                author: sv.author?.name || sv.author || currentAuthor,
+                thumbnail: sv.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${svId}/hqdefault.jpg`,
+                lengthText: sv.duration?.text || '',
+                isSameArtist: true
+              };
+              if (!candidateMap.has(svId)) {
+                candidateMap.set(svId, item);
+                artistTracks.push(item);
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("[Mix] Error fetching author tracks:", e);
+        }
+      }
+
+      // 3. YouTube公式の /next ミックスリストと関連動画を取得
+      let ytNextItems: any[] = [];
+      try {
+        const nextResult = await youtube.actions.execute('/next', {
+          videoId: videoId,
+          playlistId: playlistId
+        });
+        const playlistData = (nextResult.data as any)?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
+        if (playlistData && Array.isArray(playlistData.contents)) {
+          ytNextItems = playlistData.contents.map((c: any) => {
+            const v = c.playlistPanelVideoRenderer;
+            if (!v) return null;
+            const vId = v.videoId;
+            const vTitle = v.title?.simpleText || v.title?.runs?.[0]?.text || 'タイトルなし';
+            const vAuthor = v.longBylineText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text || 'チャンネル';
+            const thumbs = v.thumbnail?.thumbnails || [];
+            const vThumb = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
+            const vLength = v.lengthText?.simpleText || v.lengthText?.runs?.[0]?.text || '';
+            return {
+              videoId: vId,
+              title: vTitle,
+              author: vAuthor,
+              thumbnail: vThumb,
+              lengthText: vLength
+            };
+          }).filter(Boolean);
+        }
+      } catch (e) {
+        console.warn("[Mix] Error executing /next:", e);
+      }
+
+      // 4. スマートマージ (同一アーティスト曲を上位に配置し、親和性の高いミックスを構築)
+      const mergedList: any[] = [];
+      
+      // 1曲目: 現在再生中の動画
+      mergedList.push({
+        index: 1,
+        videoId: videoId,
+        title: currentTitle,
+        author: currentAuthor,
+        thumbnail: currentThumb,
+        lengthText: currentDuration,
+        selected: true
+      });
+      const seenIds = new Set<string>([videoId]);
+
+      // 2〜4曲目: 同一アーティストの他曲を優先配置
+      let addedArtistCount = 0;
+      for (const at of artistTracks) {
+        if (!seenIds.has(at.videoId) && addedArtistCount < 4) {
+          seenIds.add(at.videoId);
+          mergedList.push({
+            index: mergedList.length + 1,
+            ...at,
+            selected: false
+          });
+          addedArtistCount++;
+        }
+      }
+
+      // 残り: /next のミックス曲 + 関連曲を結合
+      for (const ytItem of ytNextItems) {
+        if (!seenIds.has(ytItem.videoId)) {
+          seenIds.add(ytItem.videoId);
+          mergedList.push({
+            index: mergedList.length + 1,
+            ...ytItem,
+            selected: false
+          });
+          if (mergedList.length >= 25) break;
+        }
+      }
+
+      // まだ25曲に満たない場合は残りのアーティスト曲を追加
+      for (const at of artistTracks) {
+        if (!seenIds.has(at.videoId)) {
+          seenIds.add(at.videoId);
+          mergedList.push({
+            index: mergedList.length + 1,
+            ...at,
+            selected: false
+          });
+          if (mergedList.length >= 25) break;
+        }
+      }
+
+      const mixTitle = currentAuthor && currentAuthor !== 'アーティスト' && currentAuthor !== 'YouTube'
+        ? `ミックスリスト - ${currentAuthor}、その他`
+        : 'ミックスリスト';
+
       return res.json({
-        title: 'ミックスリスト',
+        title: mixTitle,
         playlistId: playlistId,
         currentVideoId: videoId,
-        items: []
+        items: mergedList
       });
     } catch (err: any) {
       console.error("Mix Playlist API error:", err?.message || err);
-      // エラー時も動画IDがあれば最小限のアイテムを返す
       const vId = (req.query.videoId as string) || '';
       const pId = (req.query.playlistId as string) || `RD${vId}`;
       res.json({
