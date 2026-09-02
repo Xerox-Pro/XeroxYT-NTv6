@@ -504,7 +504,12 @@ export default function VideoPlayer({
 
     const queryPrefix = cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`;
 
-    if (activePlaylistId) {
+    // YouTube Embed API は RD... (Mixリスト) などの擬似/ミックスプレイリストIDでの list= 指定をサポートしておらずエラー 152-2 になるため、公式プレイリスト(PL, UU, FL, OLAK等)以外は list パラメータを除外して通常埋め込みとする
+    const isEmbeddableOfficialPlaylist = activePlaylistId && 
+      !activePlaylistId.startsWith('RD') && 
+      !activePlaylistId.startsWith('mix-');
+
+    if (activePlaylistId && isEmbeddableOfficialPlaylist) {
       // プレイリストモード: すでに同じプレイリストが読み込まれている場合は iframe を再構築しない
       if (currentLoadedPlaylistRef.current === activePlaylistId && embedSrc) {
         return;
@@ -515,7 +520,7 @@ export default function VideoPlayer({
         : `https://www.youtubeeducation.com/embed/videoseries?list=${activePlaylistId}&autoplay=1${cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`}`;
       setEmbedSrc(finalSrc);
     } else {
-      // 単体動画モード
+      // ミックスリストまたは単体動画モード（アプリ側で連続再生・トラック切り替えを管理）
       currentLoadedPlaylistRef.current = null;
       if (videoId) {
         setEmbedSrc(`https://www.youtubeeducation.com/embed/${videoId}${queryPrefix}`);
@@ -578,9 +583,14 @@ export default function VideoPlayer({
             (data.event === 'infoDelivery' && (data.info?.playerState === 0 || data.info?.player_state === 0)) ||
             (data.info?.playerState === 0 || data.playerState === 0);
 
-          if (isEnded && !mixPlaylistRef.current) {
-            // 単体動画再生終了時は 5秒カウントダウンして次の関連動画へ
-            startAutoPlayCountdown();
+          if (isEnded) {
+            if (mixPlaylistRef.current) {
+              // ミックスリスト再生終了時は即座に次の曲へ
+              triggerNextTrack('player-ended-event');
+            } else {
+              // 単体動画再生終了時は 5秒カウントダウンして次の関連動画へ
+              startAutoPlayCountdown();
+            }
           }
         }
       } catch (e) {
@@ -1221,9 +1231,9 @@ export default function VideoPlayer({
 
           {/* 5秒カウントダウン オーバーレイ (YouTube公式風 自動再生カウントダウン) */}
           {autoPlayCountdown !== null && (
-            <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-30 flex flex-col items-center justify-center text-white p-6 animate-fade-in">
-              <div className="text-xs font-semibold uppercase tracking-widest text-blue-400 mb-2 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-ping" />
+            <div className="absolute inset-0 bg-black/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-white p-6 animate-fade-in">
+              <div className="text-xs font-medium tracking-widest text-gray-300 mb-2 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                 次の動画を再生します ({autoPlayCountdown}秒)
               </div>
               <h3 className="text-base sm:text-lg font-bold text-center max-w-lg line-clamp-2 mb-6 text-gray-100">
@@ -1231,20 +1241,20 @@ export default function VideoPlayer({
               </h3>
 
               {/* カウントダウンタイマー数字 */}
-              <div className="w-16 h-16 mb-6 rounded-full bg-blue-500/10 border-2 border-blue-500 flex items-center justify-center text-2xl font-black text-blue-400 shadow-lg animate-pulse">
+              <div className="w-16 h-16 mb-6 rounded-full bg-white/10 border-2 border-white/80 flex items-center justify-center text-2xl font-black text-white shadow-xl animate-pulse">
                 {autoPlayCountdown}
               </div>
 
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={cancelAutoPlayCountdown}
-                  className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs sm:text-sm rounded-full transition-colors border border-gray-600"
+                  className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold text-xs sm:text-sm rounded-full transition-colors border border-gray-700"
                 >
                   キャンセル
                 </button>
                 <button
                   onClick={playNextRecommendedVideo}
-                  className="px-6 py-2.5 bg-white hover:bg-gray-100 text-black font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
+                  className="px-6 py-2.5 bg-white hover:bg-gray-200 text-black font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
                 >
                   今すぐ再生
                 </button>
@@ -1368,7 +1378,7 @@ export default function VideoPlayer({
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
               >
                 {refreshingEduKey ? (
-                  <Loader2 size={15} className="animate-spin text-blue-600" />
+                  <Loader2 size={15} className="animate-spin text-gray-700" />
                 ) : (
                   <RotateCw size={15} className={cooldownSec > 0 ? "opacity-50" : ""} />
                 )}
@@ -1393,14 +1403,10 @@ export default function VideoPlayer({
                   if (!nextState) cancelAutoPlayCountdown();
                 }}
                 title={autoPlayEnabled ? "自動再生: オン (動画終了5秒後に関連動画へ進みます)" : "自動再生: オフ"}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all shrink-0 whitespace-nowrap ${
-                  autoPlayEnabled 
-                    ? 'bg-gray-900 text-white border-gray-900 hover:bg-black shadow-xs' 
-                    : 'bg-gray-100 text-gray-600 border-gray-200 hover:bg-gray-200'
-                }`}
+                className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
               >
                 <span>自動再生</span>
-                <div className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${autoPlayEnabled ? 'bg-blue-500 justify-end' : 'bg-gray-300 justify-start'}`}>
+                <div className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${autoPlayEnabled ? 'bg-black justify-end' : 'bg-gray-300 justify-start'}`}>
                   <div className="w-2.5 h-2.5 rounded-full bg-white shadow-xs" />
                 </div>
               </button>

@@ -51,17 +51,6 @@ export interface ReleaseItem {
   type: 'Album' | 'Single' | 'EP';
 }
 
-export interface ShortVideo {
-  videoId: string;
-  title: string;
-  author: string;
-  authorId?: string;
-  authorAvatar?: string;
-  viewCount?: number;
-  likeCount?: string | number;
-  commentCount?: string | number;
-}
-
 export interface Comment {
   id: string;
   author: string;

@@ -8,7 +8,6 @@ interface SidebarProps {
   onClose?: () => void;
   currentView: string;
   onHome: () => void;
-  onShorts?: () => void;
   onSubscriptions?: () => void;
   onLibrary?: () => void;
   onHistory?: () => void;
@@ -19,7 +18,6 @@ interface SidebarProps {
 
 const section1 = [
   { icon: Home, label: 'ホーム', activeValue: 'home' },
-  { icon: Zap, label: 'Shorts', activeValue: 'shorts' },
   { icon: PlaySquare, label: '登録チャンネル', activeValue: 'subscriptions' },
 ];
 
@@ -33,7 +31,6 @@ export default function Sidebar({
   onClose,
   currentView, 
   onHome, 
-  onShorts,
   onSubscriptions,
   onLibrary,
   onHistory,
@@ -50,8 +47,6 @@ export default function Sidebar({
 
     if (activeValue === 'home') {
       onHome();
-    } else if (activeValue === 'shorts' && onShorts) {
-      onShorts();
     } else if (activeValue === 'subscriptions' && onSubscriptions) {
       onSubscriptions();
     } else if (activeValue === 'library' && onLibrary) {

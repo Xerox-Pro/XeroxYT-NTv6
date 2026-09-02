@@ -15,9 +15,8 @@ import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
-import ShortsViewer from './components/ShortsViewer';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
-import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
+import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -34,7 +33,7 @@ export default function App() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'shorts'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
@@ -45,7 +44,7 @@ export default function App() {
   const [isPolling, setIsPolling] = useState(false);
   
   // Cache for static video/channel data
-  const [videoCache, setVideoCache] = useState<Record<string, Video | ShortVideo>>(() => {
+  const [videoCache, setVideoCache] = useState<Record<string, Video>>(() => {
     try {
       const saved = localStorage.getItem('xerox_video_cache');
       return saved ? JSON.parse(saved) : {};
@@ -113,8 +112,6 @@ export default function App() {
       const channelId = path.replace('/channel/', '');
       setSelectedChannelId(channelId);
       setView('channel');
-    } else if (path === '/shorts') {
-      setView('shorts');
     } else if (path === '/feed/subscriptions') {
       setView('subscriptions');
     } else if (path === '/feed/library') {
@@ -315,23 +312,6 @@ export default function App() {
     });
   };
 
-  // 閲覧履歴（ショート動画）記録
-  const handleRecordShortHistory = (short: ShortVideo) => {
-    setWatchHistory(prev => {
-      const filtered = prev.filter(item => item.videoId !== short.videoId);
-      const newItem: WatchHistoryItem = {
-        videoId: short.videoId,
-        title: short.title,
-        author: short.author,
-        authorAvatar: short.authorAvatar,
-        thumbnailUrl: `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`,
-        timestamp: Date.now(),
-        type: 'short'
-      };
-      return [newItem, ...filtered].slice(0, 50);
-    });
-  };
-
   const handleToggleSubscribe = (channel: ChannelSubscription) => {
     setSubscriptions((prev) => {
       const exists = prev.some(s => s.id === channel.id || s.title === channel.title);
@@ -402,7 +382,7 @@ export default function App() {
     localStorage.setItem('xerox_ai_interests', JSON.stringify(aiInterests));
   }, [aiInterests]);
 
-  const updateCache = (videos: (Video | ShortVideo)[]) => {
+  const updateCache = (videos: Video[]) => {
     setVideoCache(prev => {
       const next = { ...prev };
       let changed = false;
@@ -755,7 +735,6 @@ export default function App() {
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
           onHome={handleGoHome}
-          onShorts={() => navigate('/shorts')}
           onSubscriptions={() => setView('subscriptions')}
           onLibrary={() => setView('library')}
           onHistory={() => setView('history')}
@@ -807,14 +786,6 @@ export default function App() {
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
               onSelectChannel={handleSelectChannel}
-            />
-          ) : view === 'shorts' ? (
-            <ShortsViewer
-              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
-              onSelectChannel={handleSelectChannel}
-              subscriptions={subscriptions}
-              onToggleSubscribe={handleToggleSubscribe}
-              onRecordHistory={handleRecordShortHistory}
             />
           ) : view === 'subscriptions' ? (
             <SubscriptionsFeed
