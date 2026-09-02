@@ -1509,6 +1509,49 @@ async function startServer() {
         });
       }
 
+      // フォールバック: 動画の関連動画や関連アーティストから25本のミックスリストを自動生成
+      if (videoId) {
+        try {
+          const videoInfo = await youtube.getInfo(videoId);
+          const currentTitle = (videoInfo.basic_info as any)?.title || '動画';
+          const currentAuthor = (videoInfo.basic_info as any)?.author || 'アーティスト';
+          const related = ((videoInfo as any).related_videos || (videoInfo as any).watch_next_feed || []).slice(0, 24);
+          
+          const fallbackItems = [
+            {
+              index: 1,
+              videoId: videoId,
+              title: currentTitle,
+              author: currentAuthor,
+              thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              lengthText: '',
+              selected: true
+            },
+            ...related.map((r: any, idx: number) => {
+              const rId = r.id || r.video_id || r.videoId;
+              return {
+                index: idx + 2,
+                videoId: rId,
+                title: r.title?.text || r.title || '関連動画',
+                author: r.author?.name || r.author || currentAuthor,
+                thumbnail: r.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${rId}/hqdefault.jpg`,
+                lengthText: r.duration?.text || '',
+                selected: false
+              };
+            }).filter((it: any) => it.videoId && it.videoId !== videoId)
+          ];
+
+          return res.json({
+            title: `ミックスリスト - ${currentAuthor}、その他`,
+            playlistId: playlistId,
+            currentVideoId: videoId,
+            items: fallbackItems
+          });
+        } catch (fbErr) {
+          console.error('Mix playlist fallback error:', fbErr);
+        }
+      }
+
       return res.json({
         title: 'ミックスリスト',
         playlistId: playlistId,
@@ -1517,7 +1560,23 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Mix Playlist API error:", err?.message || err);
-      res.json({ title: 'ミックスリスト', items: [] });
+      // エラー時も動画IDがあれば最小限のアイテムを返す
+      const vId = (req.query.videoId as string) || '';
+      const pId = (req.query.playlistId as string) || `RD${vId}`;
+      res.json({
+        title: 'ミックスリスト',
+        playlistId: pId,
+        currentVideoId: vId,
+        items: vId ? [{
+          index: 1,
+          videoId: vId,
+          title: '再生中の動画',
+          author: 'YouTube',
+          thumbnail: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
+          lengthText: '',
+          selected: true
+        }] : []
+      });
     }
   });
 
