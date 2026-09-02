@@ -169,6 +169,8 @@ export default function VideoPlayer({
   const ytPlayerRef = useRef<any>(null);
   const isYtReadyRef = useRef<boolean>(false);
   const lastLoadedVideoIdRef = useRef<string>(videoId);
+  const currentLoadedPlaylistRef = useRef<string | null>(null);
+  const [embedSrc, setEmbedSrc] = useState<string>('');
 
   // ミックスリストデータ取得
   useEffect(() => {
@@ -337,21 +339,64 @@ export default function VideoPlayer({
     return null;
   };
 
+  // プレイリスト操作（内部コマンド送信）
   const handlePlayNextMix = () => {
-    triggerNextTrack('manual-next-button');
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.nextVideo === 'function') {
+      try {
+        ytPlayerRef.current.nextVideo();
+        return;
+      } catch {}
+    }
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: 'nextVideo',
+        args: []
+      }), '*');
+    }
   };
 
   const handlePlayPrevMix = () => {
-    const prevItem = getPrevMixItem();
-    if (prevItem && mixPlaylist) {
-      onVideoSelect(prevItem.videoId, {
-        videoId: prevItem.videoId,
-        title: prevItem.title,
-        author: prevItem.author,
-        playlistId: mixPlaylist.playlistId,
-        type: 'mix'
-      } as any);
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.previousVideo === 'function') {
+      try {
+        ytPlayerRef.current.previousVideo();
+        return;
+      } catch {}
     }
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(JSON.stringify({
+        event: 'command',
+        func: 'previousVideo',
+        args: []
+      }), '*');
+    }
+  };
+
+  // プレイリスト内の特定曲をクリックした時
+  const handleSelectMixTrack = (trackVideoId: string, trackIndex: number, trackItem: any) => {
+    if (trackIndex >= 0) {
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.playVideoAt === 'function') {
+        try {
+          ytPlayerRef.current.playVideoAt(trackIndex);
+        } catch {}
+      }
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'playVideoAt',
+          args: [trackIndex]
+        }), '*');
+      }
+    }
+    
+    // UI同期
+    onVideoSelect(trackVideoId, {
+      videoId: trackVideoId,
+      title: trackItem?.title,
+      author: trackItem?.author,
+      playlistId: mixPlaylist?.playlistId || playlistId,
+      type: 'mix'
+    } as any);
   };
 
   const handleCloseMixList = () => {
@@ -385,7 +430,48 @@ export default function VideoPlayer({
     fetchEduKey();
   }, []);
 
-  // IFrame の内部遷移および動画再生完了 (ENDED) を検知して自動連続再生する
+  // プレイリスト用 iframe URL の計算＆初期化
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const activePlaylistId = playlistId || mixPlaylist?.playlistId;
+
+  useEffect(() => {
+    let cleanEduKey = eduKey || '';
+    if (cleanEduKey) {
+      if (originUrl) {
+        cleanEduKey = cleanEduKey
+          .replace(/origin=[^&]*/g, `origin=${encodeURIComponent(originUrl)}`)
+          .replace(/forigin=[^&]*/g, `forigin=${encodeURIComponent(originUrl)}`);
+      }
+      cleanEduKey = cleanEduKey.replace(/autoplay=0/g, 'autoplay=1');
+      if (!cleanEduKey.includes('autoplay=')) cleanEduKey += '&autoplay=1';
+      if (!cleanEduKey.includes('enablejsapi=1')) cleanEduKey += '&enablejsapi=1';
+      if (!cleanEduKey.includes('playsinline=1')) cleanEduKey += '&playsinline=1';
+    } else {
+      cleanEduKey = `?autoplay=1&playsinline=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
+    }
+
+    const queryPrefix = cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`;
+
+    if (activePlaylistId) {
+      // プレイリストモード: すでに同じプレイリストが読み込まれている場合は iframe を再構築しない
+      if (currentLoadedPlaylistRef.current === activePlaylistId && embedSrc) {
+        return;
+      }
+      currentLoadedPlaylistRef.current = activePlaylistId;
+      const finalSrc = videoId
+        ? `https://www.youtubeeducation.com/embed/${videoId}${queryPrefix}&list=${activePlaylistId}`
+        : `https://www.youtubeeducation.com/embed/videoseries?list=${activePlaylistId}&autoplay=1${cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`}`;
+      setEmbedSrc(finalSrc);
+    } else {
+      // 単体動画モード
+      currentLoadedPlaylistRef.current = null;
+      if (videoId) {
+        setEmbedSrc(`https://www.youtubeeducation.com/embed/${videoId}${queryPrefix}`);
+      }
+    }
+  }, [videoId, activePlaylistId, eduKey, originUrl]);
+
+  // IFrame の内部遷移および動画再生完了 (ENDED) の監視
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -398,11 +484,16 @@ export default function VideoPlayer({
           }
         }
         if (data && typeof data === 'object') {
-          // プレイヤー内部での video_id の変更検知
+          // プレイヤー内部での video_id の変更検知 (YouTube プレイリストが自動で次の曲に進んだ時)
           const playerVideoId = data.info?.videoData?.video_id || data.info?.videoId || data.videoId;
           if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoIdRef.current && playerVideoId.length >= 8) {
+            console.log('[MixPlayer] YouTube プレイヤー内部で曲が切り替わりました:', playerVideoId);
+            videoIdRef.current = playerVideoId;
+            
             const currentList = mixPlaylistRef.current;
             const matchItem = currentList?.items?.find(it => it.videoId === playerVideoId);
+            
+            // アプリ側の選択・動画情報を同期（URLも追従）
             onVideoSelectRef.current(playerVideoId, {
               videoId: playerVideoId,
               title: matchItem?.title,
@@ -410,16 +501,31 @@ export default function VideoPlayer({
               playlistId: currentList?.playlistId,
               type: currentList ? 'mix' : 'video'
             } as any);
+
+            // ミックスリストのアクティブ曲ハイライト更新
+            if (currentList) {
+              setMixPlaylist(prev => {
+                if (!prev) return null;
+                return {
+                  ...prev,
+                  currentVideoId: playerVideoId,
+                  items: prev.items.map(it => ({
+                    ...it,
+                    selected: it.videoId === playerVideoId
+                  }))
+                };
+              });
+            }
           }
 
-          // 動画再生終了の検知 (YT.PlayerState.ENDED = 0)
+          // 単体動画の場合のみ、動画再生終了 (ENDED) を検知して次の関連動画へ
           const isEnded = 
             (data.event === 'onStateChange' && (data.info === 0 || data.data === 0 || data.info?.playerState === 0 || data.info?.player_state === 0)) ||
             (data.event === 'infoDelivery' && (data.info?.playerState === 0 || data.info?.player_state === 0)) ||
-            (data.info?.playerState === 0 || data.playerState === 0) ||
-            (data.event === 'infoDelivery' && typeof data.info?.currentTime === 'number' && typeof data.info?.duration === 'number' && data.info.duration > 2 && data.info.currentTime >= data.info.duration - 0.75);
+            (data.info?.playerState === 0 || data.playerState === 0);
 
-          if (isEnded) {
+          if (isEnded && !mixPlaylistRef.current) {
+            // 単体動画再生終了時は次の関連動画へ
             triggerNextTrack('player-ended-event');
           }
         }
@@ -448,18 +554,8 @@ export default function VideoPlayer({
           func: 'getPlayerState',
           args: []
         }), '*');
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'getCurrentTime',
-          args: []
-        }), '*');
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'getDuration',
-          args: []
-        }), '*');
       }
-    }, 500);
+    }, 800);
 
     return () => {
       window.removeEventListener('message', handleMessage);
@@ -484,22 +580,16 @@ export default function VideoPlayer({
                 } catch (e) {}
               },
               onStateChange: (event: any) => {
-                if (event.data === 0) { // 0 = YT.PlayerState.ENDED
+                if (event.data === 0 && !mixPlaylistRef.current) { // 単体動画のみ
                   triggerNextTrack('yt-api-ended');
                 }
               },
               onError: (event: any) => {
                 console.warn('[YT] Player error:', event?.data);
-                // 動画が再生不可・ブロックされている場合は1.5秒後に自動でスキップ
-                if (mixPlaylistRef.current) {
-                  setTimeout(() => triggerNextTrack('yt-api-error'), 1500);
-                }
               }
             }
           });
-        } catch (e) {
-          // YT Player attach error ignored
-        }
+        } catch (e) {}
       }
     };
 
@@ -525,9 +615,9 @@ export default function VideoPlayer({
     };
   }, []);
 
-  // videoId 変更時のシームレス自動再生 (iframe を破棄せず内部プレイヤーを更新)
+  // videoId 変更時のシームレス自動再生 (単体動画再生時のみ。プレイリスト時はYouTube公式プレイヤーに任せる)
   useEffect(() => {
-    if (lastLoadedVideoIdRef.current !== videoId) {
+    if (!mixPlaylistRef.current && lastLoadedVideoIdRef.current !== videoId) {
       lastLoadedVideoIdRef.current = videoId;
 
       const triggerPlayback = () => {
@@ -541,7 +631,7 @@ export default function VideoPlayer({
           }
         }
 
-        // 2. postMessage による直接送信（iPad / Safari / WebKit での自動再生保証）
+        // 2. postMessage による直接送信
         if (iframeRef.current && iframeRef.current.contentWindow) {
           try {
             iframeRef.current.contentWindow.postMessage(JSON.stringify({
@@ -558,17 +648,9 @@ export default function VideoPlayer({
         }
       };
 
-      // 即時実行 + 100ms / 300ms / 600ms で確実化
       triggerPlayback();
-      const t1 = setTimeout(triggerPlayback, 100);
-      const t2 = setTimeout(triggerPlayback, 300);
-      const t3 = setTimeout(triggerPlayback, 600);
-
-      return () => {
-        clearTimeout(t1);
-        clearTimeout(t2);
-        clearTimeout(t3);
-      };
+      const t1 = setTimeout(triggerPlayback, 150);
+      return () => clearTimeout(t1);
     }
   }, [videoId]);
 
@@ -1001,46 +1083,6 @@ export default function VideoPlayer({
       histIdx++;
     }
   }
-
-  // iframe URL の構築 (プレイリストモードを有効化しつつ現在曲のindexを指定)
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const activePlaylistId = playlistId || mixPlaylist?.playlistId;
-  let cleanEduKey = eduKey || '';
-
-  if (cleanEduKey) {
-    if (originUrl) {
-      cleanEduKey = cleanEduKey
-        .replace(/origin=[^&]*/g, `origin=${encodeURIComponent(originUrl)}`)
-        .replace(/forigin=[^&]*/g, `forigin=${encodeURIComponent(originUrl)}`);
-    }
-    // autoplay を確実に 1 にする
-    cleanEduKey = cleanEduKey.replace(/autoplay=0/g, 'autoplay=1');
-    if (!cleanEduKey.includes('autoplay=')) {
-      cleanEduKey += '&autoplay=1';
-    }
-    if (!cleanEduKey.includes('enablejsapi=1')) {
-      cleanEduKey += '&enablejsapi=1';
-    }
-    if (!cleanEduKey.includes('playsinline=1')) {
-      cleanEduKey += '&playsinline=1';
-    }
-  } else {
-    cleanEduKey = `?autoplay=1&playsinline=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
-  }
-
-  // プレイリストパラメータの付与
-  let listParam = '';
-  if (activePlaylistId && !cleanEduKey.includes('list=')) {
-    const idxParam = currentMixIndex >= 0 ? `&index=${currentMixIndex}` : '';
-    listParam = `&list=${activePlaylistId}${idxParam}`;
-  }
-
-  const queryPrefix = cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`;
-  const finalQuery = `${queryPrefix}${listParam}`;
-
-  const embedSrc = videoId
-    ? `https://www.youtubeeducation.com/embed/${videoId}${finalQuery}`
-    : (activePlaylistId ? `https://www.youtubeeducation.com/embed/videoseries?list=${activePlaylistId}&autoplay=1${cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`}` : '');
 
   const handleIframeLoad = () => {
     try {
@@ -1518,15 +1560,7 @@ export default function VideoPlayer({
                         return (
                           <div
                             key={`${item.videoId}-${idx}`}
-                            onClick={() => {
-                              onVideoSelect(item.videoId, {
-                                videoId: item.videoId,
-                                title: item.title,
-                                author: item.author,
-                                playlistId: mixPlaylist.playlistId,
-                                type: 'mix'
-                              } as any);
-                            }}
+                            onClick={() => handleSelectMixTrack(item.videoId, idx, item)}
                             className={`flex items-center gap-2.5 p-2 transition-colors cursor-pointer group ${
                               isCurrent
                                 ? 'bg-black/10 font-medium text-gray-900 border-l-4 border-blue-600'
