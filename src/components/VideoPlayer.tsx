@@ -146,41 +146,77 @@ export default function VideoPlayer({
   const [mixPlaylist, setMixPlaylist] = useState<MixPlaylistData | null>(null);
   const [loadingMixPlaylist, setLoadingMixPlaylist] = useState(false);
   const [mixExpanded, setMixExpanded] = useState(true);
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [repeatMode, setRepeatMode] = useState<'all' | 'one' | 'none'>('all');
+  const [autoplay, setAutoplay] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const currentPlaylistIdRef = useRef<string | null>(playlistId || null);
 
-  // ミックスリストデータ取得
+  // ミックスリストデータ取得（playlistIdが変わった時のみ取得し、単なる曲送り時は既存リストを維持）
   useEffect(() => {
-    if (playlistId || (videoId && videoId.startsWith('RD'))) {
-      setLoadingMixPlaylist(true);
-      const targetPlaylistId = playlistId || (videoId.startsWith('RD') ? videoId : `RD${videoId}`);
-      fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${targetPlaylistId || ''}`)
-        .then((data) => {
-          if (data && data.items && data.items.length > 0) {
-            setMixPlaylist(data);
-          } else {
+    const effectivePlaylistId = playlistId || (videoId && videoId.startsWith('RD') ? videoId : (videoId ? `RD${videoId}` : null));
+    
+    // プレイリストIDが存在し、まだ取得していないか別のプレイリストになった場合のみAPIを叩く
+    if (effectivePlaylistId) {
+      if (!mixPlaylist || currentPlaylistIdRef.current !== effectivePlaylistId) {
+        currentPlaylistIdRef.current = effectivePlaylistId;
+        setLoadingMixPlaylist(true);
+        fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${effectivePlaylistId}`)
+          .then((data) => {
+            if (data && data.items && data.items.length > 0) {
+              setMixPlaylist(data);
+            } else {
+              setMixPlaylist(null);
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to load mix playlist', err);
             setMixPlaylist(null);
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to load mix playlist', err);
-          setMixPlaylist(null);
-        })
-        .finally(() => {
-          setLoadingMixPlaylist(false);
-        });
+          })
+          .finally(() => {
+            setLoadingMixPlaylist(false);
+          });
+      }
     } else {
       setMixPlaylist(null);
+      currentPlaylistIdRef.current = null;
     }
-  }, [videoId, playlistId]);
+  }, [playlistId, videoId]);
 
   const currentMixIndex = mixPlaylist?.items.findIndex(item => item.videoId === videoId) ?? -1;
-  const hasNextMixItem = mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1;
-  const hasPrevMixItem = mixPlaylist && currentMixIndex > 0;
+  const totalMixCount = mixPlaylist?.items.length || 0;
 
+  // 次の動画へ進むハンドラー
   const handlePlayNextMix = () => {
-    if (mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1) {
-      const nextItem = mixPlaylist.items[currentMixIndex + 1];
+    if (!mixPlaylist || mixPlaylist.items.length === 0) return;
+    
+    let nextIndex = 0;
+    if (isShuffle) {
+      // シャッフルの場合：現在と異なるランダムな曲を選択
+      const otherIndices = mixPlaylist.items
+        .map((_, i) => i)
+        .filter(i => i !== currentMixIndex);
+      if (otherIndices.length > 0) {
+        nextIndex = otherIndices[Math.floor(Math.random() * otherIndices.length)];
+      } else {
+        nextIndex = 0;
+      }
+    } else {
+      if (currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1) {
+        nextIndex = currentMixIndex + 1;
+      } else {
+        // リスト末尾に到達した時
+        if (repeatMode === 'all') {
+          nextIndex = 0; // 最初に戻る
+        } else {
+          return; // リピート無しの場合は停止
+        }
+      }
+    }
+
+    const nextItem = mixPlaylist.items[nextIndex];
+    if (nextItem) {
       onVideoSelect(nextItem.videoId, {
         videoId: nextItem.videoId,
         title: nextItem.title,
@@ -191,9 +227,34 @@ export default function VideoPlayer({
     }
   };
 
+  // 前の動画へ戻るハンドラー
   const handlePlayPrevMix = () => {
-    if (mixPlaylist && currentMixIndex > 0) {
-      const prevItem = mixPlaylist.items[currentMixIndex - 1];
+    if (!mixPlaylist || mixPlaylist.items.length === 0) return;
+    
+    let prevIndex = 0;
+    if (isShuffle) {
+      const otherIndices = mixPlaylist.items
+        .map((_, i) => i)
+        .filter(i => i !== currentMixIndex);
+      if (otherIndices.length > 0) {
+        prevIndex = otherIndices[Math.floor(Math.random() * otherIndices.length)];
+      } else {
+        prevIndex = 0;
+      }
+    } else {
+      if (currentMixIndex > 0) {
+        prevIndex = currentMixIndex - 1;
+      } else {
+        if (repeatMode === 'all') {
+          prevIndex = mixPlaylist.items.length - 1; // 最後の曲へ
+        } else {
+          prevIndex = 0;
+        }
+      }
+    }
+
+    const prevItem = mixPlaylist.items[prevIndex];
+    if (prevItem) {
       onVideoSelect(prevItem.videoId, {
         videoId: prevItem.videoId,
         title: prevItem.title,
@@ -202,6 +263,15 @@ export default function VideoPlayer({
         type: 'mix'
       } as any);
     }
+  };
+
+  // リピートモードのトグル ('all' -> 'one' -> 'none' -> 'all')
+  const toggleRepeatMode = () => {
+    setRepeatMode(prev => {
+      if (prev === 'all') return 'one';
+      if (prev === 'one') return 'none';
+      return 'all';
+    });
   };
 
   // EduKey 取得
@@ -244,15 +314,22 @@ export default function VideoPlayer({
           }
           // 動画再生終了 (onStateChange === 0) でミックスリストの次の曲へ自動遷移
           if (data.event === 'onStateChange' && (data.info === 0 || data.info?.playerState === 0)) {
-            if (mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1) {
-              const nextItem = mixPlaylist.items[currentMixIndex + 1];
-              onVideoSelect(nextItem.videoId, {
-                videoId: nextItem.videoId,
-                title: nextItem.title,
-                author: nextItem.author,
-                playlistId: mixPlaylist.playlistId,
-                type: 'mix'
-              } as any);
+            if (repeatMode === 'one') {
+              // 1曲リピート：iframeに再度再生または再読込
+              if (iframeRef.current && iframeRef.current.contentWindow) {
+                iframeRef.current.contentWindow.postMessage(JSON.stringify({
+                  event: 'command',
+                  func: 'seekTo',
+                  args: [0, true]
+                }), '*');
+                iframeRef.current.contentWindow.postMessage(JSON.stringify({
+                  event: 'command',
+                  func: 'playVideo',
+                  args: []
+                }), '*');
+              }
+            } else if (autoplay) {
+              handlePlayNextMix();
             }
           }
         }
@@ -1008,66 +1085,108 @@ export default function VideoPlayer({
           <div className="flex flex-col gap-3">
             {/* YouTube公式スタイル ミックスリスト（再生リスト）パネル */}
             {(playlistId || videoId?.startsWith('RD') || mixPlaylist) && (
-              <div className="mb-2 bg-gray-900 text-white rounded-2xl overflow-hidden shadow-xl border border-gray-800">
+              <div className="mb-3 bg-[#0f0f0f] text-white rounded-xl overflow-hidden shadow-lg border border-[#272727]">
                 {/* ヘッダー情報 */}
-                <div className="p-3.5 bg-gradient-to-r from-gray-900 via-gray-900 to-gray-850 border-b border-gray-800 flex flex-col gap-2">
+                <div className="p-3 bg-[#181818] border-b border-[#272727] flex flex-col gap-2">
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1.5 text-[11px] text-blue-400 font-bold uppercase tracking-wider">
-                        <ListMusic size={14} />
-                        <span>YouTube ミックスリスト</span>
+                    <div className="flex flex-col min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 text-[11px] text-blue-400 font-semibold">
+                        <ListMusic size={14} className="shrink-0" />
+                        <span className="truncate">YOUTUBE ミックスリスト</span>
                       </div>
                       <h3 className="text-sm font-bold text-white truncate mt-0.5">
-                        {mixPlaylist?.title || videoData?.title || 'ミックスリスト'}
+                        {mixPlaylist?.title || `ミックスリスト - ${videoData?.title || '再生中'}`}
                       </h3>
                       <p className="text-[11px] text-gray-400 truncate mt-0.5">
-                        {videoData?.author || '関連チャンネル'} • {mixPlaylist?.items?.length || 25} 本の動画
+                        {videoData?.author || 'YouTube'} • {totalMixCount > 0 ? `${totalMixCount} 本の動画` : '読み込み中...'}
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => setMixExpanded(!mixExpanded)}
-                      className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors shrink-0"
+                      className="p-1.5 hover:bg-[#272727] rounded-full text-gray-400 hover:text-white transition-colors shrink-0"
                       title={mixExpanded ? 'パネルを折りたたむ' : 'パネルを展開'}
                     >
                       {mixExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                     </button>
                   </div>
 
-                  {/* ナビゲーション・コントロールボタン */}
-                  <div className="flex items-center justify-between pt-1 border-t border-gray-800/80">
-                    <span className="text-[11px] text-gray-400 font-medium">
-                      {currentMixIndex >= 0 ? `${currentMixIndex + 1} / ${mixPlaylist?.items?.length || 25}` : '再生中'}
+                  {/* ナビゲーション・コントロール行（シャッフル、リピート、前へ、次へ） */}
+                  <div className="flex items-center justify-between pt-2 border-t border-[#272727]/80">
+                    <span className="text-xs text-gray-300 font-medium">
+                      {currentMixIndex >= 0 ? `${currentMixIndex + 1} / ${totalMixCount}` : '1 / 25'}
                     </span>
                     <div className="flex items-center gap-1">
+                      {/* ループ/リピートボタン */}
+                      <button
+                        type="button"
+                        onClick={toggleRepeatMode}
+                        className={`relative p-1.5 rounded-full transition-colors ${
+                          repeatMode !== 'none'
+                            ? 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/25'
+                            : 'text-gray-400 hover:text-white hover:bg-[#272727]'
+                        }`}
+                        title={
+                          repeatMode === 'all'
+                            ? '全曲ループ再生 (ON)'
+                            : repeatMode === 'one'
+                            ? '1曲リピート再生 (ON)'
+                            : 'リピート再生 (OFF)'
+                        }
+                      >
+                        <Repeat size={16} />
+                        {repeatMode === 'one' && (
+                          <span className="absolute -top-0.5 -right-0.5 bg-blue-500 text-black text-[9px] font-black w-3.5 h-3.5 rounded-full flex items-center justify-center leading-none">
+                            1
+                          </span>
+                        )}
+                      </button>
+
+                      {/* シャッフルボタン */}
+                      <button
+                        type="button"
+                        onClick={() => setIsShuffle(!isShuffle)}
+                        className={`p-1.5 rounded-full transition-colors ${
+                          isShuffle
+                            ? 'text-blue-400 bg-blue-500/15 hover:bg-blue-500/25'
+                            : 'text-gray-400 hover:text-white hover:bg-[#272727]'
+                        }`}
+                        title={isShuffle ? 'シャッフル再生 (ON)' : 'シャッフル再生 (OFF)'}
+                      >
+                        <Shuffle size={16} />
+                      </button>
+
+                      {/* 前の動画 */}
                       <button
                         type="button"
                         onClick={handlePlayPrevMix}
-                        disabled={!hasPrevMixItem}
-                        className="p-1.5 hover:bg-gray-800 disabled:opacity-30 rounded-lg text-gray-300 hover:text-white transition-colors"
+                        disabled={currentMixIndex <= 0 && repeatMode === 'none'}
+                        className="p-1.5 hover:bg-[#272727] disabled:opacity-25 rounded-full text-gray-300 hover:text-white transition-colors"
                         title="前の動画"
                       >
-                        <SkipBack size={15} />
+                        <SkipBack size={16} />
                       </button>
+
+                      {/* 次の動画 */}
                       <button
                         type="button"
                         onClick={handlePlayNextMix}
-                        disabled={!hasNextMixItem}
-                        className="p-1.5 hover:bg-gray-800 disabled:opacity-30 rounded-lg text-gray-300 hover:text-white transition-colors"
+                        disabled={currentMixIndex >= totalMixCount - 1 && repeatMode === 'none' && !isShuffle}
+                        className="p-1.5 hover:bg-[#272727] disabled:opacity-25 rounded-full text-gray-300 hover:text-white transition-colors"
                         title="次の動画"
                       >
-                        <SkipForward size={15} />
+                        <SkipForward size={16} />
                       </button>
                     </div>
                   </div>
                 </div>
 
-                {/* 動画リスト (YouTub公式ミックスリスト一覧) */}
+                {/* 動画リスト一覧 (YouTube公式ダークパネルスタイル) */}
                 {mixExpanded && (
-                  <div className="max-h-[360px] overflow-y-auto divide-y divide-gray-800/60 custom-scrollbar">
+                  <div className="max-h-[440px] overflow-y-auto divide-y divide-[#1f1f1f] custom-scrollbar bg-[#0f0f0f]">
                     {loadingMixPlaylist && (!mixPlaylist || mixPlaylist.items.length === 0) ? (
-                      <div className="p-6 flex items-center justify-center gap-2 text-xs text-gray-400">
-                        <Loader2 className="animate-spin text-blue-400" size={16} />
+                      <div className="p-8 flex flex-col items-center justify-center gap-2 text-xs text-gray-400">
+                        <Loader2 className="animate-spin text-blue-400" size={20} />
                         <span>ミックスリストを読み込み中...</span>
                       </div>
                     ) : mixPlaylist?.items && mixPlaylist.items.length > 0 ? (
@@ -1085,41 +1204,50 @@ export default function VideoPlayer({
                                 type: 'mix'
                               } as any);
                             }}
-                            className={`flex items-center gap-2.5 p-2.5 transition-colors cursor-pointer group ${
+                            className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors group ${
                               isCurrent
-                                ? 'bg-blue-600/25 text-white font-medium border-l-4 border-blue-500'
-                                : 'hover:bg-gray-800/80 text-gray-300'
+                                ? 'bg-[#272727] border-l-2 border-blue-500'
+                                : 'hover:bg-[#1c1c1c]'
                             }`}
                           >
                             {/* 番号 or 再生中アイコン */}
-                            <div className="w-5 text-center shrink-0 text-xs font-bold text-gray-400">
+                            <div className="w-5 text-center shrink-0 flex items-center justify-center">
                               {isCurrent ? (
-                                <span className="text-blue-400 animate-pulse text-xs">▶</span>
+                                <Play size={11} className="fill-blue-400 text-blue-400" />
                               ) : (
-                                <span className="text-[11px]">{idx + 1}</span>
+                                <span className="text-[11px] text-gray-400 group-hover:text-white font-medium">
+                                  {idx + 1}
+                                </span>
                               )}
                             </div>
 
                             {/* サムネイル */}
-                            <div className="w-16 h-10 shrink-0 relative rounded overflow-hidden bg-gray-800 border border-gray-700/60">
+                            <div className="w-20 h-11 shrink-0 relative rounded-lg overflow-hidden bg-[#181818] border border-white/5">
                               <img
                                 src={item.thumbnail}
                                 alt={item.title}
                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                loading="lazy"
                               />
                               {item.lengthText && (
-                                <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[9px] px-1 rounded font-semibold">
+                                <span className="absolute bottom-1 right-1 bg-black/85 text-white text-[9px] px-1 py-0.2 rounded font-semibold leading-none">
                                   {item.lengthText}
                                 </span>
                               )}
                             </div>
 
-                            {/* タイトル ＆ 投稿者 */}
-                            <div className="flex flex-col min-w-0 flex-1">
-                              <h4 className={`text-xs leading-snug truncate ${isCurrent ? 'font-bold text-blue-300' : 'group-hover:text-white'}`}>
+                            {/* タイトル ＆ チャンネル名 */}
+                            <div className="flex flex-col min-w-0 flex-1 justify-center">
+                              <h4
+                                className={`text-xs leading-snug line-clamp-2 ${
+                                  isCurrent
+                                    ? 'text-blue-400 font-semibold'
+                                    : 'text-gray-100 group-hover:text-white font-normal'
+                                }`}
+                              >
                                 {item.title}
                               </h4>
-                              <span className="text-[10px] text-gray-400 truncate mt-0.5">
+                              <span className="text-[11px] text-gray-400 truncate mt-0.5">
                                 {item.author}
                               </span>
                             </div>
@@ -1127,8 +1255,8 @@ export default function VideoPlayer({
                         );
                       })
                     ) : (
-                      <div className="p-4 text-center text-xs text-gray-400">
-                        再生リストの動画を取得できませんでした
+                      <div className="p-6 text-center text-xs text-gray-400">
+                        ミックスリストの動画を取得できませんでした
                       </div>
                     )}
                   </div>
