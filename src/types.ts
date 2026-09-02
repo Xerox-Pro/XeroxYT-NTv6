@@ -13,6 +13,7 @@ export interface Video {
   author: string;
   authorId?: string;
   authorAvatar?: string;
+  multipleChannelIds?: string[];
   viewCount: number;
   publishedText: string;
   lengthSeconds: number;

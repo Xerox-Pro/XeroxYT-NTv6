@@ -5,7 +5,7 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X
 } from 'lucide-react';
 import Avatar from './Avatar';
 
@@ -141,6 +141,10 @@ export default function VideoPlayer({
   const [superChatAmount, setSuperChatAmount] = useState('1000');
   const [superChatMessage, setSuperChatMessage] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  const [showMultiChannelDialog, setShowMultiChannelDialog] = useState(false);
+  const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
+  const [multiChannelsData, setMultiChannelsData] = useState<any[]>([]);
 
   // Track video viewing duration for recommendation AI
   useEffect(() => {
@@ -396,6 +400,29 @@ export default function VideoPlayer({
       return <span key={i}>{part}</span>;
     });
   };
+
+  const handleAuthorClick = async () => {
+    if (videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
+      setShowMultiChannelDialog(true);
+      if (multiChannelsData.length === 0) {
+        setMultiChannelsLoading(true);
+        try {
+          const channels = await Promise.all(
+            videoData.multipleChannelIds.map((id: string) => 
+              fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
+            )
+          );
+          setMultiChannelsData(channels.filter(Boolean));
+        } catch (err) {
+          console.error('Failed to load multi channels', err);
+        }
+        setMultiChannelsLoading(false);
+      }
+    } else {
+      onSelectChannel(videoData.authorId || videoData.author);
+    }
+  };
+
   let histIdx = 0;
 
   if (baseRecs.length === 0) {
@@ -456,7 +483,7 @@ export default function VideoPlayer({
             {/* チャンネル情報 */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => onSelectChannel(videoData.authorId || videoData.author)}
+                onClick={handleAuthorClick}
                 className="hover:opacity-80 transition-opacity"
                 title={`${videoData.author}のチャンネルを開く`}
               >
@@ -469,11 +496,14 @@ export default function VideoPlayer({
               
               <div className="flex flex-col">
                 <button
-                  onClick={() => onSelectChannel(videoData.authorId || videoData.author)}
+                  onClick={handleAuthorClick}
                   className="flex items-center gap-1 text-left hover:underline"
                 >
                   <h3 className="font-bold text-gray-900 text-[15px]">{videoData.author}</h3>
-                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">✓</span>
+                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
+                  {videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1 && (
+                    <ChevronDown size={14} className="text-gray-500 shrink-0" />
+                  )}
                 </button>
                 <p className="text-xs font-normal text-gray-500">
                   {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
@@ -926,6 +956,60 @@ export default function VideoPlayer({
               >
                 ¥{parseInt(superChatAmount).toLocaleString()} で送信
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi Channel Selection Modal */}
+      {showMultiChannelDialog && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 relative max-h-[80vh]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">チャンネルを選択</h2>
+              <button
+                onClick={() => setShowMultiChannelDialog(false)}
+                className="p-1 hover:bg-gray-100 rounded-full"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
+              {multiChannelsLoading ? (
+                <div className="flex justify-center p-4">
+                  <div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                </div>
+              ) : multiChannelsData.length > 0 ? (
+                multiChannelsData.map((channel, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setShowMultiChannelDialog(false);
+                      onSelectChannel(channel.authorId || channel.id);
+                    }}
+                    className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left"
+                  >
+                    <Avatar
+                      src={channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url)}
+                      name={channel.title || channel.author || channel.name}
+                      className="w-12 h-12 shadow-sm shrink-0"
+                    />
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="font-bold text-gray-900 text-sm truncate">
+                        {channel.title || channel.author || channel.name}
+                      </span>
+                      {(channel.subCountText || channel.subCount) && (
+                        <span className="text-xs text-gray-500">
+                          {channel.subCountText || channel.subCount}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500 text-center p-4">チャンネル情報を読み込めませんでした。</p>
+              )}
             </div>
           </div>
         </div>

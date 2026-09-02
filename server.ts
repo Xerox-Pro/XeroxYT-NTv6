@@ -1295,12 +1295,23 @@ async function startServer() {
       const owner = secondary?.owner;
       const authorAvatar = (owner?.author as any)?.thumbnails?.[0]?.url || (owner?.author as any)?.avatar_thumbnail_url || (basic?.author as any)?.thumbnails?.[0]?.url;
 
+      let multipleChannelIds: string[] | undefined = undefined;
+      if (owner) {
+        const ownerStr = JSON.stringify(owner);
+        // Extract all browseIds belonging to channels (UC...)
+        const matches = [...ownerStr.matchAll(/\"browseId\":\"(UC[a-zA-Z0-9_-]+)\"/g)].map(m => m[1]);
+        if (matches.length > 1) {
+          multipleChannelIds = Array.from(new Set(matches));
+        }
+      }
+
       res.json({
         videoId: req.params.id,
         title: basic?.title || primary?.title?.text,
         author: owner?.author?.name || basic?.author || 'Unknown',
         authorId: owner?.author?.id || basic?.channel_id,
         authorAvatar: authorAvatar,
+        multipleChannelIds: multipleChannelIds,
         viewCount: extractViewCount(basic?.view_count) || extractViewCount(primary?.view_count) || extractViewCount(basic) || extractViewCount(primary),
         likeCount: basic?.like_count,
         publishedText: primary?.published?.text || primary?.relative_date?.text,
