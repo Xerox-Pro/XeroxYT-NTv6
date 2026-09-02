@@ -9,6 +9,72 @@ import {
 } from 'lucide-react';
 import Avatar from './Avatar';
 
+interface CommentItemProps {
+  comment: Comment;
+  onSelectChannel: (channelIdOrName: string) => void;
+}
+
+const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  
+  // 3行以上または長いテキストの判定
+  const lineCount = (comment.text || '').split('\n').length;
+  const isLong = lineCount > 3 || (comment.text || '').length > 160;
+
+  return (
+    <div className="flex items-start gap-3 text-sm">
+      <button 
+        onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+        className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
+        title={`${comment.author}のチャンネルを開く`}
+      >
+        <Avatar 
+          src={comment.authorAvatar} 
+          name={comment.author} 
+          channelId={comment.authorId}
+          className="w-9 h-9 text-xs shadow-xs" 
+        />
+      </button>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+            className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
+          >
+            {comment.author}
+          </button>
+          <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
+        </div>
+        
+        <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
+          {comment.text}
+        </p>
+
+        {isLong && (
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
+          >
+            {isExpanded ? '一部を表示' : '続きを読む'}
+          </button>
+        )}
+
+        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
+            <ThumbsUp size={14} />
+            <span>{comment.likeCount}</span>
+          </button>
+          <button className="hover:text-gray-900">
+            <ThumbsDown size={14} />
+          </button>
+          <button className="hover:text-gray-900 font-semibold">返信</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface LiveChatMessage {
   id: string;
   author: string;
@@ -680,32 +746,11 @@ export default function VideoPlayer({
             ) : (
               <div className="flex flex-col gap-5">
                 {comments.map((comment) => (
-                  <div key={comment.id} className="flex gap-3 text-sm">
-                    <button onClick={() => onSelectChannel(comment.authorId || comment.author)} className="shrink-0 cursor-pointer text-left">
-                      <Avatar src={comment.authorAvatar} name={comment.author} className="w-9 h-9 text-xs" />
-                    </button>
-                    <div className="flex flex-col gap-1 flex-1">
-                      <div className="flex items-center gap-2">
-                        <button onClick={() => onSelectChannel(comment.authorId || comment.author)} className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left">
-                          {comment.author}
-                        </button>
-                        <span className="text-[11px] text-gray-500">{comment.publishedTime}</span>
-                      </div>
-                      <p className="text-gray-800 text-sm font-normal leading-normal whitespace-pre-wrap">
-                        {comment.text}
-                      </p>
-                      <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-                        <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
-                          <ThumbsUp size={14} />
-                          <span>{comment.likeCount}</span>
-                        </button>
-                        <button className="hover:text-gray-900">
-                          <ThumbsDown size={14} />
-                        </button>
-                        <button className="hover:text-gray-900 font-semibold">返信</button>
-                      </div>
-                    </div>
-                  </div>
+                  <CommentItem 
+                    key={comment.id} 
+                    comment={comment} 
+                    onSelectChannel={onSelectChannel} 
+                  />
                 ))}
               </div>
             )}

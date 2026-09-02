@@ -1335,11 +1335,20 @@ async function startServer() {
         for (const thread of commentsData.contents) {
           const c = thread.comment;
           if (c) {
+            let authorAvatar = c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
+                               c.author?.thumbnails?.[0]?.url ||
+                               c.author?.avatar_thumbnail_url ||
+                               (c as any)?.creator_thumbnail_url ||
+                               (c as any)?.author_thumbnail?.thumbnails?.[0]?.url ||
+                               (c as any)?.author_thumbnails?.[0]?.url || '';
+            if (authorAvatar && authorAvatar.startsWith('//')) {
+              authorAvatar = 'https:' + authorAvatar;
+            }
             comments.push({
               id: c.comment_id || Math.random().toString(),
               author: c.author?.name || '匿名ユーザー',
               authorId: c.author?.id || (c.author as any)?.channel_id || c.author?.endpoint?.payload?.browseId || '',
-              authorAvatar: c.author?.thumbnails?.[0]?.url || c.author?.avatar_thumbnail_url,
+              authorAvatar: authorAvatar,
               text: c.content?.text || '',
               publishedTime: c.published_time || '最近',
               likeCount: c.like_count || '0'
