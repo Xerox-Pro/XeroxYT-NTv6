@@ -246,7 +246,21 @@ export default function VideoPlayer({
 
     if (playlistId || (videoId && videoId.startsWith('RD'))) {
       setLoadingMixPlaylist(true);
-      fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${targetPlaylistId || ''}`)
+      
+      // ユーザーの過去の視聴履歴からアーティスト群を取得してサーバーにパラメータとして送る
+      let historyAuthorsParam = '';
+      try {
+        const savedHistory = localStorage.getItem('xerox_watch_history');
+        if (savedHistory) {
+          const parsed = JSON.parse(savedHistory);
+          if (Array.isArray(parsed)) {
+            const authors = parsed.map((item: any) => item.author).filter(Boolean).slice(0, 15);
+            historyAuthorsParam = encodeURIComponent(authors.join(','));
+          }
+        }
+      } catch (e) {}
+
+      fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${targetPlaylistId || ''}&historyAuthors=${historyAuthorsParam}`)
         .then((data) => {
           if (data && data.items && data.items.length > 0) {
             setMixPlaylist({
