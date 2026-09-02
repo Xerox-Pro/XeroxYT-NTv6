@@ -206,21 +206,94 @@ export default function VideoPlayer({
 
   const currentMixIndex = mixPlaylist?.items.findIndex(item => item.videoId === videoId) ?? -1;
 
+  // Refs for persistent event listening without stale closures
+  const mixPlaylistRef = useRef(mixPlaylist);
+  const isShuffleRef = useRef(isShuffle);
+  const isLoopRef = useRef(isLoop);
+  const currentMixIndexRef = useRef(currentMixIndex);
+  const onVideoSelectRef = useRef(onVideoSelect);
+  const videoIdRef = useRef(videoId);
+  const hasTriggeredEndRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    mixPlaylistRef.current = mixPlaylist;
+    isShuffleRef.current = isShuffle;
+    isLoopRef.current = isLoop;
+    currentMixIndexRef.current = currentMixIndex;
+    onVideoSelectRef.current = onVideoSelect;
+    videoIdRef.current = videoId;
+  });
+
+  // videoIdが変わったら遷移済みフラグをリセット
+  useEffect(() => {
+    hasTriggeredEndRef.current = null;
+  }, [videoId]);
+
+  // 次の曲へ自動遷移する統一関数
+  const triggerNextTrack = (source: string) => {
+    if (hasTriggeredEndRef.current === videoIdRef.current) {
+      return;
+    }
+    const currentList = mixPlaylistRef.current;
+    if (!currentList || !currentList.items || currentList.items.length === 0) return;
+
+    const len = currentList.items.length;
+    let cIdx = currentMixIndexRef.current;
+    if (cIdx === -1) {
+      cIdx = currentList.items.findIndex(it => it.videoId === videoIdRef.current);
+    }
+
+    let nextItem: any = null;
+
+    if (isShuffleRef.current && len > 1) {
+      let randIdx = Math.floor(Math.random() * len);
+      if (randIdx === cIdx) {
+        randIdx = (randIdx + 1) % len;
+      }
+      nextItem = currentList.items[randIdx];
+    } else if (cIdx !== -1 && cIdx < len - 1) {
+      nextItem = currentList.items[cIdx + 1];
+    } else if (cIdx === -1 && len > 0) {
+      nextItem = currentList.items[0];
+    } else if (isLoopRef.current && len > 0) {
+      nextItem = currentList.items[0];
+    }
+
+    if (nextItem) {
+      hasTriggeredEndRef.current = videoIdRef.current;
+      console.log(`[MixPlaylist] 自動連続再生: 次の曲へ遷移 (${source}) ->`, nextItem.videoId, nextItem.title);
+      onVideoSelectRef.current(nextItem.videoId, {
+        videoId: nextItem.videoId,
+        title: nextItem.title,
+        author: nextItem.author,
+        playlistId: currentList.playlistId,
+        type: 'mix'
+      } as any);
+    }
+  };
+
   // 次の動画を計算（シャッフル・ループ考慮）
   const getNextMixItem = () => {
     if (!mixPlaylist || !mixPlaylist.items || mixPlaylist.items.length === 0) return null;
     const len = mixPlaylist.items.length;
+    let cIdx = currentMixIndex;
+    if (cIdx === -1) {
+      cIdx = mixPlaylist.items.findIndex(it => it.videoId === videoId);
+    }
     if (isShuffle && len > 1) {
       let randIdx = Math.floor(Math.random() * len);
-      if (randIdx === currentMixIndex) {
+      if (randIdx === cIdx) {
         randIdx = (randIdx + 1) % len;
       }
       return mixPlaylist.items[randIdx];
     }
-    if (currentMixIndex !== -1 && currentMixIndex < len - 1) {
-      return mixPlaylist.items[currentMixIndex + 1];
+    if (cIdx !== -1 && cIdx < len - 1) {
+      return mixPlaylist.items[cIdx + 1];
     }
-    if (isLoop) {
+    if (cIdx === -1 && len > 0) {
+      return mixPlaylist.items[0];
+    }
+    if (isLoop && len > 0) {
       return mixPlaylist.items[0];
     }
     return null;
@@ -230,33 +303,28 @@ export default function VideoPlayer({
   const getPrevMixItem = () => {
     if (!mixPlaylist || !mixPlaylist.items || mixPlaylist.items.length === 0) return null;
     const len = mixPlaylist.items.length;
+    let cIdx = currentMixIndex;
+    if (cIdx === -1) {
+      cIdx = mixPlaylist.items.findIndex(it => it.videoId === videoId);
+    }
     if (isShuffle && len > 1) {
       let randIdx = Math.floor(Math.random() * len);
-      if (randIdx === currentMixIndex) {
+      if (randIdx === cIdx) {
         randIdx = (randIdx - 1 + len) % len;
       }
       return mixPlaylist.items[randIdx];
     }
-    if (currentMixIndex > 0) {
-      return mixPlaylist.items[currentMixIndex - 1];
+    if (cIdx > 0) {
+      return mixPlaylist.items[cIdx - 1];
     }
-    if (isLoop) {
+    if (isLoop && len > 0) {
       return mixPlaylist.items[len - 1];
     }
     return null;
   };
 
   const handlePlayNextMix = () => {
-    const nextItem = getNextMixItem();
-    if (nextItem && mixPlaylist) {
-      onVideoSelect(nextItem.videoId, {
-        videoId: nextItem.videoId,
-        title: nextItem.title,
-        author: nextItem.author,
-        playlistId: mixPlaylist.playlistId,
-        type: 'mix'
-      } as any);
-    }
+    triggerNextTrack('manual-next-button');
   };
 
   const handlePlayPrevMix = () => {
@@ -303,7 +371,7 @@ export default function VideoPlayer({
     fetchEduKey();
   }, []);
 
-  // IFrame の内部遷移（プレイリストの次の動画など）を検知する
+  // IFrame の内部遷移および動画再生完了 (ENDED) を検知して自動連続再生する
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
@@ -316,35 +384,34 @@ export default function VideoPlayer({
           }
         }
         if (data && typeof data === 'object') {
-          // video_id の変更検知
+          // プレイヤー内部での video_id の変更検知
           const playerVideoId = data.info?.videoData?.video_id || data.info?.videoId || data.videoId;
-          if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoId && playerVideoId.length >= 8) {
-            onVideoSelect(playerVideoId);
+          if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoIdRef.current && playerVideoId.length >= 8) {
+            onVideoSelectRef.current(playerVideoId);
           }
-          // 動画再生終了 (onStateChange === 0) でミックスリストの次の曲へ自動遷移（シャッフル/ループ対応）
-          if (data.event === 'onStateChange' && (data.info === 0 || data.info?.playerState === 0)) {
-            if (mixPlaylist) {
-              const nextItem = getNextMixItem();
-              if (nextItem) {
-                onVideoSelect(nextItem.videoId, {
-                  videoId: nextItem.videoId,
-                  title: nextItem.title,
-                  author: nextItem.author,
-                  playlistId: mixPlaylist.playlistId,
-                  type: 'mix'
-                } as any);
-              }
-            }
+
+          // 動画再生終了の検知 (YT.PlayerState.ENDED = 0)
+          // 1. event: "onStateChange" かつ info = 0 または data = 0
+          // 2. event: "infoDelivery" かつ info.playerState = 0
+          // 3. info.playerState = 0 または playerState = 0
+          const isEnded = 
+            (data.event === 'onStateChange' && (data.info === 0 || data.data === 0 || data.info?.playerState === 0)) ||
+            (data.event === 'infoDelivery' && data.info?.playerState === 0) ||
+            (data.info?.playerState === 0 || data.playerState === 0) ||
+            (data.event === 'infoDelivery' && typeof data.info?.currentTime === 'number' && typeof data.info?.duration === 'number' && data.info.duration > 2 && data.info.currentTime >= data.info.duration - 0.75);
+
+          if (isEnded) {
+            triggerNextTrack('player-ended-event');
           }
         }
       } catch (e) {
-        // parsing error ignored
+        // ignore message parse errors
       }
     };
 
     window.addEventListener('message', handleMessage);
 
-    // プレイヤーにイベントの送信を要求する
+    // プレイヤーに定期的にリスナー登録と状態取得コマンドを送信
     const timer = setInterval(() => {
       if (iframeRef.current && iframeRef.current.contentWindow) {
         iframeRef.current.contentWindow.postMessage(JSON.stringify({
@@ -357,14 +424,19 @@ export default function VideoPlayer({
           func: 'getVideoData',
           args: []
         }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'getPlayerState',
+          args: []
+        }), '*');
       }
-    }, 800);
+    }, 600);
 
     return () => {
       window.removeEventListener('message', handleMessage);
       clearInterval(timer);
     };
-  }, [videoId, mixPlaylist, currentMixIndex, isShuffle, isLoop, onVideoSelect]);
+  }, []);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
