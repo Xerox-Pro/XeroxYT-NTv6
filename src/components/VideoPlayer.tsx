@@ -5,93 +5,9 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X,
-  SkipForward, SkipBack, Play, Shuffle, Repeat, Trash2
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw
 } from 'lucide-react';
-
-interface MixItem {
-  index: number;
-  videoId: string;
-  title: string;
-  author: string;
-  thumbnail: string;
-  lengthText: string;
-  selected: boolean;
-}
-
-interface MixPlaylistData {
-  title: string;
-  playlistId: string;
-  currentVideoId: string;
-  items: MixItem[];
-}
 import Avatar from './Avatar';
-
-interface CommentItemProps {
-  comment: Comment;
-  onSelectChannel: (channelIdOrName: string) => void;
-}
-
-const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  // 3行以上または長いテキストの判定
-  const lineCount = (comment.text || '').split('\n').length;
-  const isLong = lineCount > 3 || (comment.text || '').length > 160;
-
-  return (
-    <div className="flex items-start gap-3 text-sm">
-      <button 
-        onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-        className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
-        title={`${comment.author}のチャンネルを開く`}
-      >
-        <Avatar 
-          src={comment.authorAvatar} 
-          name={comment.author} 
-          channelId={comment.authorId}
-          className="w-9 h-9 text-xs shadow-xs" 
-        />
-      </button>
-      <div className="flex flex-col gap-1 flex-1 min-w-0">
-        <div className="flex items-center gap-2">
-          <button 
-            onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-            className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
-          >
-            {comment.author}
-          </button>
-          <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
-        </div>
-        
-        <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
-          {comment.text}
-        </p>
-
-        {isLong && (
-          <button
-            type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
-          >
-            {isExpanded ? '一部を表示' : '続きを読む'}
-          </button>
-        )}
-
-        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
-            <ThumbsUp size={14} />
-            <span>{comment.likeCount}</span>
-          </button>
-          <button className="hover:text-gray-900">
-            <ThumbsDown size={14} />
-          </button>
-          <button className="hover:text-gray-900 font-semibold">返信</button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 interface LiveChatMessage {
   id: string;
@@ -116,19 +32,6 @@ interface VideoPlayerProps {
   onOpenAddToPlaylist?: (video: Video) => void;
   onCacheVideo?: (video: Video) => void;
   watchHistory?: WatchHistoryItem[];
-  videoCache?: Record<string, Video>;
-}
-
-function parseDurationText(text?: string): number {
-  if (!text) return 0;
-  const parts = text.trim().split(':').map(Number);
-  if (parts.some(isNaN)) return 0;
-  if (parts.length === 2) {
-    return parts[0] * 60 + parts[1];
-  } else if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }
-  return 0;
 }
 
 export default function VideoPlayer({
@@ -141,12 +44,9 @@ export default function VideoPlayer({
   onRecordHistory,
   onOpenAddToPlaylist,
   onCacheVideo,
-  watchHistory = [],
-  videoCache = {}
+  watchHistory = []
 }: VideoPlayerProps) {
-  const [videoData, setVideoData] = useState<Video | null>(() => {
-    return videoCache[videoId] || null;
-  });
+  const [videoData, setVideoData] = useState<Video | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
@@ -158,509 +58,13 @@ export default function VideoPlayer({
   const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
 
-  // ミックスリスト State
-  const [mixPlaylist, setMixPlaylist] = useState<MixPlaylistData | null>(null);
-  const [loadingMixPlaylist, setLoadingMixPlaylist] = useState(false);
-  const [mixExpanded, setMixExpanded] = useState(true);
-  const [isShuffle, setIsShuffle] = useState(false);
-  const [isLoop, setIsLoop] = useState(true);
-
-  // 単体動画 自動再生 (Auto-play) 設定 & カウントダウン
-  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
-  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
-  const autoPlayTimerRef = useRef<any>(null);
-
-  // ミックス曲削除ハンドラ
-  const handleRemoveFromMix = (e: React.MouseEvent, indexToRemove: number) => {
-    e.stopPropagation();
-    if (!mixPlaylist) return;
-    const newItems = mixPlaylist.items.filter((_, idx) => idx !== indexToRemove).map((item, newIdx) => ({
-      ...item,
-      index: newIdx + 1
-    }));
-    setMixPlaylist({
-      ...mixPlaylist,
-      items: newItems
-    });
-  };
-
-  const cancelAutoPlayCountdown = () => {
-    if (autoPlayTimerRef.current) {
-      clearInterval(autoPlayTimerRef.current);
-      autoPlayTimerRef.current = null;
-    }
-    setAutoPlayCountdown(null);
-  };
-
-  const playNextRecommendedVideo = () => {
-    cancelAutoPlayCountdown();
-    const nextVideo = activeVideoRef.current?.recommendedVideos?.[0];
-    if (nextVideo && nextVideo.videoId) {
-      onVideoSelect(nextVideo.videoId, nextVideo);
-    }
-  };
-
-  const startAutoPlayCountdown = () => {
-    if (!autoPlayEnabled) return;
-    if (autoPlayTimerRef.current) clearInterval(autoPlayTimerRef.current);
-    setAutoPlayCountdown(5);
-
-    autoPlayTimerRef.current = setInterval(() => {
-      setAutoPlayCountdown(prev => {
-        if (prev === null || prev <= 1) {
-          clearInterval(autoPlayTimerRef.current);
-          playNextRecommendedVideo();
-          return null;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  };
-
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const ytPlayerRef = useRef<any>(null);
-  const isYtReadyRef = useRef<boolean>(false);
-  const lastLoadedVideoIdRef = useRef<string>(videoId);
-  const currentLoadedPlaylistRef = useRef<string | null>(null);
-  const [embedSrc, setEmbedSrc] = useState<string>('');
-
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-
-  useEffect(() => {
-    const handleResize = () => setIsMobile(window.innerWidth < 1024);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
-
-  const renderMixPlaylistPanel = (isMobileLayout: boolean) => {
-    if (!playlistId && !videoId?.startsWith('RD') && !mixPlaylist) return null;
-
-    return (
-      <div className={`mb-4 bg-[#f2f2f2] text-gray-900 rounded-xl overflow-hidden border border-gray-300 shadow-2xs ${isMobileLayout ? 'w-full mt-4' : 'w-full'}`}>
-        {/* ヘッダー情報 */}
-        <div className="p-3 bg-[#e8e8e8] border-b border-gray-300 flex flex-col gap-1.5">
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-1.5 text-[11px] text-blue-600 font-bold tracking-wide">
-                <ListMusic size={14} />
-                <span>YouTube ミックスリスト</span>
-              </div>
-              <h3 className="text-sm font-bold text-gray-900 truncate mt-0.5" title={mixPlaylist?.title || videoData?.title || 'ミックスリスト'}>
-                {mixPlaylist?.title || videoData?.title || 'ミックスリスト'}
-              </h3>
-              <p className="text-[11px] text-gray-600 truncate">
-                {videoData?.author || '関連チャンネル'} • {mixPlaylist?.items?.length || 25} 本の動画
-              </p>
-            </div>
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setMixExpanded(!mixExpanded)}
-                className="p-1 hover:bg-black/10 rounded-lg text-gray-600 hover:text-gray-900 transition-colors"
-                title={mixExpanded ? 'パネルを折りたたむ' : 'パネルを展開'}
-              >
-                {mixExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-              </button>
-              <button
-                type="button"
-                onClick={handleCloseMixList}
-                className="p-1 hover:bg-black/10 rounded-lg text-gray-500 hover:text-gray-900 transition-colors"
-                title="ミックスリストを閉じる（単体再生）"
-              >
-                <X size={17} />
-              </button>
-            </div>
-          </div>
-
-          {/* ナビゲーション・コントロールボタン */}
-          <div className="flex items-center justify-between pt-1 border-t border-gray-300/80">
-            <span className="text-[11px] text-gray-600 font-medium">
-              {currentMixIndex >= 0 ? `${currentMixIndex + 1} / ${mixPlaylist?.items?.length || 25}` : '再生中'}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setIsLoop(!isLoop)}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  isLoop ? 'bg-black/15 text-blue-600 font-bold' : 'hover:bg-black/10 text-gray-600 hover:text-gray-900'
-                }`}
-                title={isLoop ? 'ループ再生: オン' : 'ループ再生: オフ'}
-              >
-                <Repeat size={14} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsShuffle(!isShuffle)}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  isShuffle ? 'bg-black/15 text-blue-600 font-bold' : 'hover:bg-black/10 text-gray-600 hover:text-gray-900'
-                }`}
-                title={isShuffle ? 'シャッフル再生: オン' : 'シャッフル再生: オフ'}
-              >
-                <Shuffle size={14} />
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePlayPrevMix}
-                disabled={!mixPlaylist || mixPlaylist.items.length <= 1 || (!isLoop && currentMixIndex <= 0)}
-                className="p-1.5 hover:bg-black/10 rounded-lg text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-colors"
-                title="前の動画"
-              >
-                <SkipBack size={14} />
-              </button>
-
-              <button
-                type="button"
-                onClick={handlePlayNextMix}
-                disabled={!mixPlaylist || mixPlaylist.items.length <= 1 || (!isLoop && !isShuffle && currentMixIndex >= (mixPlaylist?.items?.length || 25) - 1)}
-                className="p-1.5 hover:bg-black/10 rounded-lg text-gray-600 hover:text-gray-900 disabled:opacity-30 transition-colors"
-                title="次の動画"
-              >
-                <SkipForward size={14} />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* 動画リスト */}
-        {mixExpanded && (
-          <div className={`${isMobileLayout ? 'max-h-[220px]' : 'max-h-[360px]'} overflow-y-auto divide-y divide-gray-200/80 custom-scrollbar bg-[#f8f8f8]`}>
-            {loadingMixPlaylist && (!mixPlaylist || mixPlaylist.items.length === 0) ? (
-              <div className="p-6 flex items-center justify-center gap-2 text-xs text-gray-600">
-                <Loader2 className="animate-spin text-blue-600" size={16} />
-                <span>ミックスリストを読み込み中...</span>
-              </div>
-            ) : mixPlaylist?.items && mixPlaylist.items.length > 0 ? (
-              mixPlaylist.items.map((item, idx) => {
-                const isCurrent = item.videoId === videoId;
-                return (
-                  <div
-                    key={`${item.videoId}-${idx}`}
-                    onClick={() => handleSelectMixTrack(item.videoId, idx, item)}
-                    className={`flex items-center gap-2.5 p-2 transition-colors cursor-pointer group ${
-                      isCurrent
-                        ? 'bg-black/10 font-medium text-gray-900 border-l-4 border-blue-600'
-                        : 'hover:bg-black/5 text-gray-800'
-                    }`}
-                  >
-                    <div className="w-5 text-center shrink-0 text-xs font-bold text-gray-500">
-                      {isCurrent ? (
-                        <span className="text-blue-600 font-bold text-xs">▶</span>
-                      ) : (
-                        <span className="text-[11px]">{idx + 1}</span>
-                      )}
-                    </div>
-
-                    <div className="w-20 h-12 shrink-0 relative rounded-md overflow-hidden bg-gray-200 border border-gray-300">
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                        referrerPolicy="no-referrer"
-                      />
-                      {item.lengthText && (
-                        <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[9px] px-1 rounded font-semibold">
-                          {item.lengthText}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="flex flex-col min-w-0 flex-1">
-                      <h4 className={`text-xs leading-snug line-clamp-2 ${isCurrent ? 'font-bold text-blue-600' : 'group-hover:text-blue-600 text-gray-900'}`}>
-                        {item.title}
-                      </h4>
-                      <span className="text-[10px] text-gray-500 truncate mt-0.5">
-                        {item.author}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={(e) => handleRemoveFromMix(e, idx)}
-                      title="リストからこの曲を削除"
-                      className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-gray-200/80 rounded-full text-gray-400 hover:text-red-600 transition-all shrink-0"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                );
-              })
-            ) : (
-              <div className="p-4 text-center text-xs text-gray-500">
-                再生リストの動画を取得できませんでした
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // ミックスリストデータ取得
-  useEffect(() => {
-    const targetPlaylistId = playlistId || (videoId && videoId.startsWith('RD') ? videoId : (playlistId ? playlistId : (videoId ? `RD${videoId}` : '')));
-    
-    // すでに同じプレイリストIDが読み込まれている場合は選択状態のみ同期
-    if (mixPlaylist && mixPlaylist.playlistId === targetPlaylistId && mixPlaylist.items.some(it => it.videoId === videoId)) {
-      setMixPlaylist(prev => {
-        if (!prev) return null;
-        return {
-          ...prev,
-          currentVideoId: videoId,
-          items: prev.items.map(it => ({
-            ...it,
-            selected: it.videoId === videoId
-          }))
-        };
-      });
-      return;
-    }
-
-    if (playlistId || (videoId && videoId.startsWith('RD'))) {
-      setLoadingMixPlaylist(true);
-      
-      // ユーザーの過去の視聴履歴からアーティスト群を取得してサーバーにパラメータとして送る
-      let historyAuthorsParam = '';
-      try {
-        const savedHistory = localStorage.getItem('xerox_watch_history');
-        if (savedHistory) {
-          const parsed = JSON.parse(savedHistory);
-          if (Array.isArray(parsed)) {
-            const authors = parsed.map((item: any) => item.author).filter(Boolean).slice(0, 15);
-            historyAuthorsParam = encodeURIComponent(authors.join(','));
-          }
-        }
-      } catch (e) {}
-
-      fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${targetPlaylistId || ''}&historyAuthors=${historyAuthorsParam}`)
-        .then((data) => {
-          if (data && data.items && data.items.length > 0) {
-            setMixPlaylist({
-              ...data,
-              items: data.items.map((it: any) => ({
-                ...it,
-                selected: it.videoId === videoId
-              }))
-            });
-          } else {
-            setMixPlaylist(null);
-          }
-        })
-        .catch((err) => {
-          console.error('Failed to load mix playlist', err);
-          setMixPlaylist(null);
-        })
-        .finally(() => {
-          setLoadingMixPlaylist(false);
-        });
-    } else {
-      setMixPlaylist(null);
-    }
-  }, [videoId, playlistId]);
-
-  const currentMixIndex = mixPlaylist?.items.findIndex(item => item.videoId === videoId) ?? -1;
-
-  // Refs for persistent event listening without stale closures
-  const mixPlaylistRef = useRef(mixPlaylist);
-  const isShuffleRef = useRef(isShuffle);
-  const isLoopRef = useRef(isLoop);
-  const currentMixIndexRef = useRef(currentMixIndex);
-  const onVideoSelectRef = useRef(onVideoSelect);
-  const videoIdRef = useRef(videoId);
-  const hasTriggeredEndRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    mixPlaylistRef.current = mixPlaylist;
-    isShuffleRef.current = isShuffle;
-    isLoopRef.current = isLoop;
-    currentMixIndexRef.current = currentMixIndex;
-    onVideoSelectRef.current = onVideoSelect;
-    videoIdRef.current = videoId;
-  });
-
-  // videoIdが変わったら遷移済みフラグをリセット
-  useEffect(() => {
-    hasTriggeredEndRef.current = null;
-  }, [videoId]);
-
-  // 次の曲へ自動遷移する統一関数
-  const triggerNextTrack = (source: string) => {
-    if (hasTriggeredEndRef.current === videoIdRef.current) {
-      return;
-    }
-    const currentList = mixPlaylistRef.current;
-    if (!currentList || !currentList.items || currentList.items.length === 0) return;
-
-    const len = currentList.items.length;
-    let cIdx = currentMixIndexRef.current;
-    if (cIdx === -1) {
-      cIdx = currentList.items.findIndex(it => it.videoId === videoIdRef.current);
-    }
-
-    let nextItem: any = null;
-
-    if (isShuffleRef.current && len > 1) {
-      let randIdx = Math.floor(Math.random() * len);
-      if (randIdx === cIdx) {
-        randIdx = (randIdx + 1) % len;
-      }
-      nextItem = currentList.items[randIdx];
-    } else if (cIdx !== -1 && cIdx < len - 1) {
-      nextItem = currentList.items[cIdx + 1];
-    } else if (cIdx === -1 && len > 0) {
-      nextItem = currentList.items[0];
-    } else if (isLoopRef.current && len > 0) {
-      nextItem = currentList.items[0];
-    }
-
-    if (nextItem) {
-      hasTriggeredEndRef.current = videoIdRef.current;
-      console.log(`[MixPlaylist] 自動連続再生: 次の曲へ遷移 (${source}) ->`, nextItem.videoId, nextItem.title);
-      onVideoSelectRef.current(nextItem.videoId, {
-        videoId: nextItem.videoId,
-        title: nextItem.title,
-        author: nextItem.author,
-        playlistId: currentList.playlistId,
-        type: 'mix'
-      } as any);
-    }
-  };
-
-  // 次の動画を計算（シャッフル・ループ考慮）
-  const getNextMixItem = () => {
-    if (!mixPlaylist || !mixPlaylist.items || mixPlaylist.items.length === 0) return null;
-    const len = mixPlaylist.items.length;
-    let cIdx = currentMixIndex;
-    if (cIdx === -1) {
-      cIdx = mixPlaylist.items.findIndex(it => it.videoId === videoId);
-    }
-    if (isShuffle && len > 1) {
-      let randIdx = Math.floor(Math.random() * len);
-      if (randIdx === cIdx) {
-        randIdx = (randIdx + 1) % len;
-      }
-      return mixPlaylist.items[randIdx];
-    }
-    if (cIdx !== -1 && cIdx < len - 1) {
-      return mixPlaylist.items[cIdx + 1];
-    }
-    if (cIdx === -1 && len > 0) {
-      return mixPlaylist.items[0];
-    }
-    if (isLoop && len > 0) {
-      return mixPlaylist.items[0];
-    }
-    return null;
-  };
-
-  // 前の動画を計算
-  const getPrevMixItem = () => {
-    if (!mixPlaylist || !mixPlaylist.items || mixPlaylist.items.length === 0) return null;
-    const len = mixPlaylist.items.length;
-    let cIdx = currentMixIndex;
-    if (cIdx === -1) {
-      cIdx = mixPlaylist.items.findIndex(it => it.videoId === videoId);
-    }
-    if (isShuffle && len > 1) {
-      let randIdx = Math.floor(Math.random() * len);
-      if (randIdx === cIdx) {
-        randIdx = (randIdx - 1 + len) % len;
-      }
-      return mixPlaylist.items[randIdx];
-    }
-    if (cIdx > 0) {
-      return mixPlaylist.items[cIdx - 1];
-    }
-    if (isLoop && len > 0) {
-      return mixPlaylist.items[len - 1];
-    }
-    return null;
-  };
-
-  // プレイリスト操作（内部コマンド送信）
-  const handlePlayNextMix = () => {
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.nextVideo === 'function') {
-      try {
-        ytPlayerRef.current.nextVideo();
-        return;
-      } catch {}
-    }
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(JSON.stringify({
-        event: 'command',
-        func: 'nextVideo',
-        args: []
-      }), '*');
-    }
-  };
-
-  const handlePlayPrevMix = () => {
-    if (ytPlayerRef.current && typeof ytPlayerRef.current.previousVideo === 'function') {
-      try {
-        ytPlayerRef.current.previousVideo();
-        return;
-      } catch {}
-    }
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(JSON.stringify({
-        event: 'command',
-        func: 'previousVideo',
-        args: []
-      }), '*');
-    }
-  };
-
-  // プレイリスト内の特定曲をクリックした時
-  const handleSelectMixTrack = (trackVideoId: string, trackIndex: number, trackItem: any) => {
-    if (trackIndex >= 0) {
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.playVideoAt === 'function') {
-        try {
-          ytPlayerRef.current.playVideoAt(trackIndex);
-        } catch {}
-      }
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'playVideoAt',
-          args: [trackIndex]
-        }), '*');
-      }
-    }
-    
-    // UI同期
-    onVideoSelect(trackVideoId, {
-      videoId: trackVideoId,
-      title: trackItem?.title,
-      author: trackItem?.author,
-      playlistId: mixPlaylist?.playlistId || playlistId,
-      type: 'mix'
-    } as any);
-  };
-
-  const handleCloseMixList = () => {
-    // ミックスリストから抜けて通常の単体動画として再生
-    onVideoSelect(videoId, {
-      videoId,
-      title: videoData?.title,
-      author: videoData?.author,
-      playlistId: undefined,
-      type: 'video'
-    } as any);
-  };
-
   // EduKey 取得
   useEffect(() => {
     const fetchEduKey = async () => {
       try {
         const res = await fetchJSON('/api/edukey');
         if (res && res.key) {
-          // ensure enablejsapi is present for postMessage tracking
-          let key = res.key;
-          if (!key.includes('enablejsapi=1')) {
-            key += '&enablejsapi=1';
-          }
-          setEduKey(key);
+          setEduKey(res.key);
         }
       } catch (e) {
         console.error('Failed to load edukey:', e);
@@ -668,272 +72,6 @@ export default function VideoPlayer({
     };
     fetchEduKey();
   }, []);
-
-  // プレイリスト用 iframe URL の計算＆初期化
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
-  const activePlaylistId = playlistId || mixPlaylist?.playlistId;
-
-  useEffect(() => {
-    let cleanEduKey = eduKey || '';
-    if (cleanEduKey) {
-      if (originUrl) {
-        cleanEduKey = cleanEduKey
-          .replace(/origin=[^&]*/g, `origin=${encodeURIComponent(originUrl)}`)
-          .replace(/forigin=[^&]*/g, `forigin=${encodeURIComponent(originUrl)}`);
-      }
-      cleanEduKey = cleanEduKey.replace(/autoplay=0/g, 'autoplay=1');
-      if (!cleanEduKey.includes('autoplay=')) cleanEduKey += '&autoplay=1';
-      if (!cleanEduKey.includes('enablejsapi=1')) cleanEduKey += '&enablejsapi=1';
-      if (!cleanEduKey.includes('playsinline=1')) cleanEduKey += '&playsinline=1';
-    } else {
-      cleanEduKey = `?autoplay=1&playsinline=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
-    }
-
-    const queryPrefix = cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`;
-
-    // YouTube Embed API は RD... (Mixリスト) などの擬似/ミックスプレイリストIDでの list= 指定をサポートしておらずエラー 152-2 になるため、公式プレイリスト(PL, UU, FL, OLAK等)以外は list パラメータを除外して通常埋め込みとする
-    const isEmbeddableOfficialPlaylist = activePlaylistId && 
-      !activePlaylistId.startsWith('RD') && 
-      !activePlaylistId.startsWith('mix-');
-
-    if (activePlaylistId && isEmbeddableOfficialPlaylist) {
-      // プレイリストモード: すでに同じプレイリストが読み込まれている場合は iframe を再構築しない
-      if (currentLoadedPlaylistRef.current === activePlaylistId && embedSrc) {
-        return;
-      }
-      currentLoadedPlaylistRef.current = activePlaylistId;
-      const finalSrc = videoId
-        ? `https://www.youtubeeducation.com/embed/${videoId}${queryPrefix}&list=${activePlaylistId}`
-        : `https://www.youtubeeducation.com/embed/videoseries?list=${activePlaylistId}&autoplay=1${cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`}`;
-      setEmbedSrc(finalSrc);
-    } else {
-      // ミックスリストまたは単体動画モード（アプリ側で連続再生・トラック切り替えを管理）
-      currentLoadedPlaylistRef.current = null;
-      if (videoId) {
-        setEmbedSrc(`https://www.youtubeeducation.com/embed/${videoId}${queryPrefix}`);
-      }
-    }
-  }, [videoId, activePlaylistId, eduKey, originUrl]);
-
-  // IFrame の内部遷移および動画再生完了 (ENDED) の監視
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        let data = event.data;
-        if (typeof data === 'string') {
-          try {
-            data = JSON.parse(data);
-          } catch {
-            return;
-          }
-        }
-        if (data && typeof data === 'object') {
-          // プレイヤー内部での video_id の変更検知 (YouTube プレイリストが自動で次の曲に進んだ時)
-          const playerVideoId = data.info?.videoData?.video_id || data.info?.videoId || data.videoId;
-          if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoIdRef.current && playerVideoId.length >= 8) {
-            console.log('[MixPlayer] YouTube プレイヤー内部で曲が切り替わりました:', playerVideoId);
-            videoIdRef.current = playerVideoId;
-            
-            const currentList = mixPlaylistRef.current;
-            const matchItem = currentList?.items?.find(it => it.videoId === playerVideoId);
-            
-            // アプリ側の選択・動画情報を同期（URLも追従）
-            onVideoSelectRef.current(playerVideoId, {
-              videoId: playerVideoId,
-              title: matchItem?.title || '',
-              author: matchItem?.author || 'チャンネル',
-              authorAvatar: (matchItem as any)?.authorAvatar || (matchItem as any)?.authorThumbnail,
-              videoThumbnails: [{ url: (matchItem as any)?.thumbnail || `https://i.ytimg.com/vi/${playerVideoId}/hqdefault.jpg` }],
-              playlistId: currentList?.playlistId,
-              type: 'mix'
-            } as any);
-
-            // ミックスリストのアクティブ曲ハイライト更新
-            if (currentList) {
-              setMixPlaylist(prev => {
-                if (!prev) return null;
-                return {
-                  ...prev,
-                  currentVideoId: playerVideoId,
-                  items: prev.items.map(it => ({
-                    ...it,
-                    selected: it.videoId === playerVideoId
-                  }))
-                };
-              });
-            }
-          }
-
-          // 単体動画の場合のみ、動画再生終了 (ENDED) を検知して次の関連動画へ
-          const isEnded = 
-            (data.event === 'onStateChange' && (data.info === 0 || data.data === 0 || data.info?.playerState === 0 || data.info?.player_state === 0)) ||
-            (data.event === 'infoDelivery' && (data.info?.playerState === 0 || data.info?.player_state === 0)) ||
-            (data.info?.playerState === 0 || data.playerState === 0);
-
-          if (isEnded) {
-            if (mixPlaylistRef.current) {
-              // ミックスリスト再生終了時は即座に次の曲へ
-              triggerNextTrack('player-ended-event');
-            } else {
-              // 単体動画再生終了時は 5秒カウントダウンして次の関連動画へ
-              startAutoPlayCountdown();
-            }
-          }
-        }
-      } catch (e) {
-        // ignore message parse errors
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-
-    // プレイヤーに定期的にリスナー登録と状態取得コマンドを送信
-    const timer = setInterval(() => {
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'listening',
-          id: 1,
-          channel: 'widget'
-        }), '*');
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'getVideoData',
-          args: []
-        }), '*');
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'getPlayerState',
-          args: []
-        }), '*');
-      }
-    }, 800);
-
-    return () => {
-      window.removeEventListener('message', handleMessage);
-      clearInterval(timer);
-    };
-  }, []);
-
-  // YouTube Iframe API による直接イベント監視 (マウント時に1回初期化し、以降は再利用)
-  useEffect(() => {
-    let checkTimer: any = null;
-
-    const attachYT = () => {
-      if (iframeRef.current && (window as any).YT && (window as any).YT.Player && !ytPlayerRef.current) {
-        try {
-          ytPlayerRef.current = new (window as any).YT.Player(iframeRef.current, {
-            events: {
-              onReady: (event: any) => {
-                isYtReadyRef.current = true;
-                ytPlayerRef.current = event.target;
-                try {
-                  event.target.playVideo();
-                } catch (e) {}
-              },
-              onStateChange: (event: any) => {
-                if (event.data === 0 && !mixPlaylistRef.current) { // 単体動画のみ
-                  triggerNextTrack('yt-api-ended');
-                }
-              },
-              onError: (event: any) => {
-                console.warn('[YT] Player error:', event?.data);
-              }
-            }
-          });
-        } catch (e) {}
-      }
-    };
-
-    attachYT();
-    if (!(window as any).YT) {
-      if (!document.getElementById('yt-iframe-proxy-api')) {
-        const tag = document.createElement('script');
-        tag.id = 'yt-iframe-proxy-api';
-        tag.src = '/api/proxy/youtube-iframe-api';
-        tag.async = true;
-        document.head.appendChild(tag);
-      }
-      checkTimer = setInterval(() => {
-        if ((window as any).YT) {
-          clearInterval(checkTimer);
-          attachYT();
-        }
-      }, 300);
-    }
-
-    return () => {
-      if (checkTimer) clearInterval(checkTimer);
-    };
-  }, []);
-
-  // videoId 変更時のシームレス自動再生 (単体動画再生時のみ。プレイリスト時はYouTube公式プレイヤーに任せる)
-  useEffect(() => {
-    if (!mixPlaylistRef.current && lastLoadedVideoIdRef.current !== videoId) {
-      lastLoadedVideoIdRef.current = videoId;
-
-      const triggerPlayback = () => {
-        // 1. YouTube Player API による動画読み込み＆自動再生
-        if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
-          try {
-            ytPlayerRef.current.loadVideoById(videoId);
-            ytPlayerRef.current.playVideo();
-          } catch (e) {
-            console.warn('[YT] loadVideoById error:', e);
-          }
-        }
-
-        // 2. postMessage による直接送信
-        if (iframeRef.current && iframeRef.current.contentWindow) {
-          try {
-            iframeRef.current.contentWindow.postMessage(JSON.stringify({
-              event: 'command',
-              func: 'loadVideoById',
-              args: [videoId, 0]
-            }), '*');
-            iframeRef.current.contentWindow.postMessage(JSON.stringify({
-              event: 'command',
-              func: 'playVideo',
-              args: []
-            }), '*');
-          } catch (e) {}
-        }
-      };
-
-      triggerPlayback();
-      const t1 = setTimeout(triggerPlayback, 150);
-      return () => clearTimeout(t1);
-    }
-  }, [videoId]);
-
-  // 保険としての再生時間タイマー (Watchdog)
-  useEffect(() => {
-    let isCancelled = false;
-    let watchdogTimer: any = null;
-
-    // 再生時間の特定 (videoData.lengthSeconds または mixPlaylist の lengthText)
-    const currentItem = mixPlaylist?.items?.find(it => it.videoId === videoId);
-    const durationFromText = parseDurationText(currentItem?.lengthText);
-    const durationSec = (videoData?.lengthSeconds && videoData.lengthSeconds > 0) 
-      ? videoData.lengthSeconds 
-      : (durationFromText > 0 ? durationFromText : 0);
-
-    if (durationSec > 0 && mixPlaylist) {
-      // 動画の再生時間 + 3秒で自動スキップを保険として起動
-      const timeoutMs = (durationSec + 3) * 1000;
-      
-      watchdogTimer = setTimeout(() => {
-        if (!isCancelled && hasTriggeredEndRef.current !== videoId) {
-          console.log(`[MixPlaylist] Watchdog タイマー満了 (${durationSec}秒) -> 自動で次の動画へ`);
-          triggerNextTrack('watchdog-timer');
-        }
-      }, timeoutMs);
-    }
-
-    return () => {
-      isCancelled = true;
-      if (watchdogTimer) clearTimeout(watchdogTimer);
-    };
-  }, [videoId, videoData?.lengthSeconds, mixPlaylist]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -1004,29 +142,6 @@ export default function VideoPlayer({
   const [superChatMessage, setSuperChatMessage] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  const [showMultiChannelDialog, setShowMultiChannelDialog] = useState(false);
-  const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
-  const [multiChannelsData, setMultiChannelsData] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (videoData?.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
-      setMultiChannelsLoading(true);
-      Promise.all(
-        videoData.multipleChannelIds.map((id: string) => 
-          fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
-        )
-      ).then(channels => {
-        setMultiChannelsData(channels.filter(Boolean));
-        setMultiChannelsLoading(false);
-      }).catch(err => {
-        console.error('Failed to load multi channels', err);
-        setMultiChannelsLoading(false);
-      });
-    } else {
-      setMultiChannelsData([]);
-    }
-  }, [videoData?.multipleChannelIds]);
-
   // Track video viewing duration for recommendation AI
   useEffect(() => {
     watchSecondsRef.current = 0;
@@ -1048,46 +163,11 @@ export default function VideoPlayer({
 
   // Fetch video metadata
   useEffect(() => {
-    // 前の動画のデータをクリアし、新しい動画のキャッシュまたはクリーンな初期状態を即時設定
-    const cached = videoCache[videoId] || mixPlaylist?.items?.find(it => it.videoId === videoId);
-    if (cached) {
-      const cleanAuthor = cached.author || 'チャンネル';
-      const cleanThumb = (cached as any).authorAvatar || (cached as any).authorThumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-      setVideoData({
-        videoId,
-        title: cached.title || '動画を読み込み中...',
-        author: cleanAuthor,
-        authorId: (cached as any).authorId || cleanAuthor,
-        authorAvatar: (cached as any).authorAvatar || cleanThumb,
-        authorThumbnails: (cached as any).authorThumbnails || [{ url: cleanThumb }],
-        videoThumbnails: (cached as any).videoThumbnails || [{ url: (cached as any).thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-        description: '',
-        viewCount: (cached as any).viewCount || 0,
-        publishedText: (cached as any).publishedText || '',
-        likeCount: (cached as any).likeCount || 0,
-        lengthSeconds: (cached as any).lengthSeconds || 0,
-        type: 'video'
-      } as any as Video);
-    } else {
-      // キャッシュが存在しない場合は前動画のデータを残さず null にする
-      setVideoData(null);
-    }
-
-    // コメント・複数チャンネル・概要欄など前動画のデータをすべて即時リセット
-    setComments([]);
-    setLiveChatMessages([]);
-    setMultiChannelsData([]);
-    setIsDescExpanded(false);
-    setLoadingComments(true);
-
-    let isCurrentFetch = true;
-
     const fetchVideo = async () => {
       setLoading(true);
       setError('');
       try {
         const data = await fetchJSON(`/api/video/${videoId}`);
-        if (!isCurrentFetch) return;
         setVideoData(data);
         activeVideoRef.current = data;
         
@@ -1110,47 +190,32 @@ export default function VideoPlayer({
           setSidebarTab('related');
         }
       } catch (err: any) {
-        if (!isCurrentFetch) return;
         setError(err.message || 'エラーが発生しました');
       } finally {
-        if (isCurrentFetch) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
     };
 
     const fetchComments = async () => {
+      setLoadingComments(true);
       try {
         const data = await fetchJSON(`/api/video/${videoId}/comments`);
-        if (!isCurrentFetch) return;
-        setComments(data || []);
+        setComments(data);
         
-        if (activeVideoRef.current && activeVideoRef.current.recommendedVideos) {
-          localAI.processMetadataAnalysis(videoId, data, activeVideoRef.current.recommendedVideos);
+        if (videoData && videoData.recommendedVideos) {
+          localAI.processMetadataAnalysis(videoId, data, videoData.recommendedVideos);
         }
       } catch (err) {
         console.error("Failed to load comments", err);
       } finally {
-        if (isCurrentFetch) {
-          setLoadingComments(false);
-        }
+        setLoadingComments(false);
       }
     };
 
     fetchVideo();
     fetchComments();
-
-    return () => {
-      isCurrentFetch = false;
-    };
+    setIsDescExpanded(false);
   }, [videoId]);
-
-  // document.title を現在の動画タイトルに同期
-  useEffect(() => {
-    if (videoData?.title) {
-      document.title = `${videoData.title} - XeroxYT-NTv6`;
-    }
-  }, [videoData?.title]);
 
   // Initialize live chat
   const initLiveChat = (channelName: string) => {
@@ -1233,7 +298,7 @@ export default function VideoPlayer({
     setNewComment('');
   };
 
-  if (loading && !videoData) {
+  if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] gap-3 bg-white text-gray-900">
         <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
@@ -1242,50 +307,26 @@ export default function VideoPlayer({
     );
   }
 
-  // videoData の videoId が現在の videoId と一致しているか厳格に判定
-  const isCurrentVideoMatched = videoData && videoData.videoId === videoId;
-  const cachedItem = mixPlaylist?.items?.find(it => it.videoId === videoId) || videoCache[videoId];
+  if (error || !videoData) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-white text-gray-900 gap-3">
+        <AlertCircle className="w-12 h-12 text-red-500" />
+        <p className="text-lg font-bold">{error || '動画が見つかりませんでした'}</p>
+      </div>
+    );
+  }
 
-  // 現在の videoId と一致しない古い videoData は絶対に使用しない
-  const activeVideo: Video = isCurrentVideoMatched
-    ? videoData!
-    : (cachedItem
-        ? {
-            videoId: videoId,
-            title: cachedItem.title || '動画を読み込み中...',
-            author: cachedItem.author || 'チャンネル',
-            authorId: (cachedItem as any).authorId || cachedItem.author || '',
-            authorAvatar: (cachedItem as any).authorAvatar || (cachedItem as any).authorThumbnail,
-            authorThumbnails: (cachedItem as any).authorThumbnails || [{ url: (cachedItem as any).authorAvatar || (cachedItem as any).authorThumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-            videoThumbnails: (cachedItem as any).videoThumbnails || [{ url: (cachedItem as any).thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-            description: '',
-            viewCount: (cachedItem as any).viewCount || 0,
-            publishedText: (cachedItem as any).publishedText || '',
-            likeCount: (cachedItem as any).likeCount || 0,
-            type: 'video'
-          }
-        : {
-            videoId: videoId,
-            title: '動画を読み込み中...',
-            author: 'YouTube',
-            videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-            description: '',
-            viewCount: 0,
-            publishedText: '',
-            type: 'video'
-          });
-
-  const isLive = !!(activeVideo.isLive && !(activeVideo as any).isPremiere && !(activeVideo as any).isUpcoming);
+  const isLive = !!(videoData.isLive && !videoData.isPremiere && !videoData.isUpcoming);
 
   const isSubscribed = subscriptions.some(s => 
-    s.id === activeVideo.authorId || s.title === activeVideo.author
+    s.id === videoData.authorId || s.title === videoData.author
   );
 
   const handleSubClick = () => {
     onToggleSubscribe({
-      id: activeVideo.authorId || activeVideo.author,
-      title: activeVideo.author,
-      avatar: activeVideo.authorAvatar
+      id: videoData.authorId || videoData.author,
+      title: videoData.author,
+      avatar: videoData.authorAvatar
     });
   };
 
@@ -1307,63 +348,7 @@ export default function VideoPlayer({
 
   // 通常の関連動画リストの中にしれっと過去履歴をブレンド
   const blendedRecommendations: any[] = [];
-  const baseRecs = activeVideo.recommendedVideos || [];
-
-  const renderTextWithMentionsAndLinks = (text: string) => {
-    if (!text) return '動画の概要説明はありません。';
-    const regex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_\-\.]+)/g;
-    const parts = text.split(regex);
-    return parts.map((part, i) => {
-      if (/^https?:\/\//.test(part)) {
-        return (
-          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-            {part}
-          </a>
-        );
-      }
-      if (/^@/.test(part)) {
-        return (
-          <button 
-            key={i} 
-            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
-            className="text-blue-600 hover:underline cursor-pointer"
-          >
-            {part}
-          </button>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
-
-  const renderTitleWithMentions = (text: string) => {
-    if (!text) return null;
-    const regex = /(@[a-zA-Z0-9_\-\.]+)/g;
-    const parts = text.split(regex);
-    return parts.map((part, i) => {
-      if (/^@/.test(part)) {
-        return (
-          <button 
-            key={i} 
-            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
-            className="text-blue-600 hover:underline cursor-pointer"
-          >
-            {part}
-          </button>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
-
-  const handleAuthorClick = () => {
-    if (activeVideo.multipleChannelIds && activeVideo.multipleChannelIds.length > 1) {
-      setShowMultiChannelDialog(true);
-    } else {
-      onSelectChannel(activeVideo.authorId || activeVideo.author);
-    }
-  };
-
+  const baseRecs = videoData.recommendedVideos || [];
   let histIdx = 0;
 
   if (baseRecs.length === 0) {
@@ -1383,71 +368,20 @@ export default function VideoPlayer({
     }
   }
 
-  const handleIframeLoad = () => {
-    try {
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'command',
-          func: 'playVideo',
-          args: []
-        }), '*');
-        iframeRef.current.contentWindow.postMessage(JSON.stringify({
-          event: 'listening',
-          id: 1,
-          channel: 'widget'
-        }), '*');
-      }
-    } catch {}
-  };
-
   return (
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
           <iframe
-            ref={iframeRef}
-            key="main-persistent-yt-iframe"
-            src={embedSrc}
-            onLoad={handleIframeLoad}
+            src={playlistId && !videoId 
+              ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey}`
+              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}${playlistId ? `&list=${playlistId}` : ''}`}
             className="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
-            title={activeVideo.title}
+            title={videoData.title}
           ></iframe>
-
-          {/* 5秒カウントダウン オーバーレイ (YouTube公式風 自動再生カウントダウン) */}
-          {autoPlayCountdown !== null && (
-            <div className="absolute inset-0 bg-black/90 backdrop-blur-md z-30 flex flex-col items-center justify-center text-white p-6 animate-fade-in">
-              <div className="text-xs font-medium tracking-widest text-gray-300 mb-2 flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                次の動画を再生します ({autoPlayCountdown}秒)
-              </div>
-              <h3 className="text-base sm:text-lg font-bold text-center max-w-lg line-clamp-2 mb-6 text-gray-100">
-                {activeVideo.recommendedVideos?.[0]?.title || '次の関連動画'}
-              </h3>
-
-              {/* カウントダウンタイマー数字 */}
-              <div className="w-16 h-16 mb-6 rounded-full bg-white/10 border-2 border-white/80 flex items-center justify-center text-2xl font-black text-white shadow-xl animate-pulse">
-                {autoPlayCountdown}
-              </div>
-
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={cancelAutoPlayCountdown}
-                  className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold text-xs sm:text-sm rounded-full transition-colors border border-gray-700"
-                >
-                  キャンセル
-                </button>
-                <button
-                  onClick={playNextRecommendedVideo}
-                  className="px-6 py-2.5 bg-white hover:bg-gray-200 text-black font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
-                >
-                  今すぐ再生
-                </button>
-              </div>
-            </div>
-          )}
         </div>
         
         <div className="mt-4 flex flex-col">
@@ -1458,50 +392,45 @@ export default function VideoPlayer({
                 <span className="w-2 h-2 bg-white rounded-full"></span>
                 ライブ配信中
               </span>
-              {activeVideo.liveViewerCount && activeVideo.liveViewerCount > 0 ? (
+              {videoData.liveViewerCount && videoData.liveViewerCount > 0 ? (
                 <span className="text-xs text-gray-600 font-medium flex items-center gap-1 bg-gray-100 px-2.5 py-1 rounded-full">
                   <Users size={13} className="text-gray-500" />
-                  {formatNumberJP(activeVideo.liveViewerCount)} 人が視聴中
+                  {formatNumberJP(videoData.liveViewerCount)} 人が視聴中
                 </span>
               ) : null}
             </div>
           )}
 
-          <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug break-all">
-            {renderTitleWithMentions(activeVideo.title)}
+          <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug">
+            {videoData.title}
           </h1>
           
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
             {/* チャンネル情報 */}
             <div className="flex items-center gap-3">
               <button
-                onClick={handleAuthorClick}
+                onClick={() => onSelectChannel(videoData.authorId || videoData.author)}
                 className="hover:opacity-80 transition-opacity"
-                title={`${activeVideo.author}のチャンネルを開く`}
+                title={`${videoData.author}のチャンネルを開く`}
               >
                 <Avatar
-                  src={activeVideo.authorAvatar}
-                  name={activeVideo.author}
+                  src={videoData.authorAvatar}
+                  name={videoData.author}
                   className="w-11 h-11 text-base shadow-xs"
                 />
               </button>
               
               <div className="flex flex-col">
                 <button
-                  onClick={handleAuthorClick}
+                  onClick={() => onSelectChannel(videoData.authorId || videoData.author)}
                   className="flex items-center gap-1 text-left hover:underline"
                 >
-                  <h3 className="font-bold text-gray-900 text-[15px]">{activeVideo.author}</h3>
-                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
-                  {activeVideo.multipleChannelIds && activeVideo.multipleChannelIds.length > 1 && (
-                    <ChevronDown size={14} className="text-gray-500 shrink-0" />
-                  )}
+                  <h3 className="font-bold text-gray-900 text-[15px]">{videoData.author}</h3>
+                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold">✓</span>
                 </button>
-                {(!activeVideo.multipleChannelIds || activeVideo.multipleChannelIds.length <= 1) && (
-                  <p className="text-xs font-normal text-gray-500">
-                    {activeVideo.subCount ? `登録者数 ${formatNumberJP(activeVideo.subCount)}人` : '登録者数 非公開'}
-                  </p>
-                )}
+                <p className="text-xs font-normal text-gray-500">
+                  {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
+                </p>
               </div>
 
               <button
@@ -1517,14 +446,14 @@ export default function VideoPlayer({
             </div>
 
             {/* アクションボタン */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0 whitespace-nowrap py-1">
-              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shrink-0 whitespace-nowrap">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors shrink-0">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
+                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors">
                   <ThumbsUp size={15} />
-                  <span>{formatNumberJP(activeVideo.likeCount || 0)}</span>
+                  <span>{formatNumberJP(videoData.likeCount || 0)}</span>
                 </button>
-                <div className="w-[1px] h-4 bg-gray-300 shrink-0"></div>
-                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors shrink-0">
+                <div className="w-[1px] h-4 bg-gray-300"></div>
+                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors">
                   <ThumbsDown size={15} />
                 </button>
               </div>
@@ -1532,13 +461,13 @@ export default function VideoPlayer({
               <button 
                 onClick={() => {
                   if (navigator.share) {
-                    navigator.share({ title: activeVideo.title, url: window.location.href }).catch(() => {});
+                    navigator.share({ title: videoData.title, url: window.location.href }).catch(() => {});
                   } else {
                     navigator.clipboard.writeText(window.location.href);
                     alert('リンクをクリップボードにコピーしました！');
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
               >
                 <Share2 size={15} />
                 <span>共有</span>
@@ -1548,10 +477,10 @@ export default function VideoPlayer({
                 onClick={handleDownload}
                 disabled={downloading}
                 title="動画をダウンロード"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shrink-0 whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50"
               >
                 {downloading ? (
-                  <Loader2 size={15} className="animate-spin text-gray-700" />
+                  <Loader2 size={15} className="animate-spin text-red-600" />
                 ) : (
                   <Download size={15} />
                 )}
@@ -1562,10 +491,10 @@ export default function VideoPlayer({
                 onClick={handleReloadEduKey}
                 disabled={refreshingEduKey || cooldownSec > 0}
                 title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのEduKeyを再取得してプレイヤーを再読み込み"}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0 whitespace-nowrap"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {refreshingEduKey ? (
-                  <Loader2 size={15} className="animate-spin text-gray-700" />
+                  <Loader2 size={15} className="animate-spin text-blue-600" />
                 ) : (
                   <RotateCw size={15} className={cooldownSec > 0 ? "opacity-50" : ""} />
                 )}
@@ -1574,34 +503,18 @@ export default function VideoPlayer({
 
               {onOpenAddToPlaylist && (
                 <button 
-                  onClick={() => onOpenAddToPlaylist(activeVideo)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
+                  onClick={() => onOpenAddToPlaylist(videoData)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
                 >
                   <Plus size={15} />
                   <span>保存</span>
                 </button>
               )}
 
-              {/* 自動再生 (Auto-play) トグルスイッチ */}
-              <button 
-                onClick={() => {
-                  const nextState = !autoPlayEnabled;
-                  setAutoPlayEnabled(nextState);
-                  if (!nextState) cancelAutoPlayCountdown();
-                }}
-                title={autoPlayEnabled ? "自動再生: オン (動画終了5秒後に関連動画へ進みます)" : "自動再生: オフ"}
-                className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shrink-0 whitespace-nowrap"
-              >
-                <span>自動再生</span>
-                <div className={`w-6 h-3.5 rounded-full p-0.5 transition-colors flex items-center shrink-0 ${autoPlayEnabled ? 'bg-black justify-end' : 'bg-gray-300 justify-start'}`}>
-                  <div className="w-2.5 h-2.5 rounded-full bg-white shadow-xs" />
-                </div>
-              </button>
-
               {isLive && (
                 <button
                   onClick={() => setShowSuperChatModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95 shrink-0 whitespace-nowrap"
+                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95"
                 >
                   <DollarSign size={14} />
                   <span>Super Chat</span>
@@ -1610,21 +523,17 @@ export default function VideoPlayer({
             </div>
           </div>
 
-          {isMobile && renderMixPlaylistPanel(true)}
-
           {/* 概要欄 */}
           <div className="mt-4 p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-sm border border-gray-200">
             <div className="flex items-center gap-3 font-semibold text-gray-800 text-xs mb-2">
-              <span>{formatNumberJP(activeVideo.viewCount)} 回視聴</span>
-              <span>{activeVideo.publishedText}</span>
+              <span>{formatNumberJP(videoData.viewCount)} 回視聴</span>
+              <span>{videoData.publishedText}</span>
               {isLive && <span className="text-red-600 font-bold">● リアルタイム配信</span>}
             </div>
-            <div className="text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm break-all">
-              <div className={`${isDescExpanded ? '' : 'line-clamp-3'}`}>
-                {renderTextWithMentionsAndLinks(activeVideo.description || '')}
-              </div>
-            </div>
-            {activeVideo.description && activeVideo.description.length > 120 && (
+            <p className={`text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm ${isDescExpanded ? '' : 'line-clamp-3'}`}>
+              {videoData.description || '動画の概要説明はありません。'}
+            </p>
+            {videoData.description && videoData.description.length > 120 && (
               <button
                 onClick={() => setIsDescExpanded(!isDescExpanded)}
                 className="mt-2 text-xs font-bold text-gray-900 hover:underline block"
@@ -1685,11 +594,28 @@ export default function VideoPlayer({
             ) : (
               <div className="flex flex-col gap-5">
                 {comments.map((comment) => (
-                  <CommentItem 
-                    key={comment.id} 
-                    comment={comment} 
-                    onSelectChannel={onSelectChannel} 
-                  />
+                  <div key={comment.id} className="flex gap-3 text-sm">
+                    <Avatar src={comment.authorAvatar} name={comment.author} className="w-9 h-9 text-xs" />
+                    <div className="flex flex-col gap-1 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-gray-900 text-xs">{comment.author}</span>
+                        <span className="text-[11px] text-gray-500">{comment.publishedTime}</span>
+                      </div>
+                      <p className="text-gray-800 text-sm font-normal leading-normal whitespace-pre-wrap">
+                        {comment.text}
+                      </p>
+                      <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+                        <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
+                          <ThumbsUp size={14} />
+                          <span>{comment.likeCount}</span>
+                        </button>
+                        <button className="hover:text-gray-900">
+                          <ThumbsDown size={14} />
+                        </button>
+                        <button className="hover:text-gray-900 font-semibold">返信</button>
+                      </div>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -1803,13 +729,11 @@ export default function VideoPlayer({
 
         {isRelatedOpen && sidebarTab === 'related' && (
           <div className="flex flex-col gap-3">
-            {!isMobile && renderMixPlaylistPanel(false)}
-
-            {/* カテゴリフィルターチップ（ユーザー添付 of image style） */}
+            {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
               {[
                 { id: 'all', label: 'すべて' },
-                { id: 'author', label: `提供: ${activeVideo.author || 'チャンネル'}` },
+                { id: 'author', label: `提供: ${videoData?.author || 'チャンネル'}` },
                 { id: 'related', label: '関連動画' },
                 { id: 'recommended', label: 'おすすめ' },
                 { id: 'recent', label: '最近アップロード' },
@@ -1828,27 +752,12 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            {/* 関連動画リスト（別の関連動画を開いた場合はミックスリストから抜けて通常動画として開く） */}
+            {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (
               <div 
                 key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
                 className="flex gap-2.5 group cursor-pointer"
-                onClick={() => {
-                  if (recVideo.type === 'mix' || recVideo.type === 'playlist') {
-                    onVideoSelect(recVideo.videoId || '', {
-                      ...recVideo,
-                      playlistId: recVideo.playlistId || `RD${recVideo.videoId}`,
-                      type: 'mix'
-                    });
-                  } else {
-                    // 通常の関連動画: プレイリストIDを渡さず、通常の単体動画として開く！
-                    onVideoSelect(recVideo.videoId || '', {
-                      ...recVideo,
-                      playlistId: undefined,
-                      type: 'video'
-                    });
-                  }
-                }}
+                onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
               >
                 <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
                   <img 
@@ -1964,60 +873,6 @@ export default function VideoPlayer({
               >
                 ¥{parseInt(superChatAmount).toLocaleString()} で送信
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Multi Channel Selection Modal */}
-      {showMultiChannelDialog && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 relative max-h-[80vh]">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-gray-900">チャンネルを選択</h2>
-              <button
-                onClick={() => setShowMultiChannelDialog(false)}
-                className="p-1 hover:bg-gray-100 rounded-full"
-              >
-                <X size={20} className="text-gray-600" />
-              </button>
-            </div>
-            
-            <div className="overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
-              {multiChannelsLoading ? (
-                <div className="flex justify-center p-4">
-                  <div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full"></div>
-                </div>
-              ) : multiChannelsData.length > 0 ? (
-                multiChannelsData.map((channel, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setShowMultiChannelDialog(false);
-                      onSelectChannel(channel.authorId || channel.id);
-                    }}
-                    className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left"
-                  >
-                    <Avatar
-                      src={channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url)}
-                      name={channel.title || channel.author || channel.name}
-                      className="w-12 h-12 shadow-sm shrink-0"
-                    />
-                    <div className="flex flex-col overflow-hidden">
-                      <span className="font-bold text-gray-900 text-sm truncate">
-                        {channel.title || channel.author || channel.name}
-                      </span>
-                      {(channel.subCountText || channel.subCount) && (
-                        <span className="text-xs text-gray-500">
-                          {channel.subCountText || channel.subCount}
-                        </span>
-                      )}
-                    </div>
-                  </button>
-                ))
-              ) : (
-                <p className="text-sm text-gray-500 text-center p-4">チャンネル情報を読み込めませんでした。</p>
-              )}
             </div>
           </div>
         </div>

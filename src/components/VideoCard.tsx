@@ -13,13 +13,11 @@ interface VideoCardProps {
 
 const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, hideChannelInfo }) => {
   const isPlaylist = video.type === 'playlist' || video.type === 'mix' || !!video.playlistId;
-  const getThumb = () => {
-    return video.thumbnailUrl || (video as any).thumbnail || video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
-  };
-  const [imgSrc, setImgSrc] = useState(getThumb());
+  const initialThumb = video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
+  const [imgSrc, setImgSrc] = useState(initialThumb);
 
   useEffect(() => {
-    setImgSrc(getThumb());
+    setImgSrc(video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : ''));
   }, [video]);
 
   const [displayAuthor, setDisplayAuthor] = useState(video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル');
@@ -126,11 +124,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
               </span>
             )}
             <span onClick={onClick} className="text-gray-500 text-xs mt-0.5">
-              {isPlaylist ? (
-                <span>{video.publishedText || '25+ 本の動画 • YouTube ミックス'}</span>
-              ) : (
-                <span>{formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}</span>
-              )}
+              {formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}
             </span>
           </div>
         </div>

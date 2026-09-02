@@ -16,7 +16,7 @@ import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
-import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, UserInfo } from './types';
+import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -44,7 +44,7 @@ export default function App() {
   const [isPolling, setIsPolling] = useState(false);
   
   // Cache for static video/channel data
-  const [videoCache, setVideoCache] = useState<Record<string, Video>>(() => {
+  const [videoCache, setVideoCache] = useState<Record<string, Video | ShortVideo>>(() => {
     try {
       const saved = localStorage.getItem('xerox_video_cache');
       return saved ? JSON.parse(saved) : {};
@@ -94,15 +94,8 @@ export default function App() {
         fetchSearch(q, 1, false);
       }
     } else if (path === '/watch') {
-      let v = searchParams.get('v');
-      let list = searchParams.get('list');
-      
-      // MixプレイリストのvパラメータがRD...から始まる場合、video IDを正しく抽出する
-      if (v && v.startsWith('RD') && v.length >= 13) {
-        list = list || v;
-        v = v.substring(2, 13);
-      }
-
+      const v = searchParams.get('v');
+      const list = searchParams.get('list');
       if (v) {
         setCurrentVideoId(v);
         setCurrentPlaylistId(list);
@@ -312,6 +305,23 @@ export default function App() {
     });
   };
 
+  // 閲覧履歴（ショート動画）記録
+  const handleRecordShortHistory = (short: ShortVideo) => {
+    setWatchHistory(prev => {
+      const filtered = prev.filter(item => item.videoId !== short.videoId);
+      const newItem: WatchHistoryItem = {
+        videoId: short.videoId,
+        title: short.title,
+        author: short.author,
+        authorAvatar: short.authorAvatar,
+        thumbnailUrl: `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`,
+        timestamp: Date.now(),
+        type: 'short'
+      };
+      return [newItem, ...filtered].slice(0, 50);
+    });
+  };
+
   const handleToggleSubscribe = (channel: ChannelSubscription) => {
     setSubscriptions((prev) => {
       const exists = prev.some(s => s.id === channel.id || s.title === channel.title);
@@ -382,7 +392,7 @@ export default function App() {
     localStorage.setItem('xerox_ai_interests', JSON.stringify(aiInterests));
   }, [aiInterests]);
 
-  const updateCache = (videos: Video[]) => {
+  const updateCache = (videos: (Video | ShortVideo)[]) => {
     setVideoCache(prev => {
       const next = { ...prev };
       let changed = false;
@@ -616,17 +626,7 @@ export default function App() {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
     }
     
-    // 明示的に渡された playlistId、または MIX / プレイリスト動画の場合のみ list パラメータを付与
-    let playlistId: string | null = null;
-    if (videoObj?.playlistId) {
-      playlistId = videoObj.playlistId;
-    } else if ((videoObj as any)?.type === 'mix' || (videoObj as any)?.type === 'playlist') {
-      playlistId = videoId ? `RD${videoId}` : null;
-    } else if (currentPlaylistId && (!videoObj || (videoObj as any).type === 'mix')) {
-      // ミックスリスト再生中の連続遷移では playlistId を維持
-      playlistId = currentPlaylistId;
-    }
-    
+    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
     navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
   };
 
@@ -777,7 +777,6 @@ export default function App() {
               onOpenAddToPlaylist={(video) => setPlaylistModalVideo(video)}
               onCacheVideo={(v) => updateCache([v])}
               watchHistory={watchHistory}
-              videoCache={videoCache}
             />
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage

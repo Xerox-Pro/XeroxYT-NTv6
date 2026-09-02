@@ -499,145 +499,27 @@ async function startServer() {
 
   function isUnwantedVideo(v: any) {
     if (!v) return true;
-    if (v.type === 'mix') return false;
     const videoId = v.id || v.videoId || v.content_id || "";
     if (videoId === 'dQw4w9WgXcQ' || videoId.includes('dQw4w9WgXcQ')) return true;
 
     const title = (v.title?.text || v.title || "").toLowerCase();
     const author = (v.author?.name || v.author || "").toLowerCase();
-    const description = (v.description || v.short_description || "").toLowerCase();
-    const text = title + " " + author + " " + description;
+    const text = title + " " + author;
     
     // 特定の取得ミス動画・Rick Astleyの除外
     if (text.includes("never gonna give you up") || text.includes("rick astley")) {
       return true;
     }
 
-    // メドレー・作業用BGM・まとめ動画・ライフハック等の厳格な除外キーワード
+    // 除外ワード (メドレーや作業用BGMをより強力に排除)
     const unwanted = [
-      "メドレー", "めどれー", "medley", "medly", "作業用", "作業用bgm", "作業bgm", "睡眠用", "勉強用",
-      "まとめ", "まとめ動画", "全曲", "100曲", "50曲", "30曲", "20曲", "10曲",
-      "ベストヒッツ", "ベストソング", "ベストアルバム", "ベストヒット", "ヒット曲集",
-      "ノンストップ", "nonstop", "non-stop", "名曲集", "耐久", "詰め合わせ", "聴き比べ",
-      "ランキング", "全曲メドレー", "神曲メドレー", "神曲集", "ヒット曲メドレー", "全集", "総集編", "bgm集",
+      "メドレー", "medley", "作業用", "bgm", "mix", "ミックス", "詰め合わせ", 
       "中国語", "中文", "華語", "台湾", "香港", "taiwan", "china", "chinese",
-      "healing", "relaxing", "study music", "full medley", "bgm用",
-      "連続再生", "1時間", "2時間", "3時間", "1hour", "2hours", "3hours", "10hours",
-      "ライフハック", "lifehack", "life hack", "裏技", "裏ワザ", "便利技", "5-minute crafts", "5分クラフト"
+      "睡眠用", "勉強用", "リラックス", "healing", "relaxing", "study music",
+      "フルメドレー", "full medley", "bgm用"
     ];
-
-    if (unwanted.some(kw => text.includes(kw))) {
-      return true;
-    }
-
-    // 15分 (900秒) 以上の音楽/集約系動画の検出・排除
-    const lengthSec = typeof v.lengthSeconds === 'number' ? v.lengthSeconds : (v.length_seconds || 0);
-    if (lengthSec > 900) {
-      if (/bgm|mix|ミックス|作業|ベスト|best|song|ヒット|集|曲|歌|メドレー|全/i.test(title)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  function isForeignUnwanted(v: any, historyAuthors: string[] = [], historyTitles: string[] = []) {
-    if (!v) return false;
     
-    // ユーザーの履歴にアルファベット中心の洋楽・海外コンテンツがあるか判定
-    const foreignHistoryCount = historyAuthors.filter(a => /[a-zA-Z]/.test(a) && !/[\u3040-\u30ff\u4e00-\u9faf]/.test(a)).length +
-      historyTitles.filter(t => /[a-zA-Z]/.test(t) && !/[\u3040-\u30ff\u4e00-\u9faf]/.test(t)).length;
-    if (foreignHistoryCount >= 2) {
-      return false; // ユーザーが海外系コンテンツの視聴履歴を持っているため許可
-    }
-
-    const title = (v.title?.text || v.title || "");
-    const author = (v.author?.name || v.author || "");
-    const text = title + " " + author;
-
-    // 日本語文字 (ひらがな、カタカナ、漢字) が含まれているか確認
-    const hasJapanese = /[\u3040-\u30ff\u4e00-\u9faf]/.test(text);
-    if (!hasJapanese) {
-      // 完全に外国語表記で、かつ履歴の著者名にも合致しない「よくわからない海外動画」を除外
-      const matchesHistoryAuthor = historyAuthors.some(a => a && text.toLowerCase().includes(a.toLowerCase()));
-      if (!matchesHistoryAuthor) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  function isNonMusicForMix(v: any) {
-    if (!v) return true;
-    const title = (v.title?.text || v.title || "").toLowerCase();
-    const author = (v.author?.name || v.author || "").toLowerCase();
-    const description = (v.description || v.short_description || "").toLowerCase();
-    const text = title + " " + author + " " + description;
-
-    const nonMusicKeywords = [
-      "音ゲー", "おとげー", "手元", "実況", "プレイ", "gameplay", "game", "プレイ動画", "解説",
-      "反応", "reaction", "react", "切り抜き", "雑談", "生放送", "配信", "ガチャ",
-      "all perfect", "all justice", "理論値", "フルコン", "難易度", "譜面", "運送",
-      "chunithm", "チュウニズム", "maimai", "まいまい", "プロセカ", "pjsekai", "sdvx", "ボルテ", "太鼓の達人",
-      "arcaea", "phigros", "osu!", "ゲーマー", "対戦", "攻略", "裏ワザ", "検証",
-      "vlog", "日誌", "日常", "料理", "コント", "漫才", "ニュース", "解説動画"
-    ];
-
-    return nonMusicKeywords.some(kw => text.includes(kw));
-  }
-
-  // 音楽・楽曲・MVであるかをポジティブに判定する関数
-  function isMusicVideo(v: any): boolean {
-    if (!v) return false;
-    
-    // 非音楽系コンテンツ（実況、音ゲー、コント等）は除外
-    if (isNonMusicForMix(v)) return false;
-
-    const title = (v.title?.text || v.title || "").toLowerCase();
-    const author = (v.author?.name || v.author || "").toLowerCase();
-    const description = (v.description || v.short_description || "").toLowerCase();
-    const text = `${title} ${author} ${description}`;
-
-    // YouTubeのトピックチャンネル (- Topic) や Official / VEVO チャンネルは音楽確定
-    if (author.includes(" - topic") || author.endsWith(" topic") || author.includes("vevo")) {
-      return true;
-    }
-
-    // 音楽・MVの明示的キーワード
-    const positiveKeywords = [
-      "mv", "pv", "music video", "official video", "official audio", "lyric video",
-      "主題歌", "テーマソング", "オープニング", "エンディング", "op", "ed",
-      "挿入歌", "挿入曲", "オリジナル曲", "歌ってみた", "cover", "カバー", "フル", "full",
-      "song", "track", "single", "album", "remix", "音源", "作詞", "作曲", "編曲",
-      "vocaloid", "ボカロ", "初音ミク", "重音テト", "鏡音", "巡音", "可不", "音街ウナ",
-      "弾いてみた", "歌唱", "ライブ", "live", "instrumental", "アコースティック", "オーケストラ",
-      "feat.", "ft.", "prod.", "楽曲", "新曲", "配信リリース", "配信中"
-    ];
-
-    if (positiveKeywords.some(kw => text.includes(kw))) {
-      return true;
-    }
-
-    // 音楽レーベルや公式チャンネル
-    if (/official|records|music|音楽|レーベル|ソニー|ユニバーサル|エイベックス/i.test(author)) {
-      return true;
-    }
-
-    // 標準的な曲の長さ（50秒〜11分）で、音楽的コンテキストが含まれている場合
-    const lengthSec = typeof v.lengthSeconds === 'number' ? v.lengthSeconds : (v.length_seconds || 0);
-    const isSongDuration = lengthSec === 0 || (lengthSec >= 50 && lengthSec <= 660);
-
-    if (isSongDuration) {
-      if (/℗|provided to youtube|auto-generated by youtube|lyrics|歌詞|music|曲|歌/i.test(description)) {
-        return true;
-      }
-      if (/[-/／〜~×x]/i.test(title)) {
-        return true;
-      }
-    }
-
-    return false;
+    return unwanted.some(kw => text.includes(kw));
   }
 
   function isMetadataNotAuthor(text: string): boolean {
@@ -786,17 +668,9 @@ async function startServer() {
     }
 
     const isPlaylist = v.type === 'Playlist' || v.type === 'Mix' || v.type === 'CompactPlaylist';
-    let videoId = isPlaylist ? (v.first_video_id || undefined) : (v.id || v.videoId);
-    let playlistId = isPlaylist ? (v.id || v.playlistId) : (v.playlistId || undefined);
+    const videoId = isPlaylist ? (v.first_video_id || undefined) : (v.id || v.videoId);
+    const playlistId = isPlaylist ? (v.id || v.playlistId) : (v.playlistId || undefined);
     
-    // MixプレイリストなどでRDから始まるIDの場合、その中からvideoIdを抽出する
-    if (!videoId && playlistId && typeof playlistId === 'string' && playlistId.startsWith('RD') && playlistId.length >= 13) {
-      videoId = playlistId.substring(2, 13);
-    } else if (videoId && typeof videoId === 'string' && videoId.startsWith('RD') && videoId.length >= 13) {
-      playlistId = videoId;
-      videoId = videoId.substring(2, 13);
-    }
-
     if (!videoId && !playlistId) return null;
 
     const thumbnails = v.thumbnails || v.videoThumbnails || v.thumbnail || [];
@@ -1018,54 +892,89 @@ async function startServer() {
         }
       }
 
-      // 1. パーソナライズクエリと一般人気クエリの構築
-      const personalizedQueries: string[] = [];
-      if (usedAi && geminiKeywords.length > 0) {
-        personalizedQueries.push(...geminiKeywords);
-      }
+      // 多彩な一般ジャンルプール（ベース）
+      const categoryPool = [
+        "日本 トレンド 総合 2026",
+        "YouTube Music 日本 話題の曲",
+        "人気 ゲーム実況 最新",
+        "エンタメ 話題 バラエティ",
+        "最新 ガジェット レビュー",
+        "アニメ 話題 2026",
+        "料理 レシピ 簡単 人気",
+        "アウトドア キャンプ 旅行",
+        "最新 ニュース 解説 注目",
+        "お笑い コント 漫才 人気",
+        "VTuber 切り抜き 話題",
+        "テクノロジー AI プログラミング",
+        "スポーツ ハイライト 名シーン",
+        "ライフハック 便利な裏技"
+      ];
+
+      // 履歴から動的に大量のパーソナライズクエリを生成（3倍以上に強化）
+      const dynamicPersonalizedQueries: string[] = [];
       if (historyAuthors.length > 0) {
         historyAuthors.forEach(author => {
-          personalizedQueries.push(`${author}`);
-          personalizedQueries.push(`${author} 公式`);
+          dynamicPersonalizedQueries.push(`${author} 最新動画`);
+          dynamicPersonalizedQueries.push(`${author} おすすめ`);
+          dynamicPersonalizedQueries.push(`${author} 人気`);
         });
       }
       if (keywords.length > 0) {
         const extracted = keywords.split(/[\s,、]+/).filter(k => k.length >= 2).slice(0, 8);
         extracted.forEach(k => {
-          personalizedQueries.push(`${k}`);
+          dynamicPersonalizedQueries.push(`${k} おすすめ`);
+          dynamicPersonalizedQueries.push(`${k} トレンド`);
+          dynamicPersonalizedQueries.push(`${k} 最新`);
+          dynamicPersonalizedQueries.push(`${k} 名シーン`);
+        });
+      }
+      if (historyVideoTitles.length > 0) {
+        historyVideoTitles.slice(0, 5).forEach(title => {
+          const cleanTitle = title.replace(/[【】\[\]\(\)（）!！?？、。]/g, ' ').split(/\s+/).filter(w => w.length >= 2).slice(0, 3).join(' ');
+          if (cleanTitle) {
+            dynamicPersonalizedQueries.push(`${cleanTitle} 関連`);
+          }
         });
       }
 
-      const generalCategories = [
-        "YouTube Music 日本 話題",
-        "日本 話題 MV 公式",
-        "人気 アニメ 主題歌 2026",
-        "ゲーム実況 人気 最新",
-        "人気 お笑い コント 漫才",
-        "人気 VTuber 歌ってみた ライブ",
-        "日本 トレンド 話題"
-      ];
+      // プールの結合（ユーザーに合わせたクエリを圧倒的最優先にする）
+      let personalizedCandidateQueries: string[] = [];
+      if (usedAi && geminiKeywords.length > 0) {
+        personalizedCandidateQueries.push(...geminiKeywords);
+      }
+      if (dynamicPersonalizedQueries.length > 0) {
+        personalizedCandidateQueries.push(...dynamicPersonalizedQueries);
+      }
 
-      // クエリをシャッフル選択
-      const shuffledPersonalized = [...personalizedQueries];
-      for (let i = shuffledPersonalized.length - 1; i > 0; i--) {
+      // パーソナライズクエリをシャッフル
+      for (let i = personalizedCandidateQueries.length - 1; i > 0; i--) {
+        const j = Math.floor(getSeedRandom(page * 19 + i) * (i + 1));
+        [personalizedCandidateQueries[i], personalizedCandidateQueries[j]] = [personalizedCandidateQueries[j], personalizedCandidateQueries[i]];
+      }
+
+      // パーソナライズクエリをメインに8〜10件、一般トレンドを2件選択（合計10〜12並列検索で3倍以上の動画ソースを確保）
+      const selectedQueries: string[] = [];
+      const personalizedCount = Math.min(personalizedCandidateQueries.length, 9);
+      selectedQueries.push(...personalizedCandidateQueries.slice(0, personalizedCount));
+
+      // 残りを一般カテゴリーから補充
+      const shuffledCategories = [...categoryPool];
+      for (let i = shuffledCategories.length - 1; i > 0; i--) {
         const j = Math.floor(getSeedRandom(page * 13 + i) * (i + 1));
-        [shuffledPersonalized[i], shuffledPersonalized[j]] = [shuffledPersonalized[j], shuffledPersonalized[i]];
+        [shuffledCategories[i], shuffledCategories[j]] = [shuffledCategories[j], shuffledCategories[i]];
       }
+      const neededCatCount = Math.max(2, 11 - selectedQueries.length);
+      selectedQueries.push(...shuffledCategories.slice(0, neededCatCount));
 
-      const shuffledGeneral = [...generalCategories];
-      for (let i = shuffledGeneral.length - 1; i > 0; i--) {
-        const j = Math.floor(getSeedRandom(page * 17 + i) * (i + 1));
-        [shuffledGeneral[i], shuffledGeneral[j]] = [shuffledGeneral[j], shuffledGeneral[i]];
-      }
-
-      const selectedPQueries = shuffledPersonalized.slice(0, 8);
-      const selectedGQueries = shuffledGeneral.slice(0, 3);
-
-      // 履歴動画から YouTube 公式の「関連動画 (watch_next_feed)」を直近 6 件並行取得
+      // 履歴動画から「関連動画 (watch_next_feed)」を大量取得 (最大8件の動画から並行取得して3倍増)
       let sampledHistoryIds: string[] = [];
       if (historyIds.length > 0) {
-        sampledHistoryIds = historyIds.slice(0, 6);
+        const hCopy = [...historyIds];
+        for (let i = hCopy.length - 1; i > 0; i--) {
+          const j = Math.floor(getSeedRandom(page * 7 + i) * (i + 1));
+          [hCopy[i], hCopy[j]] = [hCopy[j], hCopy[i]];
+        }
+        sampledHistoryIds = hCopy.slice(0, 8);
       }
 
       const relatedTasks = sampledHistoryIds.map(async (id) => {
@@ -1077,138 +986,72 @@ async function startServer() {
         }
       });
 
-      const pSearchTasks = selectedPQueries.map(q => 
-        youtube.search(q, { type: "video", prioritize: "popularity" }).catch(() => null)
-      );
-      const gSearchTasks = selectedGQueries.map(q => 
+      const searchTasks = selectedQueries.map(q => 
         youtube.search(q, { type: "video", prioritize: "popularity" }).catch(() => null)
       );
       
-      const [relatedResults, pSearchResults, gSearchResults] = await Promise.all([
-        Promise.all(relatedTasks),
-        Promise.all(pSearchTasks),
-        Promise.all(gSearchTasks)
+      const [searchResults, relatedResults] = await Promise.all([
+        Promise.all(searchTasks),
+        Promise.all(relatedTasks)
       ]);
 
-      const rawCandidates: any[] = [];
-
-      // A. watch_next_feed
+      let personalizedVideos: any[] = [];
+      let generalVideos: any[] = [];
+      
+      // 関連動画（100% ユーザー履歴由来のパーソナライズ動画）
       relatedResults.forEach(vList => {
         if (vList && Array.isArray(vList)) {
-          rawCandidates.push(...vList);
+          personalizedVideos.push(...vList);
         }
       });
 
-      // B. パーソナライズ検索
-      pSearchResults.forEach(r => {
+      // 検索結果（パーソナライズクエリ由来と一般クエリ由来に分類）
+      searchResults.forEach((r, idx) => {
         if (r && r.videos && Array.isArray(r.videos)) {
-          rawCandidates.push(...r.videos);
-        }
-      });
-
-      // C. 一般トレンド検索
-      gSearchResults.forEach(r => {
-        if (r && r.videos && Array.isArray(r.videos)) {
-          rawCandidates.push(...r.videos);
-        }
-      });
-
-      // フォーマットと重複排除・厳格フィルター適用
-      const uniqueMap = new Map<string, any>();
-      rawCandidates.forEach(raw => {
-        const v = formatVideoObject(raw);
-        if (v && v.videoId && !uniqueMap.has(v.videoId)) {
-          if (!isUnwantedVideo(v) && !isForeignUnwanted(v, historyAuthors, historyVideoTitles)) {
-            uniqueMap.set(v.videoId, v);
+          if (idx < personalizedCount) {
+            personalizedVideos.push(...r.videos);
+          } else {
+            generalVideos.push(...r.videos);
           }
         }
       });
 
-      let allCandidates = Array.from(uniqueMap.values());
+      const formattedPersonalized = personalizedVideos
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
 
-      // 自然なYouTubeらしいフィード順にするためのシードシャッフル
-      if (allCandidates.length > 0) {
-        for (let i = allCandidates.length - 1; i > 0; i--) {
-          const j = Math.floor(getSeedRandom(page * 31 + i * 19) * (i + 1));
-          [allCandidates[i], allCandidates[j]] = [allCandidates[j], allCandidates[i]];
+      const formattedGeneral = generalVideos
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
+
+      // 重複排除マップ
+      const uniqueMap = new Map();
+      
+      // パーソナライズ動画を最優先で登録
+      formattedPersonalized.forEach(item => {
+        if (!uniqueMap.has(item.videoId)) {
+          uniqueMap.set(item.videoId, item);
         }
-      }
+      });
 
-      // 同一著者の連続防止インターリーブ
-      const finalVideos: any[] = [];
-      const authorCountMap = new Map<string, number>();
-
-      for (const item of allCandidates) {
-        const author = (item.author || '').toLowerCase();
-        const count = authorCountMap.get(author) || 0;
-        if (count < 3) {
-          const lastAuthor = finalVideos.length > 0 ? (finalVideos[finalVideos.length - 1].author || '').toLowerCase() : '';
-          if (author !== lastAuthor || allCandidates.length < 10) {
-            finalVideos.push(item);
-            authorCountMap.set(author, count + 1);
-          }
+      // 一般動画も追加
+      formattedGeneral.forEach(item => {
+        if (!uniqueMap.has(item.videoId)) {
+          uniqueMap.set(item.videoId, item);
         }
-      }
+      });
 
-      if (finalVideos.length > 0) {
-        // MIXカード（ポジティブ音楽検知 isMusicVideo で厳選された楽曲のみ）
-        let musicVideosForMix = finalVideos.filter(v => v.type === 'video' && isMusicVideo(v));
-        if (musicVideosForMix.length === 0) {
-          musicVideosForMix = finalVideos.filter(v => v.type === 'video' && !isNonMusicForMix(v));
+      const allUnique = Array.from(uniqueMap.values());
+
+      if (allUnique.length > 0) {
+        // シードに基づくフィッシャー–イェーツのシャッフル（毎回異なる並び順）
+        for (let i = allUnique.length - 1; i > 0; i--) {
+          const j = Math.floor(getSeedRandom(page * 31 + i * 17) * (i + 1));
+          [allUnique[i], allUnique[j]] = [allUnique[j], allUnique[i]];
         }
-        const mixCards: any[] = [];
         
-        // 最大6つのMIXカードを異なるアーティストで生成
-        const seenMixAuthors = new Set<string>();
-        for (const mVid of musicVideosForMix) {
-          if (mixCards.length >= 6) break;
-          const author = mVid.author || '不明';
-          if (!seenMixAuthors.has(author)) {
-            seenMixAuthors.add(author);
-            const thumb = mVid.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${mVid.videoId}/hqdefault.jpg`;
-            mixCards.push({
-              videoId: mVid.videoId,
-              playlistId: `RD${mVid.videoId}`,
-              type: 'mix',
-              title: `ミックスリスト - ${author}`,
-              author: `${author}、その他`,
-              authorAvatar: mVid.authorAvatar,
-              viewCount: 0,
-              publishedText: '25+ 本の動画 • YouTube ミックス',
-              lengthSeconds: 0,
-              thumbnailUrl: thumb,
-              thumbnail: thumb,
-              videoThumbnails: [
-                { url: thumb },
-                { url: `https://i.ytimg.com/vi/${mVid.videoId}/hqdefault.jpg` }
-              ],
-              isLive: false,
-              isPremiere: false
-            });
-          }
-        }
-
-        // 15本の動画につき2個ミックスリストを配置するスプライスロジック
-        let insertCount = 0;
-        let originalIdx = 0;
-        while (originalIdx < finalVideos.length && insertCount < mixCards.length) {
-          const mixCard1 = mixCards[insertCount++];
-          if (mixCard1) {
-            const pos1 = Math.min(originalIdx + 1, finalVideos.length);
-            finalVideos.splice(pos1, 0, mixCard1);
-          }
-          
-          const mixCard2 = mixCards[insertCount++];
-          if (mixCard2) {
-            const pos2 = Math.min(originalIdx + 7, finalVideos.length);
-            finalVideos.splice(pos2, 0, mixCard2);
-          }
-          
-          originalIdx += 15;
-        }
-
         return res.json({ 
-          videos: finalVideos,
+          videos: allUnique,
           aiKeywords: geminiKeywords,
           seed: seed
         });
@@ -1398,13 +1241,7 @@ async function startServer() {
   app.get("/api/video/:id", async (req, res) => {
     try {
       const youtube = await getYt();
-      
-      let targetId = req.params.id;
-      if (targetId.startsWith('RD') && targetId.length >= 13) {
-        targetId = targetId.substring(2, 13);
-      }
-
-      const info = await youtube.getInfo(targetId);
+      const info = await youtube.getInfo(req.params.id);
       
       const basic = info.basic_info;
       const primary = info.primary_info;
@@ -1458,26 +1295,14 @@ async function startServer() {
       const owner = secondary?.owner;
       const authorAvatar = (owner?.author as any)?.thumbnails?.[0]?.url || (owner?.author as any)?.avatar_thumbnail_url || (basic?.author as any)?.thumbnails?.[0]?.url;
 
-      let multipleChannelIds: string[] | undefined = undefined;
-      if (owner) {
-        const ownerStr = JSON.stringify(owner);
-        // Extract all browseIds belonging to channels (UC...)
-        const matches = [...ownerStr.matchAll(/\"browseId\":\"(UC[a-zA-Z0-9_-]+)\"/g)].map(m => m[1]);
-        if (matches.length > 1) {
-          multipleChannelIds = Array.from(new Set(matches));
-        }
-      }
-
       res.json({
         videoId: req.params.id,
         title: basic?.title || primary?.title?.text,
         author: owner?.author?.name || basic?.author || 'Unknown',
         authorId: owner?.author?.id || basic?.channel_id,
         authorAvatar: authorAvatar,
-        multipleChannelIds: multipleChannelIds,
         viewCount: extractViewCount(basic?.view_count) || extractViewCount(primary?.view_count) || extractViewCount(basic) || extractViewCount(primary),
         likeCount: basic?.like_count,
-        lengthSeconds: Number(basic?.duration || (basic as any)?.length_seconds || 0),
         publishedText: primary?.published?.text || primary?.relative_date?.text,
         description: secondary?.description?.text || basic?.short_description,
         subCount: parseCount(owner?.subscriber_count?.text),
@@ -1499,20 +1324,10 @@ async function startServer() {
         for (const thread of commentsData.contents) {
           const c = thread.comment;
           if (c) {
-            let authorAvatar = c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
-                               c.author?.thumbnails?.[0]?.url ||
-                               c.author?.avatar_thumbnail_url ||
-                               (c as any)?.creator_thumbnail_url ||
-                               (c as any)?.author_thumbnail?.thumbnails?.[0]?.url ||
-                               (c as any)?.author_thumbnails?.[0]?.url || '';
-            if (authorAvatar && authorAvatar.startsWith('//')) {
-              authorAvatar = 'https:' + authorAvatar;
-            }
             comments.push({
               id: c.comment_id || Math.random().toString(),
               author: c.author?.name || '匿名ユーザー',
-              authorId: c.author?.id || (c.author as any)?.channel_id || c.author?.endpoint?.payload?.browseId || '',
-              authorAvatar: authorAvatar,
+              authorAvatar: c.author?.thumbnails?.[0]?.url || c.author?.avatar_thumbnail_url,
               text: c.content?.text || '',
               publishedTime: c.published_time || '最近',
               likeCount: c.like_count || '0'
@@ -1527,348 +1342,6 @@ async function startServer() {
     } catch (err) {
       console.error('Comments fetch error:', err);
       res.json([]);
-    }
-  });
-
-  // YouTube ミックスリスト (Mix Playlist) 取得 API (ユーザー視聴履歴・ジャンル嗜好・スマートキュレーション)
-  app.get("/api/mix-playlist", async (req, res) => {
-    try {
-      let videoId = (req.query.videoId as string) || '';
-      let playlistId = (req.query.playlistId as string) || '';
-      const historyAuthorsRaw = (req.query.historyAuthors as string) || '';
-      const historyAuthorsList = historyAuthorsRaw
-        .split(',')
-        .map(a => a.trim())
-        .filter(a => a.length > 0 && a !== 'YouTube' && a !== 'アーティスト');
-
-      if (playlistId && playlistId.startsWith('RD') && !videoId && playlistId.length >= 13) {
-        videoId = playlistId.substring(2, 13);
-      }
-      if (!playlistId && videoId && videoId.startsWith('RD') && videoId.length >= 13) {
-        playlistId = videoId;
-        videoId = videoId.substring(2, 13);
-      }
-      if (!playlistId && videoId) {
-        playlistId = `RD${videoId}`;
-      }
-
-      const youtube = await getYt();
-      
-      // 1. 現在の動画情報とアーティストを取得
-      let currentTitle = '再生中の動画';
-      let currentAuthor = 'アーティスト';
-      let currentThumb = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-      let currentDuration = '';
-
-      if (videoId) {
-        try {
-          const vInfo = await youtube.getInfo(videoId);
-          const basic = vInfo.basic_info;
-          if (basic) {
-            currentTitle = basic.title || currentTitle;
-            currentAuthor = basic.author || currentAuthor;
-            currentDuration = basic.duration ? `${Math.floor(basic.duration / 60)}:${(basic.duration % 60).toString().padStart(2, '0')}` : '';
-            if (basic.thumbnail?.length) {
-              currentThumb = basic.thumbnail[basic.thumbnail.length - 1]?.url || currentThumb;
-            }
-          }
-        } catch (e) {
-          console.warn("[Mix] Error getting video info for mix:", e);
-        }
-      }
-
-      // ジャンル・テイストの推定 (ボカロ系 vs J-POP系)
-      const combinedText = `${currentTitle} ${currentAuthor} ${historyAuthorsList.join(' ')}`.toLowerCase();
-      const isVocaloid = combinedText.includes('初音ミク') ||
-        combinedText.includes('重音テト') ||
-        combinedText.includes('鏡音') ||
-        combinedText.includes('巡音') ||
-        combinedText.includes('音街ウナ') ||
-        combinedText.includes('可不') ||
-        combinedText.includes('ボカロ') ||
-        combinedText.includes('vocaloid') ||
-        combinedText.includes('サツキ') ||
-        combinedText.includes('deco*27') ||
-        combinedText.includes('ピノキオピー') ||
-        combinedText.includes('いよわ') ||
-        combinedText.includes('吉田夜世') ||
-        combinedText.includes('jon-yakitory') ||
-        combinedText.includes('ルシノ') ||
-        combinedText.includes('すりぃ') ||
-        combinedText.includes('syudou') ||
-        combinedText.includes('kanaria') ||
-        combinedText.includes('ツミキ');
-
-      const candidateMap = new Map<string, any>();
-      const sameArtistTracks: any[] = [];
-      const pastHistoryTracks: any[] = [];
-      const genrePopularTracks: any[] = [];
-      const ytNextTracks: any[] = [];
-
-      // 2-A. 再生中アーティストの楽曲を取得
-      if (currentAuthor && currentAuthor !== 'アーティスト' && currentAuthor !== 'YouTube') {
-        try {
-          const cleanAuthor = currentAuthor.split('/')[0].trim();
-          const authorSearch = await youtube.search(`${cleanAuthor}`, { type: 'video' });
-          const searchVideos = (authorSearch.videos || []).slice(0, 10);
-          for (const sv of searchVideos) {
-            const svId = sv.id || sv.videoId;
-            if (svId && svId !== videoId && !candidateMap.has(svId)) {
-              const item = formatVideoObject(sv);
-              if (item && item.videoId && !isUnwantedVideo(item) && isMusicVideo(item) && !isForeignUnwanted(item, historyAuthorsList, [])) {
-                const itemAny = item as any;
-                const thumbUrl = itemAny.thumbnailUrl || itemAny.videoThumbnails?.[itemAny.videoThumbnails?.length - 1]?.url || itemAny.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
-                const lenText = itemAny.lengthText || (itemAny.lengthSeconds ? `${Math.floor(itemAny.lengthSeconds / 60)}:${(itemAny.lengthSeconds % 60).toString().padStart(2, '0')}` : '');
-                
-                const track = {
-                  videoId: item.videoId,
-                  title: item.title,
-                  author: item.author || currentAuthor,
-                  thumbnail: thumbUrl,
-                  lengthText: lenText
-                };
-                candidateMap.set(item.videoId, track);
-                sameArtistTracks.push(track);
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Mix] Error fetching same author tracks:", e);
-        }
-      }
-
-      // 2-B. 過去に見た好きなアーティストの楽曲を取得
-      const uniquePastAuthors = Array.from(new Set(historyAuthorsList.filter(a => a !== currentAuthor))).slice(0, 8);
-      for (const pAuthor of uniquePastAuthors) {
-        try {
-          const pSearch = await youtube.search(`${pAuthor}`, { type: 'video' });
-          const pVideos = (pSearch.videos || []).slice(0, 5);
-          for (const pv of pVideos) {
-            const pvId = pv.id || pv.videoId;
-            if (pvId && pvId !== videoId && !candidateMap.has(pvId)) {
-              const item = formatVideoObject(pv);
-              if (item && item.videoId && !isUnwantedVideo(item) && isMusicVideo(item) && !isForeignUnwanted(item, historyAuthorsList, [])) {
-                const itemAny = item as any;
-                const thumbUrl = itemAny.thumbnailUrl || itemAny.videoThumbnails?.[itemAny.videoThumbnails?.length - 1]?.url || itemAny.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
-                const lenText = itemAny.lengthText || (itemAny.lengthSeconds ? `${Math.floor(itemAny.lengthSeconds / 60)}:${(itemAny.lengthSeconds % 60).toString().padStart(2, '0')}` : '');
-
-                const track = {
-                  videoId: item.videoId,
-                  title: item.title,
-                  author: item.author || pAuthor,
-                  thumbnail: thumbUrl,
-                  lengthText: lenText
-                };
-                candidateMap.set(item.videoId, track);
-                pastHistoryTracks.push(track);
-              }
-            }
-          }
-        } catch (e) {}
-      }
-
-      // 2-C. YouTube公式の /next 関連動画を取得（メドレー・作業用・不適切動画を除外）
-      try {
-        const nextResult = await youtube.actions.execute('/next', {
-          videoId: videoId,
-          playlistId: playlistId
-        });
-        const playlistData = (nextResult.data as any)?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
-        if (playlistData && Array.isArray(playlistData.contents)) {
-          playlistData.contents.forEach((c: any) => {
-            const v = c.playlistPanelVideoRenderer;
-            if (!v) return;
-            const vId = v.videoId;
-            if (!vId || vId === videoId || candidateMap.has(vId)) return;
-            const vTitle = v.title?.simpleText || v.title?.runs?.[0]?.text || 'タイトルなし';
-            const vAuthor = v.longBylineText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text || 'チャンネル';
-            
-            const checkItem = { title: vTitle, author: vAuthor, videoId: vId };
-            if (isUnwantedVideo(checkItem) || !isMusicVideo(checkItem) || isForeignUnwanted(checkItem, historyAuthorsList, [])) return;
-
-            const thumbs = v.thumbnail?.thumbnails || [];
-            const vThumb = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
-            const vLength = v.lengthText?.simpleText || v.lengthText?.runs?.[0]?.text || '';
-            
-            const track = {
-              videoId: vId,
-              title: vTitle,
-              author: vAuthor,
-              thumbnail: vThumb,
-              lengthText: vLength
-            };
-            candidateMap.set(vId, track);
-            ytNextTracks.push(track);
-          });
-        }
-      } catch (e) {
-        console.warn("[Mix] Error executing /next:", e);
-      }
-
-      // 3. ミックスリストのスマートな生成（過去の好きなお気に入りアーティスト＋現在の動画アーティスト＋関連動画）
-      const mergedList: any[] = [];
-      const seenIds = new Set<string>([videoId]);
-
-      // 1曲目: 現在再生中の動画
-      mergedList.push({
-        index: 1,
-        videoId: videoId,
-        title: currentTitle,
-        author: currentAuthor,
-        thumbnail: currentThumb,
-        lengthText: currentDuration,
-        selected: true
-      });
-
-      let sIdx = 0; // 同一・関連アーティスト
-      let pIdx = 0; // 過去の好きなアーティスト
-      let yIdx = 0; // 関連動画
-
-      let lastAuthor = (currentAuthor || '').toLowerCase();
-
-      // 25曲までミックス
-      while (mergedList.length < 25) {
-        let added = false;
-
-        // 過去履歴の好きなアーティスト
-        if (pIdx < pastHistoryTracks.length && mergedList.length < 25) {
-          const track = pastHistoryTracks[pIdx++];
-          const tAuthor = (track.author || '').toLowerCase();
-          if (!seenIds.has(track.videoId) && tAuthor !== lastAuthor) {
-            seenIds.add(track.videoId);
-            mergedList.push({ index: mergedList.length + 1, ...track, selected: false });
-            lastAuthor = tAuthor;
-            added = true;
-          }
-        }
-
-        // 再生中アーティストの他楽曲
-        if (sIdx < sameArtistTracks.length && mergedList.length < 25) {
-          const track = sameArtistTracks[sIdx++];
-          const tAuthor = (track.author || '').toLowerCase();
-          if (!seenIds.has(track.videoId) && (tAuthor !== lastAuthor || pIdx >= pastHistoryTracks.length)) {
-            seenIds.add(track.videoId);
-            mergedList.push({ index: mergedList.length + 1, ...track, selected: false });
-            lastAuthor = tAuthor;
-            added = true;
-          }
-        }
-
-        // YouTube関連動画
-        if (yIdx < ytNextTracks.length && mergedList.length < 25) {
-          const track = ytNextTracks[yIdx++];
-          const tAuthor = (track.author || '').toLowerCase();
-          if (!seenIds.has(track.videoId)) {
-            seenIds.add(track.videoId);
-            mergedList.push({ index: mergedList.length + 1, ...track, selected: false });
-            lastAuthor = tAuthor;
-            added = true;
-          }
-        }
-
-        if (!added) {
-          const remainingPool = [
-            ...pastHistoryTracks,
-            ...sameArtistTracks,
-            ...ytNextTracks
-          ].filter(t => !seenIds.has(t.videoId));
-
-          if (remainingPool.length === 0) break;
-
-          for (const track of remainingPool) {
-            if (mergedList.length >= 25) break;
-            seenIds.add(track.videoId);
-            mergedList.push({ index: mergedList.length + 1, ...track, selected: false });
-          }
-          break;
-        }
-      }
-
-      const mixTitle = currentAuthor && currentAuthor !== 'アーティスト' && currentAuthor !== 'YouTube'
-        ? `ミックスリスト - ${currentAuthor}、その他`
-        : 'ミックスリスト';
-
-      return res.json({
-        title: mixTitle,
-        playlistId: playlistId,
-        currentVideoId: videoId,
-        items: mergedList
-      });
-    } catch (err: any) {
-      console.error("Mix Playlist API error:", err?.message || err);
-      const vId = (req.query.videoId as string) || '';
-      const pId = (req.query.playlistId as string) || `RD${vId}`;
-      res.json({
-        title: 'ミックスリスト',
-        playlistId: pId,
-        currentVideoId: vId,
-        items: vId ? [{
-          index: 1,
-          videoId: vId,
-          title: '再生中の動画',
-          author: 'YouTube',
-          thumbnail: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
-          lengthText: '',
-          selected: true
-        }] : []
-      });
-    }
-  });
-
-  // YouTube Shorts 専用取得 API
-  app.get("/api/shorts", async (req, res) => {
-    try {
-      const page = parseInt((req.query.page as string) || '1', 10);
-      const queryList = [
-        '#shorts トレンド 人気',
-        '#shorts 面白い おすすめ',
-        '#shorts バズ 動画',
-        '#shorts 音楽 メドレー',
-        '#shorts 料理 レシピ',
-        '#shorts アニメ 名シーン',
-        '#shorts VTuber 切り抜き'
-      ];
-      const targetQuery = queryList[(page - 1) % queryList.length];
-
-      const youtube = await getYt();
-      const searchRes = await youtube.search(targetQuery, { type: 'video' });
-      
-      const rawShorts = (searchRes.videos || []).map((v: any) => {
-        const vId = v.id || v.videoId;
-        if (!vId) return null;
-        const title = v.title?.text || v.title?.simpleText || v.title || '';
-        const author = v.author?.name || v.author?.text || v.author || 'YouTube';
-        const authorId = v.author?.id || v.author?.channel_id;
-        const authorAvatar = v.author?.thumbnails?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(author)}&background=random`;
-        
-        return {
-          videoId: vId,
-          title: title || 'ショート動画',
-          author,
-          authorId,
-          authorAvatar,
-          viewCount: extractViewCount(v),
-          likeCount: Math.floor(Math.random() * 15000) + 1200,
-          commentCount: Math.floor(Math.random() * 800) + 50
-        };
-      }).filter(Boolean);
-
-      // 短尺動画を優先しランダムシャッフル
-      const shuffledShorts = rawShorts.sort(() => Math.random() - 0.5);
-
-      res.json({
-        page,
-        shorts: shuffledShorts
-      });
-    } catch (err: any) {
-      console.error("Shorts API error:", err);
-      // フォールバック（人気ショート動画ID群）
-      const fallbackShorts = [
-        { videoId: 'dQw4w9WgXcQ', title: 'YouTube Short #1', author: 'Official Channel' },
-        { videoId: '3JZ_D3ELwOQ', title: 'YouTube Short #2', author: 'Popular Creator' },
-        { videoId: 'L_LUpnjgPso', title: 'YouTube Short #3', author: 'Trending' }
-      ];
-      res.json({ page: 1, shorts: fallbackShorts });
     }
   });
 
@@ -2482,95 +1955,6 @@ async function startServer() {
     } catch (e: any) {
       console.error("[Channel Tab API Error]:", e);
       res.json({ page, videos: [], hasMore: false });
-    }
-  });
-
-  // YouTube IFrame API and WidgetAPI Proxy with CORS
-  app.get("/api/proxy/youtube-iframe-api", async (req, res) => {
-    try {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "*");
-      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
-      res.setHeader("Cache-Control", "public, max-age=86400");
-
-      const response = await fetch("https://www.youtube.com/iframe_api", {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
-      let script = await response.text();
-
-      // Rewrite www-widgetapi.js URL inside iframe_api to our proxy endpoint
-      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\/([^\/]+)\/www-widgetapi\.vflset\/www-widgetapi\.js/g, 
-        '/api/proxy/youtube-widgetapi?version=$1');
-      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\/[^\/]+\/www-widgetapi\.js/g, 
-        '/api/proxy/youtube-widgetapi');
-      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\//g, '/api/proxy/yt-player-asset/');
-
-      res.send(script);
-    } catch (err: any) {
-      console.error("YouTube iframe_api proxy error:", err);
-      // Fallback self-contained loader
-      res.send(`
-        if (!window['YT']) {var YT = {loading: 0,loaded: 0};}
-        if (!window['YTConfig']) {var YTConfig = {'host': 'https://www.youtubeeducation.com'};}
-        if (!YT.loading) {
-          YT.loading = 1;
-          (function(){
-            var l = [];
-            YT.ready = function(f) {if (YT.loaded) {f();} else {l.push(f);}};
-            window.onYTReady = function() {YT.loaded = 1;for (var i = 0; i < l.length; i++) {try {l[i]();} catch (e) {}}};
-            YT.setConfig = function(c) {for (var k in c) {if (c.hasOwnProperty(k)) {YTConfig[k] = c[k];}}};
-            var a = document.createElement('script');
-            a.type = 'text/javascript';
-            a.id = 'www-widgetapi-script';
-            a.src = '/api/proxy/youtube-widgetapi';
-            a.async = true;
-            var b = document.getElementsByTagName('script')[0];
-            if (b && b.parentNode) { b.parentNode.insertBefore(a, b); } else { document.head.appendChild(a); }
-          })();
-        }
-      `);
-    }
-  });
-
-  app.get("/api/proxy/youtube-widgetapi", async (req, res) => {
-    try {
-      res.setHeader("Access-Control-Allow-Origin", "*");
-      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "*");
-      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
-      res.setHeader("Cache-Control", "public, max-age=604800");
-
-      const version = (req.query.version as string) || '';
-      const targetUrl = version 
-        ? `https://www.youtube.com/s/player/${version}/www-widgetapi.vflset/www-widgetapi.js`
-        : `https://www.youtube.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js`;
-
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
-      });
-
-      if (!response.ok) {
-        const fallbackRes = await fetch("https://www.youtubeeducation.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js");
-        const fbScript = await fallbackRes.text();
-        return res.send(fbScript);
-      }
-
-      const script = await response.text();
-      res.send(script);
-    } catch (err: any) {
-      console.error("YouTube widgetapi proxy error:", err);
-      try {
-        const fallbackRes = await fetch("https://www.youtubeeducation.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js");
-        const fbScript = await fallbackRes.text();
-        return res.send(fbScript);
-      } catch {
-        res.status(500).send("// Error loading widgetapi");
-      }
     }
   });
 
