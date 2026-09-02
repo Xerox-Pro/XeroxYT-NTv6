@@ -6,7 +6,7 @@ import {
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X,
-  SkipForward, SkipBack, Play, Shuffle, Repeat
+  SkipForward, SkipBack, Play, Shuffle, Repeat, Trash2
 } from 'lucide-react';
 
 interface MixItem {
@@ -164,6 +164,58 @@ export default function VideoPlayer({
   const [mixExpanded, setMixExpanded] = useState(true);
   const [isShuffle, setIsShuffle] = useState(false);
   const [isLoop, setIsLoop] = useState(true);
+
+  // 単体動画 自動再生 (Auto-play) 設定 & カウントダウン
+  const [autoPlayEnabled, setAutoPlayEnabled] = useState(true);
+  const [autoPlayCountdown, setAutoPlayCountdown] = useState<number | null>(null);
+  const autoPlayTimerRef = useRef<any>(null);
+
+  // ミックス曲削除ハンドラ
+  const handleRemoveFromMix = (e: React.MouseEvent, indexToRemove: number) => {
+    e.stopPropagation();
+    if (!mixPlaylist) return;
+    const newItems = mixPlaylist.items.filter((_, idx) => idx !== indexToRemove).map((item, newIdx) => ({
+      ...item,
+      index: newIdx + 1
+    }));
+    setMixPlaylist({
+      ...mixPlaylist,
+      items: newItems
+    });
+  };
+
+  const cancelAutoPlayCountdown = () => {
+    if (autoPlayTimerRef.current) {
+      clearInterval(autoPlayTimerRef.current);
+      autoPlayTimerRef.current = null;
+    }
+    setAutoPlayCountdown(null);
+  };
+
+  const playNextRecommendedVideo = () => {
+    cancelAutoPlayCountdown();
+    const nextVideo = activeVideoRef.current?.recommendedVideos?.[0];
+    if (nextVideo && nextVideo.videoId) {
+      onVideoSelect(nextVideo.videoId, nextVideo);
+    }
+  };
+
+  const startAutoPlayCountdown = () => {
+    if (!autoPlayEnabled) return;
+    if (autoPlayTimerRef.current) clearInterval(autoPlayTimerRef.current);
+    setAutoPlayCountdown(5);
+
+    autoPlayTimerRef.current = setInterval(() => {
+      setAutoPlayCountdown(prev => {
+        if (prev === null || prev <= 1) {
+          clearInterval(autoPlayTimerRef.current);
+          playNextRecommendedVideo();
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const ytPlayerRef = useRef<any>(null);
@@ -496,10 +548,12 @@ export default function VideoPlayer({
             // アプリ側の選択・動画情報を同期（URLも追従）
             onVideoSelectRef.current(playerVideoId, {
               videoId: playerVideoId,
-              title: matchItem?.title,
-              author: matchItem?.author,
+              title: matchItem?.title || '',
+              author: matchItem?.author || 'チャンネル',
+              authorAvatar: (matchItem as any)?.authorAvatar || (matchItem as any)?.authorThumbnail,
+              videoThumbnails: [{ url: (matchItem as any)?.thumbnail || `https://i.ytimg.com/vi/${playerVideoId}/hqdefault.jpg` }],
               playlistId: currentList?.playlistId,
-              type: currentList ? 'mix' : 'video'
+              type: 'mix'
             } as any);
 
             // ミックスリストのアクティブ曲ハイライト更新
@@ -525,8 +579,8 @@ export default function VideoPlayer({
             (data.info?.playerState === 0 || data.playerState === 0);
 
           if (isEnded && !mixPlaylistRef.current) {
-            // 単体動画再生終了時は次の関連動画へ
-            triggerNextTrack('player-ended-event');
+            // 単体動画再生終了時は 5秒カウントダウンして次の関連動画へ
+            startAutoPlayCountdown();
           }
         }
       } catch (e) {
@@ -797,27 +851,46 @@ export default function VideoPlayer({
 
   // Fetch video metadata
   useEffect(() => {
-    // キャッシュまたはミックスリストから即座にタイトル・作者を反映（遅延0msでUI更新）
-    const cached = videoCache[videoId] || mixPlaylist?.items.find(it => it.videoId === videoId);
+    // 前の動画のデータをクリアし、新しい動画のキャッシュまたはクリーンな初期状態を即時設定
+    const cached = videoCache[videoId] || mixPlaylist?.items?.find(it => it.videoId === videoId);
     if (cached) {
-      setVideoData(prev => ({
-        ...(prev || {}),
+      const cleanAuthor = cached.author || 'チャンネル';
+      const cleanThumb = (cached as any).authorAvatar || (cached as any).authorThumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      setVideoData({
         videoId,
-        title: cached.title,
-        author: cached.author,
+        title: cached.title || '動画を読み込み中...',
+        author: cleanAuthor,
+        authorId: (cached as any).authorId || cleanAuthor,
+        authorAvatar: (cached as any).authorAvatar || cleanThumb,
+        authorThumbnails: (cached as any).authorThumbnails || [{ url: cleanThumb }],
         videoThumbnails: (cached as any).videoThumbnails || [{ url: (cached as any).thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-        description: prev?.videoId === videoId ? prev.description : '',
-        viewCount: (cached as any).viewCount || prev?.viewCount || 0,
+        description: '',
+        viewCount: (cached as any).viewCount || 0,
         publishedText: (cached as any).publishedText || '',
+        likeCount: (cached as any).likeCount || 0,
+        lengthSeconds: (cached as any).lengthSeconds || 0,
         type: 'video'
-      } as Video));
+      } as any as Video);
+    } else {
+      // キャッシュが存在しない場合は前動画のデータを残さず null にする
+      setVideoData(null);
     }
+
+    // コメント・複数チャンネル・概要欄など前動画のデータをすべて即時リセット
+    setComments([]);
+    setLiveChatMessages([]);
+    setMultiChannelsData([]);
+    setIsDescExpanded(false);
+    setLoadingComments(true);
+
+    let isCurrentFetch = true;
 
     const fetchVideo = async () => {
       setLoading(true);
       setError('');
       try {
         const data = await fetchJSON(`/api/video/${videoId}`);
+        if (!isCurrentFetch) return;
         setVideoData(data);
         activeVideoRef.current = data;
         
@@ -840,17 +913,20 @@ export default function VideoPlayer({
           setSidebarTab('related');
         }
       } catch (err: any) {
+        if (!isCurrentFetch) return;
         setError(err.message || 'エラーが発生しました');
       } finally {
-        setLoading(false);
+        if (isCurrentFetch) {
+          setLoading(false);
+        }
       }
     };
 
     const fetchComments = async () => {
-      setLoadingComments(true);
       try {
         const data = await fetchJSON(`/api/video/${videoId}/comments`);
-        setComments(data);
+        if (!isCurrentFetch) return;
+        setComments(data || []);
         
         if (activeVideoRef.current && activeVideoRef.current.recommendedVideos) {
           localAI.processMetadataAnalysis(videoId, data, activeVideoRef.current.recommendedVideos);
@@ -858,13 +934,18 @@ export default function VideoPlayer({
       } catch (err) {
         console.error("Failed to load comments", err);
       } finally {
-        setLoadingComments(false);
+        if (isCurrentFetch) {
+          setLoadingComments(false);
+        }
       }
     };
 
     fetchVideo();
     fetchComments();
-    setIsDescExpanded(false);
+
+    return () => {
+      isCurrentFetch = false;
+    };
   }, [videoId]);
 
   // document.title を現在の動画タイトルに同期
@@ -964,17 +1045,38 @@ export default function VideoPlayer({
     );
   }
 
-  // videoData が null の場合の安全なフォールバック
-  const activeVideo: Video = videoData || {
-    videoId: videoId,
-    title: '動画を読み込み中...',
-    author: 'YouTube',
-    videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-    description: '',
-    viewCount: 0,
-    publishedText: '',
-    type: 'video'
-  };
+  // videoData の videoId が現在の videoId と一致しているか厳格に判定
+  const isCurrentVideoMatched = videoData && videoData.videoId === videoId;
+  const cachedItem = mixPlaylist?.items?.find(it => it.videoId === videoId) || videoCache[videoId];
+
+  // 現在の videoId と一致しない古い videoData は絶対に使用しない
+  const activeVideo: Video = isCurrentVideoMatched
+    ? videoData!
+    : (cachedItem
+        ? {
+            videoId: videoId,
+            title: cachedItem.title || '動画を読み込み中...',
+            author: cachedItem.author || 'チャンネル',
+            authorId: (cachedItem as any).authorId || cachedItem.author || '',
+            authorAvatar: (cachedItem as any).authorAvatar || (cachedItem as any).authorThumbnail,
+            authorThumbnails: (cachedItem as any).authorThumbnails || [{ url: (cachedItem as any).authorAvatar || (cachedItem as any).authorThumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
+            videoThumbnails: (cachedItem as any).videoThumbnails || [{ url: (cachedItem as any).thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
+            description: '',
+            viewCount: (cachedItem as any).viewCount || 0,
+            publishedText: (cachedItem as any).publishedText || '',
+            likeCount: (cachedItem as any).likeCount || 0,
+            type: 'video'
+          }
+        : {
+            videoId: videoId,
+            title: '動画を読み込み中...',
+            author: 'YouTube',
+            videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
+            description: '',
+            viewCount: 0,
+            publishedText: '',
+            type: 'video'
+          });
 
   const isLive = !!(activeVideo.isLive && !(activeVideo as any).isPremiere && !(activeVideo as any).isUpcoming);
 
@@ -1116,6 +1218,39 @@ export default function VideoPlayer({
             allowFullScreen
             title={activeVideo.title}
           ></iframe>
+
+          {/* 5秒カウントダウン オーバーレイ (YouTube公式風 自動再生カウントダウン) */}
+          {autoPlayCountdown !== null && (
+            <div className="absolute inset-0 bg-black/85 backdrop-blur-md z-30 flex flex-col items-center justify-center text-white p-6 animate-fade-in">
+              <div className="text-xs font-semibold uppercase tracking-widest text-red-400 mb-2 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                次の動画を再生します ({autoPlayCountdown}秒)
+              </div>
+              <h3 className="text-base sm:text-lg font-bold text-center max-w-lg line-clamp-2 mb-6 text-gray-100">
+                {activeVideo.recommendedVideos?.[0]?.title || '次の関連動画'}
+              </h3>
+
+              {/* カウントダウンタイマー数字 */}
+              <div className="w-16 h-16 mb-6 rounded-full bg-red-600/20 border-2 border-red-500 flex items-center justify-center text-2xl font-black text-white shadow-lg animate-pulse">
+                {autoPlayCountdown}
+              </div>
+
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={cancelAutoPlayCountdown}
+                  className="px-5 py-2.5 bg-gray-800 hover:bg-gray-700 text-gray-200 font-bold text-xs sm:text-sm rounded-full transition-colors border border-gray-600"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={playNextRecommendedVideo}
+                  className="px-6 py-2.5 bg-red-600 hover:bg-red-700 text-white font-bold text-xs sm:text-sm rounded-full transition-colors shadow-lg"
+                >
+                  今すぐ再生
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         
         <div className="mt-4 flex flex-col">
@@ -1249,6 +1384,26 @@ export default function VideoPlayer({
                   <span>保存</span>
                 </button>
               )}
+
+              {/* 自動再生 (Auto-play) トグルスイッチ */}
+              <button 
+                onClick={() => {
+                  const nextState = !autoPlayEnabled;
+                  setAutoPlayEnabled(nextState);
+                  if (!nextState) cancelAutoPlayCountdown();
+                }}
+                title={autoPlayEnabled ? "自動再生: オン (動画終了5秒後に関連動画へ進みます)" : "自動再生: オフ"}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all ${
+                  autoPlayEnabled 
+                    ? 'bg-red-50 text-red-700 border-red-200 hover:bg-red-100' 
+                    : 'bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200'
+                }`}
+              >
+                <span>自動再生</span>
+                <div className={`w-7 h-4 rounded-full p-0.5 transition-colors flex items-center ${autoPlayEnabled ? 'bg-red-600 justify-end' : 'bg-gray-300 justify-start'}`}>
+                  <div className="w-3 h-3 rounded-full bg-white shadow-xs" />
+                </div>
+              </button>
 
               {isLive && (
                 <button
@@ -1599,6 +1754,16 @@ export default function VideoPlayer({
                                 {item.author}
                               </span>
                             </div>
+
+                            {/* リストから削除ボタン */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleRemoveFromMix(e, idx)}
+                              title="リストからこの曲を削除"
+                              className="p-1.5 opacity-0 group-hover:opacity-100 hover:bg-gray-200/80 rounded-full text-gray-400 hover:text-red-600 transition-all shrink-0"
+                            >
+                              <Trash2 size={13} />
+                            </button>
                           </div>
                         );
                       })
@@ -1616,7 +1781,7 @@ export default function VideoPlayer({
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
               {[
                 { id: 'all', label: 'すべて' },
-                { id: 'author', label: `提供: ${videoData?.author || 'チャンネル'}` },
+                { id: 'author', label: `提供: ${activeVideo.author || 'チャンネル'}` },
                 { id: 'related', label: '関連動画' },
                 { id: 'recommended', label: 'おすすめ' },
                 { id: 'recent', label: '最近アップロード' },

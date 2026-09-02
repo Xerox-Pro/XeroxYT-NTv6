@@ -15,6 +15,7 @@ import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
+import ShortsViewer from './components/ShortsViewer';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
@@ -33,7 +34,7 @@ export default function App() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'shorts'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
@@ -112,6 +113,8 @@ export default function App() {
       const channelId = path.replace('/channel/', '');
       setSelectedChannelId(channelId);
       setView('channel');
+    } else if (path === '/shorts') {
+      setView('shorts');
     } else if (path === '/feed/subscriptions') {
       setView('subscriptions');
     } else if (path === '/feed/library') {
@@ -752,6 +755,7 @@ export default function App() {
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
           onHome={handleGoHome}
+          onShorts={() => navigate('/shorts')}
           onSubscriptions={() => setView('subscriptions')}
           onLibrary={() => setView('library')}
           onHistory={() => setView('history')}
@@ -803,6 +807,14 @@ export default function App() {
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
               onSelectChannel={handleSelectChannel}
+            />
+          ) : view === 'shorts' ? (
+            <ShortsViewer
+              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
+              onSelectChannel={handleSelectChannel}
+              subscriptions={subscriptions}
+              onToggleSubscribe={handleToggleSubscribe}
+              onRecordHistory={handleRecordShortHistory}
             />
           ) : view === 'subscriptions' ? (
             <SubscriptionsFeed
