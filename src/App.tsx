@@ -792,6 +792,7 @@ export default function App() {
               onOpenAddToPlaylist={(video) => setPlaylistModalVideo(video)}
               onCacheVideo={(v) => updateCache([v])}
               watchHistory={watchHistory}
+              videoCache={videoCache}
             />
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage

@@ -116,6 +116,7 @@ interface VideoPlayerProps {
   onOpenAddToPlaylist?: (video: Video) => void;
   onCacheVideo?: (video: Video) => void;
   watchHistory?: WatchHistoryItem[];
+  videoCache?: Record<string, Video>;
 }
 
 export default function VideoPlayer({
@@ -128,9 +129,12 @@ export default function VideoPlayer({
   onRecordHistory,
   onOpenAddToPlaylist,
   onCacheVideo,
-  watchHistory = []
+  watchHistory = [],
+  videoCache = {}
 }: VideoPlayerProps) {
-  const [videoData, setVideoData] = useState<Video | null>(null);
+  const [videoData, setVideoData] = useState<Video | null>(() => {
+    return videoCache[videoId] || null;
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
@@ -324,8 +328,13 @@ export default function VideoPlayer({
           id: 1,
           channel: 'widget'
         }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'getVideoData',
+          args: []
+        }), '*');
       }
-    }, 1000);
+    }, 800);
 
     return () => {
       window.removeEventListener('message', handleMessage);
@@ -446,6 +455,22 @@ export default function VideoPlayer({
 
   // Fetch video metadata
   useEffect(() => {
+    // キャッシュまたはミックスリストから即座にタイトル・作者を反映（遅延0msでUI更新）
+    const cached = videoCache[videoId] || mixPlaylist?.items.find(it => it.videoId === videoId);
+    if (cached) {
+      setVideoData(prev => ({
+        ...(prev || {}),
+        videoId,
+        title: cached.title,
+        author: cached.author,
+        videoThumbnails: (cached as any).videoThumbnails || [{ url: (cached as any).thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
+        description: prev?.videoId === videoId ? prev.description : '',
+        viewCount: (cached as any).viewCount || prev?.viewCount || 0,
+        publishedText: (cached as any).publishedText || '',
+        type: 'video'
+      } as Video));
+    }
+
     const fetchVideo = async () => {
       setLoading(true);
       setError('');
