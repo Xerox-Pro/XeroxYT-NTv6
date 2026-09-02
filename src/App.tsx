@@ -94,8 +94,15 @@ export default function App() {
         fetchSearch(q, 1, false);
       }
     } else if (path === '/watch') {
-      const v = searchParams.get('v');
-      const list = searchParams.get('list');
+      let v = searchParams.get('v');
+      let list = searchParams.get('list');
+      
+      // MixプレイリストのvパラメータがRD...から始まる場合、video IDを正しく抽出する
+      if (v && v.startsWith('RD') && v.length >= 13) {
+        list = list || v;
+        v = v.substring(2, 13);
+      }
+
       if (v) {
         setCurrentVideoId(v);
         setCurrentPlaylistId(list);

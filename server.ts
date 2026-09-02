@@ -668,9 +668,17 @@ async function startServer() {
     }
 
     const isPlaylist = v.type === 'Playlist' || v.type === 'Mix' || v.type === 'CompactPlaylist';
-    const videoId = isPlaylist ? (v.first_video_id || undefined) : (v.id || v.videoId);
-    const playlistId = isPlaylist ? (v.id || v.playlistId) : (v.playlistId || undefined);
+    let videoId = isPlaylist ? (v.first_video_id || undefined) : (v.id || v.videoId);
+    let playlistId = isPlaylist ? (v.id || v.playlistId) : (v.playlistId || undefined);
     
+    // MixプレイリストなどでRDから始まるIDの場合、その中からvideoIdを抽出する
+    if (!videoId && playlistId && typeof playlistId === 'string' && playlistId.startsWith('RD') && playlistId.length >= 13) {
+      videoId = playlistId.substring(2, 13);
+    } else if (videoId && typeof videoId === 'string' && videoId.startsWith('RD') && videoId.length >= 13) {
+      playlistId = videoId;
+      videoId = videoId.substring(2, 13);
+    }
+
     if (!videoId && !playlistId) return null;
 
     const thumbnails = v.thumbnails || v.videoThumbnails || v.thumbnail || [];
@@ -1241,7 +1249,13 @@ async function startServer() {
   app.get("/api/video/:id", async (req, res) => {
     try {
       const youtube = await getYt();
-      const info = await youtube.getInfo(req.params.id);
+      
+      let targetId = req.params.id;
+      if (targetId.startsWith('RD') && targetId.length >= 13) {
+        targetId = targetId.substring(2, 13);
+      }
+
+      const info = await youtube.getInfo(targetId);
       
       const basic = info.basic_info;
       const primary = info.primary_info;
