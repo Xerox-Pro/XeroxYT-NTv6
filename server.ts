@@ -1402,6 +1402,7 @@ async function startServer() {
         multipleChannelIds: multipleChannelIds,
         viewCount: extractViewCount(basic?.view_count) || extractViewCount(primary?.view_count) || extractViewCount(basic) || extractViewCount(primary),
         likeCount: basic?.like_count,
+        lengthSeconds: Number(basic?.duration || (basic as any)?.length_seconds || 0),
         publishedText: primary?.published?.text || primary?.relative_date?.text,
         description: secondary?.description?.text || basic?.short_description,
         subCount: parseCount(owner?.subscriber_count?.text),
@@ -2190,6 +2191,95 @@ async function startServer() {
     } catch (e: any) {
       console.error("[Channel Tab API Error]:", e);
       res.json({ page, videos: [], hasMore: false });
+    }
+  });
+
+  // YouTube IFrame API and WidgetAPI Proxy with CORS
+  app.get("/api/proxy/youtube-iframe-api", async (req, res) => {
+    try {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+
+      const response = await fetch("https://www.youtube.com/iframe_api", {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+      let script = await response.text();
+
+      // Rewrite www-widgetapi.js URL inside iframe_api to our proxy endpoint
+      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\/([^\/]+)\/www-widgetapi\.vflset\/www-widgetapi\.js/g, 
+        '/api/proxy/youtube-widgetapi?version=$1');
+      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\/[^\/]+\/www-widgetapi\.js/g, 
+        '/api/proxy/youtube-widgetapi');
+      script = script.replace(/https:\/\/www\.youtube\.com\/s\/player\//g, '/api/proxy/yt-player-asset/');
+
+      res.send(script);
+    } catch (err: any) {
+      console.error("YouTube iframe_api proxy error:", err);
+      // Fallback self-contained loader
+      res.send(`
+        if (!window['YT']) {var YT = {loading: 0,loaded: 0};}
+        if (!window['YTConfig']) {var YTConfig = {'host': 'https://www.youtubeeducation.com'};}
+        if (!YT.loading) {
+          YT.loading = 1;
+          (function(){
+            var l = [];
+            YT.ready = function(f) {if (YT.loaded) {f();} else {l.push(f);}};
+            window.onYTReady = function() {YT.loaded = 1;for (var i = 0; i < l.length; i++) {try {l[i]();} catch (e) {}}};
+            YT.setConfig = function(c) {for (var k in c) {if (c.hasOwnProperty(k)) {YTConfig[k] = c[k];}}};
+            var a = document.createElement('script');
+            a.type = 'text/javascript';
+            a.id = 'www-widgetapi-script';
+            a.src = '/api/proxy/youtube-widgetapi';
+            a.async = true;
+            var b = document.getElementsByTagName('script')[0];
+            if (b && b.parentNode) { b.parentNode.insertBefore(a, b); } else { document.head.appendChild(a); }
+          })();
+        }
+      `);
+    }
+  });
+
+  app.get("/api/proxy/youtube-widgetapi", async (req, res) => {
+    try {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+      res.setHeader("Content-Type", "application/javascript; charset=UTF-8");
+      res.setHeader("Cache-Control", "public, max-age=604800");
+
+      const version = (req.query.version as string) || '';
+      const targetUrl = version 
+        ? `https://www.youtube.com/s/player/${version}/www-widgetapi.vflset/www-widgetapi.js`
+        : `https://www.youtube.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js`;
+
+      const response = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+      });
+
+      if (!response.ok) {
+        const fallbackRes = await fetch("https://www.youtubeeducation.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js");
+        const fbScript = await fallbackRes.text();
+        return res.send(fbScript);
+      }
+
+      const script = await response.text();
+      res.send(script);
+    } catch (err: any) {
+      console.error("YouTube widgetapi proxy error:", err);
+      try {
+        const fallbackRes = await fetch("https://www.youtubeeducation.com/s/player/9595561a/www-widgetapi.vflset/www-widgetapi.js");
+        const fbScript = await fallbackRes.text();
+        return res.send(fbScript);
+      } catch {
+        res.status(500).send("// Error loading widgetapi");
+      }
     }
   });
 

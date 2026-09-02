@@ -119,6 +119,18 @@ interface VideoPlayerProps {
   videoCache?: Record<string, Video>;
 }
 
+function parseDurationText(text?: string): number {
+  if (!text) return 0;
+  const parts = text.trim().split(':').map(Number);
+  if (parts.some(isNaN)) return 0;
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
+}
+
 export default function VideoPlayer({
   videoId,
   playlistId,
@@ -391,12 +403,9 @@ export default function VideoPlayer({
           }
 
           // 動画再生終了の検知 (YT.PlayerState.ENDED = 0)
-          // 1. event: "onStateChange" かつ info = 0 または data = 0
-          // 2. event: "infoDelivery" かつ info.playerState = 0
-          // 3. info.playerState = 0 または playerState = 0
           const isEnded = 
-            (data.event === 'onStateChange' && (data.info === 0 || data.data === 0 || data.info?.playerState === 0)) ||
-            (data.event === 'infoDelivery' && data.info?.playerState === 0) ||
+            (data.event === 'onStateChange' && (data.info === 0 || data.data === 0 || data.info?.playerState === 0 || data.info?.player_state === 0)) ||
+            (data.event === 'infoDelivery' && (data.info?.playerState === 0 || data.info?.player_state === 0)) ||
             (data.info?.playerState === 0 || data.playerState === 0) ||
             (data.event === 'infoDelivery' && typeof data.info?.currentTime === 'number' && typeof data.info?.duration === 'number' && data.info.duration > 2 && data.info.currentTime >= data.info.duration - 0.75);
 
@@ -429,14 +438,109 @@ export default function VideoPlayer({
           func: 'getPlayerState',
           args: []
         }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'getCurrentTime',
+          args: []
+        }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'getDuration',
+          args: []
+        }), '*');
       }
-    }, 600);
+    }, 500);
 
     return () => {
       window.removeEventListener('message', handleMessage);
       clearInterval(timer);
     };
   }, []);
+
+  // YouTube Iframe API による直接イベント監視
+  useEffect(() => {
+    let ytPlayer: any = null;
+    let checkTimer: any = null;
+
+    const attachYT = () => {
+      if (iframeRef.current && (window as any).YT && (window as any).YT.Player) {
+        try {
+          ytPlayer = new (window as any).YT.Player(iframeRef.current, {
+            events: {
+              onStateChange: (event: any) => {
+                if (event.data === 0) { // 0 = YT.PlayerState.ENDED
+                  triggerNextTrack('yt-api-ended');
+                }
+              },
+              onError: (event: any) => {
+                console.warn('[YT] Player error:', event?.data);
+                // 動画が再生不可・ブロックされている場合は1.5秒後に自動でスキップ
+                if (mixPlaylistRef.current) {
+                  setTimeout(() => triggerNextTrack('yt-api-error'), 1500);
+                }
+              }
+            }
+          });
+        } catch (e) {
+          // YT Player attach error ignored
+        }
+      }
+    };
+
+    attachYT();
+    if (!(window as any).YT) {
+      if (!document.getElementById('yt-iframe-proxy-api')) {
+        const tag = document.createElement('script');
+        tag.id = 'yt-iframe-proxy-api';
+        tag.src = '/api/proxy/youtube-iframe-api';
+        tag.async = true;
+        document.head.appendChild(tag);
+      }
+      checkTimer = setInterval(() => {
+        if ((window as any).YT) {
+          clearInterval(checkTimer);
+          attachYT();
+        }
+      }, 300);
+    }
+
+    return () => {
+      if (checkTimer) clearInterval(checkTimer);
+      if (ytPlayer && typeof ytPlayer.destroy === 'function') {
+        try { ytPlayer.destroy(); } catch {}
+      }
+    };
+  }, [videoId]);
+
+  // 保険としての再生時間タイマー (Watchdog)
+  useEffect(() => {
+    let isCancelled = false;
+    let watchdogTimer: any = null;
+
+    // 再生時間の特定 (videoData.lengthSeconds または mixPlaylist の lengthText)
+    const currentItem = mixPlaylist?.items?.find(it => it.videoId === videoId);
+    const durationFromText = parseDurationText(currentItem?.lengthText);
+    const durationSec = (videoData?.lengthSeconds && videoData.lengthSeconds > 0) 
+      ? videoData.lengthSeconds 
+      : (durationFromText > 0 ? durationFromText : 0);
+
+    if (durationSec > 0 && mixPlaylist) {
+      // 動画の再生時間 + 3秒で自動スキップを保険として起動
+      const timeoutMs = (durationSec + 3) * 1000;
+      
+      watchdogTimer = setTimeout(() => {
+        if (!isCancelled && hasTriggeredEndRef.current !== videoId) {
+          console.log(`[MixPlaylist] Watchdog タイマー満了 (${durationSec}秒) -> 自動で次の動画へ`);
+          triggerNextTrack('watchdog-timer');
+        }
+      }, timeoutMs);
+    }
+
+    return () => {
+      isCancelled = true;
+      if (watchdogTimer) clearTimeout(watchdogTimer);
+    };
+  }, [videoId, videoData?.lengthSeconds, mixPlaylist]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -839,9 +943,24 @@ export default function VideoPlayer({
   }
 
   // iframe URL の構築 (直接videoIdを再生し、&listパラメータによる1曲目への強制リセットを防ぐ)
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  let cleanEduKey = eduKey || '';
+  if (cleanEduKey) {
+    if (originUrl) {
+      cleanEduKey = cleanEduKey
+        .replace(/origin=[^&]*/g, `origin=${encodeURIComponent(originUrl)}`)
+        .replace(/forigin=[^&]*/g, `forigin=${encodeURIComponent(originUrl)}`);
+    }
+    if (!cleanEduKey.includes('enablejsapi=1')) {
+      cleanEduKey += '&enablejsapi=1';
+    }
+  } else {
+    cleanEduKey = `?autoplay=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
+  }
+
   const embedSrc = videoId
-    ? `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? (eduKey.startsWith('?') ? eduKey : `?${eduKey}`) : '?autoplay=1&enablejsapi=1'}`
-    : (playlistId ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey ? (eduKey.startsWith('?') ? eduKey.replace('?', '&') : `&${eduKey}`) : ''}` : '');
+    ? `https://www.youtubeeducation.com/embed/${videoId}${cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`}`
+    : (playlistId ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${cleanEduKey ? (cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`) : ''}` : '');
 
   return (
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
