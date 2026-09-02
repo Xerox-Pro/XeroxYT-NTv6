@@ -633,7 +633,8 @@ export default function App() {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
     }
     
-    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
+    // 現在の playlistId または渡された videoObj/cache の playlistId を保持
+    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null) || (currentPlaylistId || null);
     navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
   };
 

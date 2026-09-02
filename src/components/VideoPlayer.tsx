@@ -5,8 +5,26 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X,
+  SkipForward, SkipBack, Play, Shuffle, Repeat
 } from 'lucide-react';
+
+interface MixItem {
+  index: number;
+  videoId: string;
+  title: string;
+  author: string;
+  thumbnail: string;
+  lengthText: string;
+  selected: boolean;
+}
+
+interface MixPlaylistData {
+  title: string;
+  playlistId: string;
+  currentVideoId: string;
+  items: MixItem[];
+}
 import Avatar from './Avatar';
 
 interface CommentItemProps {
@@ -124,7 +142,67 @@ export default function VideoPlayer({
   const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
 
+  // ミックスリスト State
+  const [mixPlaylist, setMixPlaylist] = useState<MixPlaylistData | null>(null);
+  const [loadingMixPlaylist, setLoadingMixPlaylist] = useState(false);
+  const [mixExpanded, setMixExpanded] = useState(true);
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // ミックスリストデータ取得
+  useEffect(() => {
+    if (playlistId || (videoId && videoId.startsWith('RD'))) {
+      setLoadingMixPlaylist(true);
+      const targetPlaylistId = playlistId || (videoId.startsWith('RD') ? videoId : `RD${videoId}`);
+      fetchJSON(`/api/mix-playlist?videoId=${videoId || ''}&playlistId=${targetPlaylistId || ''}`)
+        .then((data) => {
+          if (data && data.items && data.items.length > 0) {
+            setMixPlaylist(data);
+          } else {
+            setMixPlaylist(null);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load mix playlist', err);
+          setMixPlaylist(null);
+        })
+        .finally(() => {
+          setLoadingMixPlaylist(false);
+        });
+    } else {
+      setMixPlaylist(null);
+    }
+  }, [videoId, playlistId]);
+
+  const currentMixIndex = mixPlaylist?.items.findIndex(item => item.videoId === videoId) ?? -1;
+  const hasNextMixItem = mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1;
+  const hasPrevMixItem = mixPlaylist && currentMixIndex > 0;
+
+  const handlePlayNextMix = () => {
+    if (mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1) {
+      const nextItem = mixPlaylist.items[currentMixIndex + 1];
+      onVideoSelect(nextItem.videoId, {
+        videoId: nextItem.videoId,
+        title: nextItem.title,
+        author: nextItem.author,
+        playlistId: mixPlaylist.playlistId,
+        type: 'mix'
+      } as any);
+    }
+  };
+
+  const handlePlayPrevMix = () => {
+    if (mixPlaylist && currentMixIndex > 0) {
+      const prevItem = mixPlaylist.items[currentMixIndex - 1];
+      onVideoSelect(prevItem.videoId, {
+        videoId: prevItem.videoId,
+        title: prevItem.title,
+        author: prevItem.author,
+        playlistId: mixPlaylist.playlistId,
+        type: 'mix'
+      } as any);
+    }
+  };
 
   // EduKey 取得
   useEffect(() => {
@@ -150,12 +228,31 @@ export default function VideoPlayer({
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       try {
-        if (typeof event.data === 'string') {
-          const data = JSON.parse(event.data);
-          if (data.event === 'infoDelivery' || data.event === 'initialDelivery') {
-            const playerVideoId = data.info?.videoData?.video_id;
-            if (playerVideoId && playerVideoId !== videoId) {
-              onVideoSelect(playerVideoId);
+        let data = event.data;
+        if (typeof data === 'string') {
+          try {
+            data = JSON.parse(data);
+          } catch {
+            return;
+          }
+        }
+        if (data && typeof data === 'object') {
+          // video_id の変更検知
+          const playerVideoId = data.info?.videoData?.video_id || data.info?.videoId || data.videoId;
+          if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoId && playerVideoId.length >= 8) {
+            onVideoSelect(playerVideoId);
+          }
+          // 動画再生終了 (onStateChange === 0) でミックスリストの次の曲へ自動遷移
+          if (data.event === 'onStateChange' && (data.info === 0 || data.info?.playerState === 0)) {
+            if (mixPlaylist && currentMixIndex !== -1 && currentMixIndex < mixPlaylist.items.length - 1) {
+              const nextItem = mixPlaylist.items[currentMixIndex + 1];
+              onVideoSelect(nextItem.videoId, {
+                videoId: nextItem.videoId,
+                title: nextItem.title,
+                author: nextItem.author,
+                playlistId: mixPlaylist.playlistId,
+                type: 'mix'
+              } as any);
             }
           }
         }
@@ -909,6 +1006,136 @@ export default function VideoPlayer({
 
         {isRelatedOpen && sidebarTab === 'related' && (
           <div className="flex flex-col gap-3">
+            {/* YouTube公式スタイル ミックスリスト（再生リスト）パネル */}
+            {(playlistId || videoId?.startsWith('RD') || mixPlaylist) && (
+              <div className="mb-2 bg-gray-900 text-white rounded-2xl overflow-hidden shadow-xl border border-gray-800">
+                {/* ヘッダー情報 */}
+                <div className="p-3.5 bg-gradient-to-r from-gray-900 via-gray-900 to-gray-850 border-b border-gray-800 flex flex-col gap-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-1.5 text-[11px] text-blue-400 font-bold uppercase tracking-wider">
+                        <ListMusic size={14} />
+                        <span>YouTube ミックスリスト</span>
+                      </div>
+                      <h3 className="text-sm font-bold text-white truncate mt-0.5">
+                        {mixPlaylist?.title || videoData?.title || 'ミックスリスト'}
+                      </h3>
+                      <p className="text-[11px] text-gray-400 truncate mt-0.5">
+                        {videoData?.author || '関連チャンネル'} • {mixPlaylist?.items?.length || 25} 本の動画
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setMixExpanded(!mixExpanded)}
+                      className="p-1.5 hover:bg-gray-800 rounded-lg text-gray-400 hover:text-white transition-colors shrink-0"
+                      title={mixExpanded ? 'パネルを折りたたむ' : 'パネルを展開'}
+                    >
+                      {mixExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </button>
+                  </div>
+
+                  {/* ナビゲーション・コントロールボタン */}
+                  <div className="flex items-center justify-between pt-1 border-t border-gray-800/80">
+                    <span className="text-[11px] text-gray-400 font-medium">
+                      {currentMixIndex >= 0 ? `${currentMixIndex + 1} / ${mixPlaylist?.items?.length || 25}` : '再生中'}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={handlePlayPrevMix}
+                        disabled={!hasPrevMixItem}
+                        className="p-1.5 hover:bg-gray-800 disabled:opacity-30 rounded-lg text-gray-300 hover:text-white transition-colors"
+                        title="前の動画"
+                      >
+                        <SkipBack size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handlePlayNextMix}
+                        disabled={!hasNextMixItem}
+                        className="p-1.5 hover:bg-gray-800 disabled:opacity-30 rounded-lg text-gray-300 hover:text-white transition-colors"
+                        title="次の動画"
+                      >
+                        <SkipForward size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 動画リスト (YouTub公式ミックスリスト一覧) */}
+                {mixExpanded && (
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-gray-800/60 custom-scrollbar">
+                    {loadingMixPlaylist && (!mixPlaylist || mixPlaylist.items.length === 0) ? (
+                      <div className="p-6 flex items-center justify-center gap-2 text-xs text-gray-400">
+                        <Loader2 className="animate-spin text-blue-400" size={16} />
+                        <span>ミックスリストを読み込み中...</span>
+                      </div>
+                    ) : mixPlaylist?.items && mixPlaylist.items.length > 0 ? (
+                      mixPlaylist.items.map((item, idx) => {
+                        const isCurrent = item.videoId === videoId;
+                        return (
+                          <div
+                            key={`${item.videoId}-${idx}`}
+                            onClick={() => {
+                              onVideoSelect(item.videoId, {
+                                videoId: item.videoId,
+                                title: item.title,
+                                author: item.author,
+                                playlistId: mixPlaylist.playlistId,
+                                type: 'mix'
+                              } as any);
+                            }}
+                            className={`flex items-center gap-2.5 p-2.5 transition-colors cursor-pointer group ${
+                              isCurrent
+                                ? 'bg-blue-600/25 text-white font-medium border-l-4 border-blue-500'
+                                : 'hover:bg-gray-800/80 text-gray-300'
+                            }`}
+                          >
+                            {/* 番号 or 再生中アイコン */}
+                            <div className="w-5 text-center shrink-0 text-xs font-bold text-gray-400">
+                              {isCurrent ? (
+                                <span className="text-blue-400 animate-pulse text-xs">▶</span>
+                              ) : (
+                                <span className="text-[11px]">{idx + 1}</span>
+                              )}
+                            </div>
+
+                            {/* サムネイル */}
+                            <div className="w-16 h-10 shrink-0 relative rounded overflow-hidden bg-gray-800 border border-gray-700/60">
+                              <img
+                                src={item.thumbnail}
+                                alt={item.title}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                              />
+                              {item.lengthText && (
+                                <span className="absolute bottom-0.5 right-0.5 bg-black/80 text-white text-[9px] px-1 rounded font-semibold">
+                                  {item.lengthText}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* タイトル ＆ 投稿者 */}
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <h4 className={`text-xs leading-snug truncate ${isCurrent ? 'font-bold text-blue-300' : 'group-hover:text-white'}`}>
+                                {item.title}
+                              </h4>
+                              <span className="text-[10px] text-gray-400 truncate mt-0.5">
+                                {item.author}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="p-4 text-center text-xs text-gray-400">
+                        再生リストの動画を取得できませんでした
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
               {[

@@ -1049,7 +1049,7 @@ async function startServer() {
         }
       });
 
-      const allUnique = Array.from(uniqueMap.values());
+      let allUnique = Array.from(uniqueMap.values());
 
       if (allUnique.length > 0) {
         // シードに基づくフィッシャー–イェーツのシャッフル（毎回異なる並び順）
@@ -1058,6 +1058,55 @@ async function startServer() {
           [allUnique[i], allUnique[j]] = [allUnique[j], allUnique[i]];
         }
         
+        // ホームのおすすめにミックスリスト（Mix Card）を複数合成して提供する
+        const mixCards: any[] = [];
+        const mixCandidates = allUnique.filter(v => v.type === 'video' && v.videoId);
+        
+        if (mixCandidates.length >= 2) {
+          const sample1 = mixCandidates[0];
+          const sample2 = mixCandidates[Math.floor(mixCandidates.length / 2)] || mixCandidates[1];
+
+          mixCards.push({
+            videoId: sample1.videoId,
+            playlistId: `RD${sample1.videoId}`,
+            type: 'mix',
+            title: `ミックスリスト - ${sample1.author}、その他の関連動画`,
+            author: `${sample1.author}、ロクデナシ、その他`,
+            authorAvatar: sample1.authorAvatar,
+            viewCount: 0,
+            publishedText: '25+ 本の動画 • YouTube ミックス',
+            lengthSeconds: 0,
+            videoThumbnails: sample1.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample1.videoId}/hqdefault.jpg` }],
+            isLive: false,
+            isPremiere: false
+          });
+
+          if (sample2 && sample2.videoId !== sample1.videoId) {
+            mixCards.push({
+              videoId: sample2.videoId,
+              playlistId: `RD${sample2.videoId}`,
+              type: 'mix',
+              title: `ミックスリスト - ${sample2.title.substring(0, 20)}...`,
+              author: `${sample2.author} 他`,
+              authorAvatar: sample2.authorAvatar,
+              viewCount: 0,
+              publishedText: '25+ 本の動画 • YouTube ミックス',
+              lengthSeconds: 0,
+              videoThumbnails: sample2.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample2.videoId}/hqdefault.jpg` }],
+              isLive: false,
+              isPremiere: false
+            });
+          }
+        }
+
+        // mixCardsをおすすめ動画の適切なインデックス(2番目、7番目など)に挿入
+        if (mixCards.length > 0 && allUnique.length >= 3) {
+          allUnique.splice(2, 0, mixCards[0]);
+          if (mixCards[1] && allUnique.length >= 8) {
+            allUnique.splice(7, 0, mixCards[1]);
+          }
+        }
+
         return res.json({ 
           videos: allUnique,
           aiKeywords: geminiKeywords,
@@ -1377,6 +1426,73 @@ async function startServer() {
     } catch (err) {
       console.error('Comments fetch error:', err);
       res.json([]);
+    }
+  });
+
+  // YouTube ミックスリスト (Mix Playlist) 取得 API
+  app.get("/api/mix-playlist", async (req, res) => {
+    try {
+      let videoId = (req.query.videoId as string) || '';
+      let playlistId = (req.query.playlistId as string) || '';
+
+      if (playlistId && playlistId.startsWith('RD') && !videoId && playlistId.length >= 13) {
+        videoId = playlistId.substring(2, 13);
+      }
+      if (!playlistId && videoId && videoId.startsWith('RD') && videoId.length >= 13) {
+        playlistId = videoId;
+        videoId = videoId.substring(2, 13);
+      }
+      if (!playlistId && videoId) {
+        playlistId = `RD${videoId}`;
+      }
+
+      const youtube = await getYt();
+      const nextResult = await youtube.actions.execute('/next', {
+        videoId: videoId,
+        playlistId: playlistId
+      });
+
+      const playlistData = nextResult.data?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
+      if (playlistData) {
+        const title = playlistData.title || 'ミックスリスト';
+        const items = (playlistData.contents || []).map((c: any, index: number) => {
+          const v = c.playlistPanelVideoRenderer;
+          if (!v) return null;
+          const vId = v.videoId;
+          const vTitle = v.title?.simpleText || v.title?.runs?.[0]?.text || 'タイトルなし';
+          const vAuthor = v.longBylineText?.runs?.[0]?.text || v.shortBylineText?.runs?.[0]?.text || 'チャンネル';
+          const thumbs = v.thumbnail?.thumbnails || [];
+          const vThumb = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
+          const vLength = v.lengthText?.simpleText || v.lengthText?.runs?.[0]?.text || '';
+
+          return {
+            index: index + 1,
+            videoId: vId,
+            title: vTitle,
+            author: vAuthor,
+            thumbnail: vThumb,
+            lengthText: vLength,
+            selected: Boolean(v.selected || vId === videoId)
+          };
+        }).filter(Boolean);
+
+        return res.json({
+          title: title,
+          playlistId: playlistId,
+          currentVideoId: videoId,
+          items: items
+        });
+      }
+
+      return res.json({
+        title: 'ミックスリスト',
+        playlistId: playlistId,
+        currentVideoId: videoId,
+        items: []
+      });
+    } catch (err: any) {
+      console.error("Mix Playlist API error:", err?.message || err);
+      res.json({ title: 'ミックスリスト', items: [] });
     }
   });
 
