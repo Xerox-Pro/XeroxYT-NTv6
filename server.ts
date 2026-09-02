@@ -511,7 +511,7 @@ async function startServer() {
       return true;
     }
 
-    // 除外ワード (メドレー・作業用BGM・まとめ動画・全曲集などを徹底排除)
+    // 除外ワード (メドレー・作業用BGM・まとめ動画・ライフハックなどを徹底排除)
     const unwanted = [
       "メドレー", "medley", "作業用", "作業用bgm", "睡眠用", "勉強用",
       "まとめ", "全曲", "100曲", "50曲", "30曲", "20曲", "10曲",
@@ -520,7 +520,8 @@ async function startServer() {
       "ランキング", "全曲メドレー", "神曲メドレー", "神曲集", "ヒット曲メドレー",
       "中国語", "中文", "華語", "台湾", "香港", "taiwan", "china", "chinese",
       "healing", "relaxing", "study music", "full medley", "bgm用", "作業bgm",
-      "まとめ動画", "連続再生"
+      "まとめ動画", "連続再生",
+      "ライフハック", "lifehack", "life hack", "裏技", "裏ワザ", "便利技", "5-minute crafts", "5分クラフト"
     ];
     
     return unwanted.some(kw => text.includes(kw));
@@ -919,7 +920,7 @@ async function startServer() {
         "VTuber 切り抜き 話題",
         "テクノロジー AI プログラミング",
         "スポーツ ハイライト 名シーン",
-        "ライフハック 便利な裏技"
+        "人気 音楽 ライブ MV"
       ];
 
       // 履歴から動的に大量のパーソナライズクエリを生成（3倍以上に強化）
@@ -1534,11 +1535,11 @@ async function startServer() {
       const genrePopularTracks: any[] = [];
       const ytNextTracks: any[] = [];
 
-      // 2-A. 再生中アーティストの同系統・人気曲を優先取得
+      // 2-A. 再生中アーティストの楽曲を取得
       if (currentAuthor && currentAuthor !== 'アーティスト' && currentAuthor !== 'YouTube') {
         try {
           const cleanAuthor = currentAuthor.split('/')[0].trim();
-          const authorSearch = await youtube.search(`${cleanAuthor} Official MV`, { type: 'video' });
+          const authorSearch = await youtube.search(`${cleanAuthor}`, { type: 'video' });
           const searchVideos = (authorSearch.videos || []).slice(0, 10);
           for (const sv of searchVideos) {
             const svId = sv.id || sv.videoId;
@@ -1566,12 +1567,12 @@ async function startServer() {
         }
       }
 
-      // 2-B. ユーザーの過去の視聴履歴にあるアーティストの最新/人気曲をブレンド
-      const uniquePastAuthors = Array.from(new Set(historyAuthorsList.filter(a => a !== currentAuthor))).slice(0, 5);
+      // 2-B. 過去に見た好きなアーティストの楽曲を取得
+      const uniquePastAuthors = Array.from(new Set(historyAuthorsList.filter(a => a !== currentAuthor))).slice(0, 8);
       for (const pAuthor of uniquePastAuthors) {
         try {
-          const pSearch = await youtube.search(`${pAuthor} Official MV`, { type: 'video' });
-          const pVideos = (pSearch.videos || []).slice(0, 4);
+          const pSearch = await youtube.search(`${pAuthor}`, { type: 'video' });
+          const pVideos = (pSearch.videos || []).slice(0, 5);
           for (const pv of pVideos) {
             const pvId = pv.id || pv.videoId;
             if (pvId && pvId !== videoId && !candidateMap.has(pvId)) {
@@ -1596,37 +1597,7 @@ async function startServer() {
         } catch (e) {}
       }
 
-      // 2-C. 同ジャンル（ボカロ / J-POP）の流行曲・代表曲をブレンド
-      try {
-        const genreQuery = isVocaloid 
-          ? 'ボカロ ヒット曲 Official MV' 
-          : 'J-POP 人気曲 Official MV';
-        const gSearch = await youtube.search(genreQuery, { type: 'video' });
-        const gVideos = (gSearch.videos || []).slice(0, 10);
-        for (const gv of gVideos) {
-          const gvId = gv.id || gv.videoId;
-          if (gvId && gvId !== videoId && !candidateMap.has(gvId)) {
-            const item = formatVideoObject(gv);
-            if (item && item.videoId && !isUnwantedVideo(item)) {
-              const itemAny = item as any;
-              const thumbUrl = itemAny.thumbnailUrl || itemAny.videoThumbnails?.[itemAny.videoThumbnails?.length - 1]?.url || itemAny.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`;
-              const lenText = itemAny.lengthText || (itemAny.lengthSeconds ? `${Math.floor(itemAny.lengthSeconds / 60)}:${(itemAny.lengthSeconds % 60).toString().padStart(2, '0')}` : '');
-
-              const track = {
-                videoId: item.videoId,
-                title: item.title,
-                author: item.author || 'YouTube',
-                thumbnail: thumbUrl,
-                lengthText: lenText
-              };
-              candidateMap.set(item.videoId, track);
-              genrePopularTracks.push(track);
-            }
-          }
-        }
-      } catch (e) {}
-
-      // 2-D. YouTube公式の /next 関連動画を取得（メドレー・まとめ動画・無関係動画は徹底除外）
+      // 2-C. YouTube公式の /next 関連動画を取得（メドレー・作業用・不適切動画を除外）
       try {
         const nextResult = await youtube.actions.execute('/next', {
           videoId: videoId,
@@ -1664,7 +1635,7 @@ async function startServer() {
         console.warn("[Mix] Error executing /next:", e);
       }
 
-      // 3. 高度なスマートキュレーション・アルゴリズム（過去履歴・再生中アーティスト・ジャンル人気の黄金比率）
+      // 3. ミックスリストのスマートな生成（過去の好きなお気に入りアーティスト＋現在の動画アーティスト＋関連動画）
       const mergedList: any[] = [];
       const seenIds = new Set<string>([videoId]);
 
@@ -1679,18 +1650,17 @@ async function startServer() {
         selected: true
       });
 
-      let sIdx = 0; // 同一アーティスト
-      let pIdx = 0; // 過去履歴のアーティスト
-      let gIdx = 0; // 同ジャンルの人気曲
-      let yIdx = 0; // YouTube関連レコメンド
+      let sIdx = 0; // 同一・関連アーティスト
+      let pIdx = 0; // 過去の好きなアーティスト
+      let yIdx = 0; // 関連動画
 
       let lastAuthor = (currentAuthor || '').toLowerCase();
 
-      // 25曲までスマートにミックス
+      // 25曲までミックス
       while (mergedList.length < 25) {
         let added = false;
 
-        // A. 過去履歴にあるアーティストの楽曲（最優先で織り交ぜる）
+        // 過去履歴の好きなアーティスト
         if (pIdx < pastHistoryTracks.length && mergedList.length < 25) {
           const track = pastHistoryTracks[pIdx++];
           const tAuthor = (track.author || '').toLowerCase();
@@ -1702,7 +1672,7 @@ async function startServer() {
           }
         }
 
-        // B. 再生中アーティストの他ヒット曲
+        // 再生中アーティストの他楽曲
         if (sIdx < sameArtistTracks.length && mergedList.length < 25) {
           const track = sameArtistTracks[sIdx++];
           const tAuthor = (track.author || '').toLowerCase();
@@ -1714,19 +1684,7 @@ async function startServer() {
           }
         }
 
-        // C. 同ジャンル (ボカロ / J-POP) のヒット曲
-        if (gIdx < genrePopularTracks.length && mergedList.length < 25) {
-          const track = genrePopularTracks[gIdx++];
-          const tAuthor = (track.author || '').toLowerCase();
-          if (!seenIds.has(track.videoId) && tAuthor !== lastAuthor) {
-            seenIds.add(track.videoId);
-            mergedList.push({ index: mergedList.length + 1, ...track, selected: false });
-            lastAuthor = tAuthor;
-            added = true;
-          }
-        }
-
-        // D. YouTube関連動画
+        // YouTube関連動画
         if (yIdx < ytNextTracks.length && mergedList.length < 25) {
           const track = ytNextTracks[yIdx++];
           const tAuthor = (track.author || '').toLowerCase();
@@ -1738,12 +1696,10 @@ async function startServer() {
           }
         }
 
-        // トラックプールが余っている場合の補充
         if (!added) {
           const remainingPool = [
             ...pastHistoryTracks,
             ...sameArtistTracks,
-            ...genrePopularTracks,
             ...ytNextTracks
           ].filter(t => !seenIds.has(t.videoId));
 
