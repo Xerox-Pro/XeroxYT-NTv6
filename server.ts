@@ -1058,90 +1058,39 @@ async function startServer() {
           [allUnique[i], allUnique[j]] = [allUnique[j], allUnique[i]];
         }
         
-        // ホームのおすすめに過去に視聴したアーティストやユーザーの好みに基づくミックスリスト（Mix Card）を合成
+        // ホームのおすすめにミックスリスト（Mix Card）を複数合成して提供する
         const mixCards: any[] = [];
+        const mixCandidates = allUnique.filter(v => v.type === 'video' && v.videoId);
         
-        // パーソナライズ動画（履歴・嗜好由来）を優先してミックスの種にする
-        const personalizedCandidates = formattedPersonalized.filter((v: any) => v.type === 'video' && v.videoId && v.author);
-        const generalCandidates = allUnique.filter((v: any) => v.type === 'video' && v.videoId && v.author);
-        
-        // アーティストごとにグルーピングして頻出アーティストを特定
-        const authorCountMap = new Map<string, any[]>();
-        personalizedCandidates.forEach((v: any) => {
-          const author = v.author;
-          if (!authorCountMap.has(author)) {
-            authorCountMap.set(author, []);
-          }
-          authorCountMap.get(author)!.push(v);
-        });
+        if (mixCandidates.length >= 2) {
+          const sample1 = mixCandidates[0];
+          const sample2 = mixCandidates[Math.floor(mixCandidates.length / 2)] || mixCandidates[1];
 
-        // 頻出アーティスト上位からミックスリストを生成
-        const topAuthors = Array.from(authorCountMap.entries())
-          .sort((a, b) => b[1].length - a[1].length)
-          .slice(0, 3);
-
-        if (topAuthors.length > 0) {
-          topAuthors.forEach(([author, vList]) => {
-            const seedVideo = vList[0];
-            const otherAuthors = Array.from(new Set(
-              personalizedCandidates
-                .map((v: any) => v.author)
-                .filter((a: string) => a && a !== author)
-            )).slice(0, 2);
-
-            const byline = otherAuthors.length > 0
-              ? `${author}、${otherAuthors.join('、')} 他`
-              : `${author}、関連アーティスト`;
-
-            mixCards.push({
-              videoId: seedVideo.videoId,
-              playlistId: `RD${seedVideo.videoId}`,
-              type: 'mix',
-              title: `ミックスリスト - ${seedVideo.title || author}`,
-              author: byline,
-              authorAvatar: seedVideo.authorAvatar,
-              viewCount: 0,
-              publishedText: '50+ 本の動画 • YouTube ミックス',
-              lengthSeconds: 0,
-              videoThumbnails: seedVideo.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${seedVideo.videoId}/hqdefault.jpg` }],
-              isLive: false,
-              isPremiere: false
-            });
+          mixCards.push({
+            videoId: sample1.videoId,
+            playlistId: `RD${sample1.videoId}`,
+            type: 'mix',
+            title: `ミックスリスト - ${sample1.author}、その他の関連動画`,
+            author: `${sample1.author}、ロクデナシ、その他`,
+            authorAvatar: sample1.authorAvatar,
+            viewCount: 0,
+            publishedText: '25+ 本の動画 • YouTube ミックス',
+            lengthSeconds: 0,
+            videoThumbnails: sample1.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample1.videoId}/hqdefault.jpg` }],
+            isLive: false,
+            isPremiere: false
           });
-        }
 
-        // パーソナライズから足りない場合は一般的な人気候補から補充
-        if (mixCards.length < 2 && generalCandidates.length >= 2) {
-          const sample1 = generalCandidates[0];
-          const sample2 = generalCandidates[Math.floor(generalCandidates.length / 2)] || generalCandidates[1];
-
-          if (!mixCards.some(m => m.videoId === sample1.videoId)) {
-            mixCards.push({
-              videoId: sample1.videoId,
-              playlistId: `RD${sample1.videoId}`,
-              type: 'mix',
-              title: `ミックスリスト - ${sample1.title || sample1.author}`,
-              author: `${sample1.author}、その他`,
-              authorAvatar: sample1.authorAvatar,
-              viewCount: 0,
-              publishedText: '50+ 本の動画 • YouTube ミックス',
-              lengthSeconds: 0,
-              videoThumbnails: sample1.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample1.videoId}/hqdefault.jpg` }],
-              isLive: false,
-              isPremiere: false
-            });
-          }
-
-          if (sample2 && sample2.videoId !== sample1.videoId && !mixCards.some(m => m.videoId === sample2.videoId)) {
+          if (sample2 && sample2.videoId !== sample1.videoId) {
             mixCards.push({
               videoId: sample2.videoId,
               playlistId: `RD${sample2.videoId}`,
               type: 'mix',
-              title: `あなたへのおすすめミックス - ${sample2.author}`,
+              title: `ミックスリスト - ${sample2.title.substring(0, 20)}...`,
               author: `${sample2.author} 他`,
               authorAvatar: sample2.authorAvatar,
               viewCount: 0,
-              publishedText: '50+ 本の動画 • YouTube ミックス',
+              publishedText: '25+ 本の動画 • YouTube ミックス',
               lengthSeconds: 0,
               videoThumbnails: sample2.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample2.videoId}/hqdefault.jpg` }],
               isLive: false,
@@ -1150,14 +1099,11 @@ async function startServer() {
           }
         }
 
-        // mixCardsをおすすめ動画の適切なインデックス(2番目、8番目など)に自然に挿入
+        // mixCardsをおすすめ動画の適切なインデックス(2番目、7番目など)に挿入
         if (mixCards.length > 0 && allUnique.length >= 3) {
           allUnique.splice(2, 0, mixCards[0]);
           if (mixCards[1] && allUnique.length >= 8) {
             allUnique.splice(7, 0, mixCards[1]);
-          }
-          if (mixCards[2] && allUnique.length >= 15) {
-            allUnique.splice(14, 0, mixCards[2]);
           }
         }
 

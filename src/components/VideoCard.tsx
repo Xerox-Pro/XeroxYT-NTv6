@@ -71,11 +71,11 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
           </div>
         ) : null}
 
-        <div className="absolute bottom-2 right-2 bg-black/85 backdrop-blur-xs text-white text-xs px-2 py-0.5 rounded font-semibold tracking-wide flex items-center gap-1.5 shadow-md">
+        <div className="absolute bottom-2 right-2 bg-black/80 backdrop-blur-xs text-white text-xs px-2 py-0.5 rounded font-semibold tracking-wide flex items-center gap-1">
           {isPlaylist ? (
             <>
-              <ListMusic size={13} className="text-blue-400" />
-              <span>{video.type === 'mix' ? 'ミックスリスト' : '再生リスト'}</span>
+              <ListMusic size={13} />
+              <span>{video.type === 'mix' ? 'MIX' : 'PLAYLIST'}</span>
             </>
           ) : (
             formatDuration(video.lengthSeconds)
@@ -124,11 +124,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
               </span>
             )}
             <span onClick={onClick} className="text-gray-500 text-xs mt-0.5">
-              {video.type === 'mix' ? (
-                <span className="text-gray-500 font-medium">YouTube ミックス • 50+ 本の動画</span>
-              ) : (
-                `${formatNumberJP(video.viewCount)}回視聴 • ${video.publishedText}`
-              )}
+              {formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}
             </span>
           </div>
         </div>
