@@ -124,13 +124,20 @@ export default function VideoPlayer({
   const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
 
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
   // EduKey 取得
   useEffect(() => {
     const fetchEduKey = async () => {
       try {
         const res = await fetchJSON('/api/edukey');
         if (res && res.key) {
-          setEduKey(res.key);
+          // ensure enablejsapi is present for postMessage tracking
+          let key = res.key;
+          if (!key.includes('enablejsapi=1')) {
+            key += '&enablejsapi=1';
+          }
+          setEduKey(key);
         }
       } catch (e) {
         console.error('Failed to load edukey:', e);
@@ -138,6 +145,43 @@ export default function VideoPlayer({
     };
     fetchEduKey();
   }, []);
+
+  // IFrame の内部遷移（プレイリストの次の動画など）を検知する
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        if (typeof event.data === 'string') {
+          const data = JSON.parse(event.data);
+          if (data.event === 'infoDelivery' || data.event === 'initialDelivery') {
+            const playerVideoId = data.info?.videoData?.video_id;
+            if (playerVideoId && playerVideoId !== videoId) {
+              onVideoSelect(playerVideoId);
+            }
+          }
+        }
+      } catch (e) {
+        // parsing error ignored
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+
+    // プレイヤーにイベントの送信を要求する
+    const timer = setInterval(() => {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'listening',
+          id: 1,
+          channel: 'widget'
+        }), '*');
+      }
+    }, 1000);
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+      clearInterval(timer);
+    };
+  }, [videoId, onVideoSelect]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -519,9 +563,10 @@ export default function VideoPlayer({
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
           <iframe
+            ref={iframeRef}
             src={playlistId && !videoId 
               ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey}`
-              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}${playlistId ? `&list=${playlistId}` : ''}`}
+              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1&enablejsapi=1'}${playlistId ? `&list=${playlistId}` : ''}`}
             className="w-full h-full border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen

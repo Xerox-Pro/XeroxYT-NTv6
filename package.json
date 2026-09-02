@@ -24,6 +24,7 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "react-router-dom": "^7.18.2",
+    "react-youtube": "^10.1.0",
     "tailwind-merge": "^3.6.0",
     "youtubei.js": "^18.0.0",
     "yt-channel-info": "^3.2.1",
