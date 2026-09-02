@@ -401,7 +401,15 @@ export default function VideoPlayer({
           // プレイヤー内部での video_id の変更検知
           const playerVideoId = data.info?.videoData?.video_id || data.info?.videoId || data.videoId;
           if (playerVideoId && typeof playerVideoId === 'string' && playerVideoId !== videoIdRef.current && playerVideoId.length >= 8) {
-            onVideoSelectRef.current(playerVideoId);
+            const currentList = mixPlaylistRef.current;
+            const matchItem = currentList?.items?.find(it => it.videoId === playerVideoId);
+            onVideoSelectRef.current(playerVideoId, {
+              videoId: playerVideoId,
+              title: matchItem?.title,
+              author: matchItem?.author,
+              playlistId: currentList?.playlistId,
+              type: currentList ? 'mix' : 'video'
+            } as any);
           }
 
           // 動画再生終了の検知 (YT.PlayerState.ENDED = 0)
@@ -522,31 +530,45 @@ export default function VideoPlayer({
     if (lastLoadedVideoIdRef.current !== videoId) {
       lastLoadedVideoIdRef.current = videoId;
 
-      // 1. YouTube Player API による動画読み込み＆自動再生
-      if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
-        try {
-          ytPlayerRef.current.loadVideoById(videoId);
-          ytPlayerRef.current.playVideo();
-        } catch (e) {
-          console.warn('[YT] loadVideoById error:', e);
+      const triggerPlayback = () => {
+        // 1. YouTube Player API による動画読み込み＆自動再生
+        if (ytPlayerRef.current && typeof ytPlayerRef.current.loadVideoById === 'function') {
+          try {
+            ytPlayerRef.current.loadVideoById(videoId);
+            ytPlayerRef.current.playVideo();
+          } catch (e) {
+            console.warn('[YT] loadVideoById error:', e);
+          }
         }
-      }
 
-      // 2. postMessage による直接送信（iPad / Safari / WebKit での自動再生保証）
-      if (iframeRef.current && iframeRef.current.contentWindow) {
-        try {
-          iframeRef.current.contentWindow.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'loadVideoById',
-            args: [videoId, 0]
-          }), '*');
-          iframeRef.current.contentWindow.postMessage(JSON.stringify({
-            event: 'command',
-            func: 'playVideo',
-            args: []
-          }), '*');
-        } catch (e) {}
-      }
+        // 2. postMessage による直接送信（iPad / Safari / WebKit での自動再生保証）
+        if (iframeRef.current && iframeRef.current.contentWindow) {
+          try {
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({
+              event: 'command',
+              func: 'loadVideoById',
+              args: [videoId, 0]
+            }), '*');
+            iframeRef.current.contentWindow.postMessage(JSON.stringify({
+              event: 'command',
+              func: 'playVideo',
+              args: []
+            }), '*');
+          } catch (e) {}
+        }
+      };
+
+      // 即時実行 + 100ms / 300ms / 600ms で確実化
+      triggerPlayback();
+      const t1 = setTimeout(triggerPlayback, 100);
+      const t2 = setTimeout(triggerPlayback, 300);
+      const t3 = setTimeout(triggerPlayback, 600);
+
+      return () => {
+        clearTimeout(t1);
+        clearTimeout(t2);
+        clearTimeout(t3);
+      };
     }
   }, [videoId]);
 

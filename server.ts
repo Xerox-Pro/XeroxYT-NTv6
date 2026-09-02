@@ -1562,7 +1562,7 @@ async function startServer() {
         console.warn("[Mix] Error executing /next:", e);
       }
 
-      // 4. スマートマージ (同一アーティスト曲を上位に配置し、親和性の高いミックスを構築)
+      // 4. スマート・インターリーブ（同アーティスト曲が上部に固まらないよう、関連曲・おすすめ曲と交互・等間隔に配置）
       const mergedList: any[] = [];
       
       // 1曲目: 現在再生中の動画
@@ -1577,43 +1577,52 @@ async function startServer() {
       });
       const seenIds = new Set<string>([videoId]);
 
-      // 2〜4曲目: 同一アーティストの他曲を優先配置
-      let addedArtistCount = 0;
-      for (const at of artistTracks) {
-        if (!seenIds.has(at.videoId) && addedArtistCount < 4) {
-          seenIds.add(at.videoId);
-          mergedList.push({
-            index: mergedList.length + 1,
-            ...at,
-            selected: false
-          });
-          addedArtistCount++;
-        }
-      }
+      // アーティスト曲とYouTubeレコメンド曲を交互に配置
+      const availableArtistTracks = artistTracks.filter(at => !seenIds.has(at.videoId));
+      const availableYtTracks = ytNextItems.filter(yt => !seenIds.has(yt.videoId));
 
-      // 残り: /next のミックス曲 + 関連曲を結合
-      for (const ytItem of ytNextItems) {
-        if (!seenIds.has(ytItem.videoId)) {
-          seenIds.add(ytItem.videoId);
-          mergedList.push({
-            index: mergedList.length + 1,
-            ...ytItem,
-            selected: false
-          });
-          if (mergedList.length >= 25) break;
-        }
-      }
+      let aIdx = 0;
+      let yIdx = 0;
 
-      // まだ25曲に満たない場合は残りのアーティスト曲を追加
-      for (const at of artistTracks) {
-        if (!seenIds.has(at.videoId)) {
-          seenIds.add(at.videoId);
-          mergedList.push({
-            index: mergedList.length + 1,
-            ...at,
-            selected: false
-          });
-          if (mergedList.length >= 25) break;
+      // 交互に追加（例: レコメンド曲 -> アーティスト曲 -> レコメンド曲 -> アーティスト曲 ...）
+      while (mergedList.length < 25 && (aIdx < availableArtistTracks.length || yIdx < availableYtTracks.length)) {
+        // 先にレコメンド曲（他アーティストや関連人気曲）を1〜2曲挿入
+        if (yIdx < availableYtTracks.length) {
+          const ytItem = availableYtTracks[yIdx++];
+          if (!seenIds.has(ytItem.videoId)) {
+            seenIds.add(ytItem.videoId);
+            mergedList.push({
+              index: mergedList.length + 1,
+              ...ytItem,
+              selected: false
+            });
+          }
+        }
+
+        // 次に再生中アーティストの曲を1曲挿入（間に入るように）
+        if (mergedList.length < 25 && aIdx < availableArtistTracks.length) {
+          const atItem = availableArtistTracks[aIdx++];
+          if (!seenIds.has(atItem.videoId)) {
+            seenIds.add(atItem.videoId);
+            mergedList.push({
+              index: mergedList.length + 1,
+              ...atItem,
+              selected: false
+            });
+          }
+        }
+
+        // アーティスト曲が尽きた場合は残りのレコメンド曲を連続追加
+        if (aIdx >= availableArtistTracks.length && yIdx < availableYtTracks.length) {
+          const ytItem = availableYtTracks[yIdx++];
+          if (!seenIds.has(ytItem.videoId)) {
+            seenIds.add(ytItem.videoId);
+            mergedList.push({
+              index: mergedList.length + 1,
+              ...ytItem,
+              selected: false
+            });
+          }
         }
       }
 

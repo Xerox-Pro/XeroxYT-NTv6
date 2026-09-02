@@ -634,12 +634,14 @@ export default function App() {
     }
     
     // 明示的に渡された playlistId、または MIX / プレイリスト動画の場合のみ list パラメータを付与
-    // 通常の関連動画や検索結果をクリックした場合は、ミックスリストから抜けて通常の動画再生画面に遷移する
     let playlistId: string | null = null;
     if (videoObj?.playlistId) {
       playlistId = videoObj.playlistId;
-    } else if (videoObj?.type === 'mix' || videoObj?.type === 'playlist') {
+    } else if ((videoObj as any)?.type === 'mix' || (videoObj as any)?.type === 'playlist') {
       playlistId = videoId ? `RD${videoId}` : null;
+    } else if (currentPlaylistId && (!videoObj || (videoObj as any).type === 'mix')) {
+      // ミックスリスト再生中の連続遷移では playlistId を維持
+      playlistId = currentPlaylistId;
     }
     
     navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
