@@ -1074,73 +1074,6 @@ async function startServer() {
     }
   });
 
-  // #shorts がついてる動画のみを厳格フィルタするショート動画API
-  app.get("/api/shorts", async (req, res) => {
-    const q = (req.query.q as string) || (req.query.keywords as string) || "";
-    const page = parseInt((req.query.page as string) || "1", 10);
-    try {
-      const youtube = await getYt();
-      
-      // ランダム性を持たせるためのキーワード配列
-      const randomKeywords = ["トレンド", "面白", "癒し", "日常", "料理", "ペット", "音楽", "ダンス"];
-      const randomWord = randomKeywords[Math.floor(Math.random() * randomKeywords.length)];
-      
-      const searchQuery = (q ? `${q} #shorts` : `#shorts 日本 ${randomWord}`);
-      let feed = await youtube.search(searchQuery, { type: "video" });
-
-      let shorts: any[] = [];
-      let maxAttempts = 5; // 無限ループ防止
-      
-      while (shorts.length < 20 && feed && maxAttempts > 0) {
-        maxAttempts--;
-        const rawVideos = feed.videos || [];
-        
-        let filtered = rawVideos.filter((v: any) => !isUnwantedVideo(v));
-        
-        // 厳格フィルタ (shorts or <= 120s)
-        let strictFiltered = filtered.filter((v: any) => {
-          const title = (v.title?.text || '').toLowerCase();
-          const sec = v.duration?.seconds || 0;
-          return title.includes('short') || title.includes('ショート') || (sec > 0 && sec <= 120);
-        });
-
-        // 厳格フィルタで少なすぎる場合は、ある程度許容する
-        if (strictFiltered.length === 0) {
-           strictFiltered = filtered.slice(0, 5); // 何もないよりはマシなので追加
-        }
-
-        const formatted = strictFiltered.map((v: any) => ({
-          ...formatVideoObject(v),
-          likeCount: `${(Math.random() * 20 + 1).toFixed(1)}万`,
-          commentCount: `${Math.floor(Math.random() * 2000) + 100}`
-        }));
-        
-        shorts.push(...formatted);
-
-        // 重複排除
-        shorts = Array.from(new Map(shorts.map(item => [item.videoId, item])).values());
-
-        if (shorts.length < 20 && feed.has_continuation) {
-          try {
-            feed = await feed.getContinuation();
-          } catch(e) {
-            break;
-          }
-        } else {
-          break;
-        }
-      }
-
-      // ランダムにシャッフル
-      shorts = shorts.sort(() => Math.random() - 0.5);
-
-      res.json(shorts);
-    } catch (err) {
-      console.error("Shorts API error:", err);
-      res.json([]);
-    }
-  });
-
   app.get("/api/search", async (req, res) => {
     const q = (req.query.q as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
@@ -1394,6 +1327,7 @@ async function startServer() {
             comments.push({
               id: c.comment_id || Math.random().toString(),
               author: c.author?.name || '匿名ユーザー',
+              authorId: c.author?.id || (c.author as any)?.channel_id || c.author?.endpoint?.payload?.browseId || '',
               authorAvatar: c.author?.thumbnails?.[0]?.url || c.author?.avatar_thumbnail_url,
               text: c.content?.text || '',
               publishedTime: c.published_time || '最近',

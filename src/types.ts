@@ -64,6 +64,7 @@ export interface ShortVideo {
 export interface Comment {
   id: string;
   author: string;
+  authorId?: string;
   authorAvatar?: string;
   text: string;
   publishedTime: string;

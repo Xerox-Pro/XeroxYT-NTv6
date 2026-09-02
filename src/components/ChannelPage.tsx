@@ -16,7 +16,7 @@ interface ChannelPageProps {
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
-type TabType = 'home' | 'videos' | 'shorts' | 'live' | 'releases' | 'community' | 'playlists';
+type TabType = 'home' | 'videos' | 'live' | 'releases' | 'community' | 'playlists';
 
 export default function ChannelPage({
   channelId,
@@ -175,7 +175,6 @@ export default function ChannelPage({
   const tabs: { id: TabType; label: string; icon?: React.ReactNode }[] = [
     { id: 'home', label: 'ホーム' },
     { id: 'videos', label: '動画' },
-    { id: 'shorts', label: 'ショート', icon: <Zap size={14} className="text-red-500 fill-red-500" /> },
     { id: 'live', label: 'ライブ配信', icon: <Radio size={14} className="text-red-500" /> },
     { id: 'releases', label: 'リリース', icon: <Disc size={14} /> },
     { id: 'community', label: 'コミュニティ', icon: <MessageSquare size={14} /> },

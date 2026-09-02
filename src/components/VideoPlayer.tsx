@@ -349,6 +349,53 @@ export default function VideoPlayer({
   // 通常の関連動画リストの中にしれっと過去履歴をブレンド
   const blendedRecommendations: any[] = [];
   const baseRecs = videoData.recommendedVideos || [];
+
+  const renderTextWithMentionsAndLinks = (text: string) => {
+    if (!text) return '動画の概要説明はありません。';
+    const regex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_\-\.]+)/g;
+    const parts = text.split(regex);
+    return parts.map((part, i) => {
+      if (/^https?:\/\//.test(part)) {
+        return (
+          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+            {part}
+          </a>
+        );
+      }
+      if (/^@/.test(part)) {
+        return (
+          <button 
+            key={i} 
+            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
+            className="text-blue-600 hover:underline cursor-pointer"
+          >
+            {part}
+          </button>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  const renderTitleWithMentions = (text: string) => {
+    if (!text) return null;
+    const regex = /(@[a-zA-Z0-9_\-\.]+)/g;
+    const parts = text.split(regex);
+    return parts.map((part, i) => {
+      if (/^@/.test(part)) {
+        return (
+          <button 
+            key={i} 
+            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
+            className="text-blue-600 hover:underline cursor-pointer"
+          >
+            {part}
+          </button>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
   let histIdx = 0;
 
   if (baseRecs.length === 0) {
@@ -401,8 +448,8 @@ export default function VideoPlayer({
             </div>
           )}
 
-          <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug">
-            {videoData.title}
+          <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug break-all">
+            {renderTitleWithMentions(videoData.title)}
           </h1>
           
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
@@ -530,9 +577,11 @@ export default function VideoPlayer({
               <span>{videoData.publishedText}</span>
               {isLive && <span className="text-red-600 font-bold">● リアルタイム配信</span>}
             </div>
-            <p className={`text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm ${isDescExpanded ? '' : 'line-clamp-3'}`}>
-              {videoData.description || '動画の概要説明はありません。'}
-            </p>
+            <div className="text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm break-all">
+              <div className={`${isDescExpanded ? '' : 'line-clamp-3'}`}>
+                {renderTextWithMentionsAndLinks(videoData.description || '')}
+              </div>
+            </div>
             {videoData.description && videoData.description.length > 120 && (
               <button
                 onClick={() => setIsDescExpanded(!isDescExpanded)}
@@ -595,10 +644,14 @@ export default function VideoPlayer({
               <div className="flex flex-col gap-5">
                 {comments.map((comment) => (
                   <div key={comment.id} className="flex gap-3 text-sm">
-                    <Avatar src={comment.authorAvatar} name={comment.author} className="w-9 h-9 text-xs" />
+                    <button onClick={() => onSelectChannel(comment.authorId || comment.author)} className="shrink-0 cursor-pointer text-left">
+                      <Avatar src={comment.authorAvatar} name={comment.author} className="w-9 h-9 text-xs" />
+                    </button>
                     <div className="flex flex-col gap-1 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="font-bold text-gray-900 text-xs">{comment.author}</span>
+                        <button onClick={() => onSelectChannel(comment.authorId || comment.author)} className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left">
+                          {comment.author}
+                        </button>
                         <span className="text-[11px] text-gray-500">{comment.publishedTime}</span>
                       </div>
                       <p className="text-gray-800 text-sm font-normal leading-normal whitespace-pre-wrap">

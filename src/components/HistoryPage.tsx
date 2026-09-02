@@ -28,7 +28,6 @@ export default function HistoryPage({
   });
 
   const normalVideosCount = history.filter((i) => i.type === 'video').length;
-  const shortsCount = history.filter((i) => i.type === 'short').length;
 
   return (
     <div className="flex-1 max-w-[1400px] w-full mx-auto p-4 md:p-8 bg-white min-h-screen select-none">
@@ -77,18 +76,6 @@ export default function HistoryPage({
         >
           <VideoIcon size={16} />
           <span>通常動画 ({normalVideosCount})</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('short')}
-          className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'short'
-              ? 'bg-black text-white shadow-2xs'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
-        >
-          <Zap size={16} className="text-red-500 fill-red-500" />
-          <span>ショート ({shortsCount})</span>
         </button>
       </div>
 
