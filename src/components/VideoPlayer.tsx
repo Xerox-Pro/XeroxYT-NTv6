@@ -467,6 +467,11 @@ export default function VideoPlayer({
         try {
           ytPlayer = new (window as any).YT.Player(iframeRef.current, {
             events: {
+              onReady: (event: any) => {
+                try {
+                  event.target.playVideo();
+                } catch (e) {}
+              },
               onStateChange: (event: any) => {
                 if (event.data === 0) { // 0 = YT.PlayerState.ENDED
                   triggerNextTrack('yt-api-ended');
@@ -942,25 +947,62 @@ export default function VideoPlayer({
     }
   }
 
-  // iframe URL の構築 (直接videoIdを再生し、&listパラメータによる1曲目への強制リセットを防ぐ)
+  // iframe URL の構築 (プレイリストモードを有効化しつつ現在曲のindexを指定)
   const originUrl = typeof window !== 'undefined' ? window.location.origin : '';
+  const activePlaylistId = playlistId || mixPlaylist?.playlistId;
   let cleanEduKey = eduKey || '';
+
   if (cleanEduKey) {
     if (originUrl) {
       cleanEduKey = cleanEduKey
         .replace(/origin=[^&]*/g, `origin=${encodeURIComponent(originUrl)}`)
         .replace(/forigin=[^&]*/g, `forigin=${encodeURIComponent(originUrl)}`);
     }
+    // autoplay を確実に 1 にする
+    cleanEduKey = cleanEduKey.replace(/autoplay=0/g, 'autoplay=1');
+    if (!cleanEduKey.includes('autoplay=')) {
+      cleanEduKey += '&autoplay=1';
+    }
     if (!cleanEduKey.includes('enablejsapi=1')) {
       cleanEduKey += '&enablejsapi=1';
     }
+    if (!cleanEduKey.includes('playsinline=1')) {
+      cleanEduKey += '&playsinline=1';
+    }
   } else {
-    cleanEduKey = `?autoplay=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
+    cleanEduKey = `?autoplay=1&playsinline=1&enablejsapi=1${originUrl ? `&origin=${encodeURIComponent(originUrl)}` : ''}`;
   }
 
+  // プレイリストパラメータの付与
+  let listParam = '';
+  if (activePlaylistId && !cleanEduKey.includes('list=')) {
+    const idxParam = currentMixIndex >= 0 ? `&index=${currentMixIndex}` : '';
+    listParam = `&list=${activePlaylistId}${idxParam}`;
+  }
+
+  const queryPrefix = cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`;
+  const finalQuery = `${queryPrefix}${listParam}`;
+
   const embedSrc = videoId
-    ? `https://www.youtubeeducation.com/embed/${videoId}${cleanEduKey.startsWith('?') ? cleanEduKey : `?${cleanEduKey}`}`
-    : (playlistId ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${cleanEduKey ? (cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`) : ''}` : '');
+    ? `https://www.youtubeeducation.com/embed/${videoId}${finalQuery}`
+    : (activePlaylistId ? `https://www.youtubeeducation.com/embed/videoseries?list=${activePlaylistId}&autoplay=1${cleanEduKey.startsWith('?') ? cleanEduKey.replace('?', '&') : `&${cleanEduKey}`}` : '');
+
+  const handleIframeLoad = () => {
+    try {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'command',
+          func: 'playVideo',
+          args: []
+        }), '*');
+        iframeRef.current.contentWindow.postMessage(JSON.stringify({
+          event: 'listening',
+          id: 1,
+          channel: 'widget'
+        }), '*');
+      }
+    } catch {}
+  };
 
   return (
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
@@ -971,8 +1013,9 @@ export default function VideoPlayer({
             ref={iframeRef}
             key={`player-${videoId}`}
             src={embedSrc}
+            onLoad={handleIframeLoad}
             className="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
             allowFullScreen
             title={activeVideo.title}
           ></iframe>
