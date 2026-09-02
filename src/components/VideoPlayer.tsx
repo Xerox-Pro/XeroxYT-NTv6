@@ -146,6 +146,25 @@ export default function VideoPlayer({
   const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
   const [multiChannelsData, setMultiChannelsData] = useState<any[]>([]);
 
+  useEffect(() => {
+    if (videoData?.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
+      setMultiChannelsLoading(true);
+      Promise.all(
+        videoData.multipleChannelIds.map((id: string) => 
+          fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
+        )
+      ).then(channels => {
+        setMultiChannelsData(channels.filter(Boolean));
+        setMultiChannelsLoading(false);
+      }).catch(err => {
+        console.error('Failed to load multi channels', err);
+        setMultiChannelsLoading(false);
+      });
+    } else {
+      setMultiChannelsData([]);
+    }
+  }, [videoData?.multipleChannelIds]);
+
   // Track video viewing duration for recommendation AI
   useEffect(() => {
     watchSecondsRef.current = 0;
@@ -401,23 +420,9 @@ export default function VideoPlayer({
     });
   };
 
-  const handleAuthorClick = async () => {
+  const handleAuthorClick = () => {
     if (videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
       setShowMultiChannelDialog(true);
-      if (multiChannelsData.length === 0) {
-        setMultiChannelsLoading(true);
-        try {
-          const channels = await Promise.all(
-            videoData.multipleChannelIds.map((id: string) => 
-              fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
-            )
-          );
-          setMultiChannelsData(channels.filter(Boolean));
-        } catch (err) {
-          console.error('Failed to load multi channels', err);
-        }
-        setMultiChannelsLoading(false);
-      }
     } else {
       onSelectChannel(videoData.authorId || videoData.author);
     }
@@ -505,9 +510,11 @@ export default function VideoPlayer({
                     <ChevronDown size={14} className="text-gray-500 shrink-0" />
                   )}
                 </button>
-                <p className="text-xs font-normal text-gray-500">
-                  {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
-                </p>
+                {(!videoData.multipleChannelIds || videoData.multipleChannelIds.length <= 1) && (
+                  <p className="text-xs font-normal text-gray-500">
+                    {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
+                  </p>
+                )}
               </div>
 
               <button
