@@ -124,7 +124,11 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
               </span>
             )}
             <span onClick={onClick} className="text-gray-500 text-xs mt-0.5">
-              {formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}
+              {isPlaylist ? (
+                <span>{video.publishedText || '25+ 本の動画 • YouTube ミックス'}</span>
+              ) : (
+                <span>{formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}</span>
+              )}
             </span>
           </div>
         </div>

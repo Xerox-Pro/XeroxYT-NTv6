@@ -633,8 +633,15 @@ export default function App() {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
     }
     
-    // 現在の playlistId または渡された videoObj/cache の playlistId を保持
-    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null) || (currentPlaylistId || null);
+    // 明示的に渡された playlistId、または MIX / プレイリスト動画の場合のみ list パラメータを付与
+    // 通常の関連動画や検索結果をクリックした場合は、ミックスリストから抜けて通常の動画再生画面に遷移する
+    let playlistId: string | null = null;
+    if (videoObj?.playlistId) {
+      playlistId = videoObj.playlistId;
+    } else if (videoObj?.type === 'mix' || videoObj?.type === 'playlist') {
+      playlistId = videoId ? `RD${videoId}` : null;
+    }
+    
     navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
   };
 

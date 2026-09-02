@@ -1058,20 +1058,21 @@ async function startServer() {
           [allUnique[i], allUnique[j]] = [allUnique[j], allUnique[i]];
         }
         
-        // ホームのおすすめにミックスリスト（Mix Card）を複数合成して提供する
+        // ホームのおすすめにユーザーの視聴履歴・アーティスト好みに基づくミックスリスト（Mix Card）を合成して提供する
         const mixCards: any[] = [];
-        const mixCandidates = allUnique.filter(v => v.type === 'video' && v.videoId);
+        // パーソナライズ動画（履歴・関心アーティスト）から優先的に候補を抽出
+        const personalizedCandidates = formattedPersonalized.filter(v => v.type === 'video' && v.videoId);
+        const generalCandidates = allUnique.filter(v => v.type === 'video' && v.videoId);
+        const mixCandidates = personalizedCandidates.length > 0 ? personalizedCandidates : generalCandidates;
         
-        if (mixCandidates.length >= 2) {
+        if (mixCandidates.length >= 1) {
           const sample1 = mixCandidates[0];
-          const sample2 = mixCandidates[Math.floor(mixCandidates.length / 2)] || mixCandidates[1];
-
           mixCards.push({
             videoId: sample1.videoId,
             playlistId: `RD${sample1.videoId}`,
             type: 'mix',
             title: `ミックスリスト - ${sample1.author}、その他の関連動画`,
-            author: `${sample1.author}、ロクデナシ、その他`,
+            author: `${sample1.author}、関連アーティスト`,
             authorAvatar: sample1.authorAvatar,
             viewCount: 0,
             publishedText: '25+ 本の動画 • YouTube ミックス',
@@ -1081,13 +1082,15 @@ async function startServer() {
             isPremiere: false
           });
 
+          // 2つ目のミックス候補 (別のアーティストまたは別の動画)
+          const sample2 = mixCandidates.find(v => v.author !== sample1.author && v.videoId !== sample1.videoId) || mixCandidates[1] || generalCandidates[2];
           if (sample2 && sample2.videoId !== sample1.videoId) {
             mixCards.push({
               videoId: sample2.videoId,
               playlistId: `RD${sample2.videoId}`,
               type: 'mix',
-              title: `ミックスリスト - ${sample2.title.substring(0, 20)}...`,
-              author: `${sample2.author} 他`,
+              title: `ミックスリスト - ${sample2.title.length > 25 ? sample2.title.substring(0, 25) + '...' : sample2.title}`,
+              author: `${sample2.author}、他`,
               authorAvatar: sample2.authorAvatar,
               viewCount: 0,
               publishedText: '25+ 本の動画 • YouTube ミックス',
@@ -1097,13 +1100,35 @@ async function startServer() {
               isPremiere: false
             });
           }
+
+          // 3つ目のミックス候補（人気/新着の別ジャンル）
+          const sample3 = generalCandidates.find(v => v.videoId !== sample1.videoId && (!sample2 || v.videoId !== sample2.videoId));
+          if (sample3 && page === 1 && generalCandidates.length >= 8) {
+            mixCards.push({
+              videoId: sample3.videoId,
+              playlistId: `RD${sample3.videoId}`,
+              type: 'mix',
+              title: `ミックスリスト - ${sample3.author} 関連ヒット曲`,
+              author: `${sample3.author}、他`,
+              authorAvatar: sample3.authorAvatar,
+              viewCount: 0,
+              publishedText: '25+ 本の動画 • YouTube ミックス',
+              lengthSeconds: 0,
+              videoThumbnails: sample3.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${sample3.videoId}/hqdefault.jpg` }],
+              isLive: false,
+              isPremiere: false
+            });
+          }
         }
 
-        // mixCardsをおすすめ動画の適切なインデックス(2番目、7番目など)に挿入
-        if (mixCards.length > 0 && allUnique.length >= 3) {
-          allUnique.splice(2, 0, mixCards[0]);
-          if (mixCards[1] && allUnique.length >= 8) {
-            allUnique.splice(7, 0, mixCards[1]);
+        // mixCardsをおすすめ動画の適切なインデックス(1番目, 6番目, 13番目など)に挿入
+        if (mixCards.length > 0 && allUnique.length >= 2) {
+          allUnique.splice(1, 0, mixCards[0]);
+          if (mixCards[1] && allUnique.length >= 7) {
+            allUnique.splice(6, 0, mixCards[1]);
+          }
+          if (mixCards[2] && allUnique.length >= 14) {
+            allUnique.splice(13, 0, mixCards[2]);
           }
         }
 
@@ -1452,7 +1477,7 @@ async function startServer() {
         playlistId: playlistId
       });
 
-      const playlistData = nextResult.data?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
+      const playlistData = (nextResult.data as any)?.contents?.twoColumnWatchNextResults?.playlist?.playlist;
       if (playlistData) {
         const title = playlistData.title || 'ミックスリスト';
         const items = (playlistData.contents || []).map((c: any, index: number) => {
