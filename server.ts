@@ -1158,43 +1158,29 @@ async function startServer() {
         }
         const mixCards: any[] = [];
         
-        if (musicVideosForMix.length >= 1) {
-          const sample1 = musicVideosForMix[0];
-          const thumb1 = sample1.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${sample1.videoId}/hqdefault.jpg`;
-          mixCards.push({
-            videoId: sample1.videoId,
-            playlistId: `RD${sample1.videoId}`,
-            type: 'mix',
-            title: `ミックスリスト - ${sample1.author}`,
-            author: `${sample1.author}、その他`,
-            authorAvatar: sample1.authorAvatar,
-            viewCount: 0,
-            publishedText: '25+ 本の動画 • YouTube ミックス',
-            lengthSeconds: 0,
-            videoThumbnails: [
-              { url: thumb1 },
-              { url: `https://i.ytimg.com/vi/${sample1.videoId}/hqdefault.jpg` }
-            ],
-            isLive: false,
-            isPremiere: false
-          });
-
-          const sample2 = musicVideosForMix.find(v => v.author !== sample1.author) || musicVideosForMix[1];
-          if (sample2 && sample2.videoId !== sample1.videoId) {
-            const thumb2 = sample2.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${sample2.videoId}/hqdefault.jpg`;
+        // 最大6つのMIXカードを異なるアーティストで生成
+        const seenMixAuthors = new Set<string>();
+        for (const mVid of musicVideosForMix) {
+          if (mixCards.length >= 6) break;
+          const author = mVid.author || '不明';
+          if (!seenMixAuthors.has(author)) {
+            seenMixAuthors.add(author);
+            const thumb = mVid.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${mVid.videoId}/hqdefault.jpg`;
             mixCards.push({
-              videoId: sample2.videoId,
-              playlistId: `RD${sample2.videoId}`,
+              videoId: mVid.videoId,
+              playlistId: `RD${mVid.videoId}`,
               type: 'mix',
-              title: `ミックスリスト - ${sample2.author}`,
-              author: `${sample2.author}、他`,
-              authorAvatar: sample2.authorAvatar,
+              title: `ミックスリスト - ${author}`,
+              author: `${author}、その他`,
+              authorAvatar: mVid.authorAvatar,
               viewCount: 0,
               publishedText: '25+ 本の動画 • YouTube ミックス',
               lengthSeconds: 0,
+              thumbnailUrl: thumb,
+              thumbnail: thumb,
               videoThumbnails: [
-                { url: thumb2 },
-                { url: `https://i.ytimg.com/vi/${sample2.videoId}/hqdefault.jpg` }
+                { url: thumb },
+                { url: `https://i.ytimg.com/vi/${mVid.videoId}/hqdefault.jpg` }
               ],
               isLive: false,
               isPremiere: false
@@ -1202,12 +1188,23 @@ async function startServer() {
           }
         }
 
-        // MIXカードを最大2個、自然な位置（2番目と7番目）に差し込み
-        if (mixCards.length > 0 && finalVideos.length >= 2) {
-          finalVideos.splice(1, 0, mixCards[0]);
-          if (mixCards[1] && finalVideos.length >= 7) {
-            finalVideos.splice(6, 0, mixCards[1]);
+        // 15本の動画につき2個ミックスリストを配置するスプライスロジック
+        let insertCount = 0;
+        let originalIdx = 0;
+        while (originalIdx < finalVideos.length && insertCount < mixCards.length) {
+          const mixCard1 = mixCards[insertCount++];
+          if (mixCard1) {
+            const pos1 = Math.min(originalIdx + 1, finalVideos.length);
+            finalVideos.splice(pos1, 0, mixCard1);
           }
+          
+          const mixCard2 = mixCards[insertCount++];
+          if (mixCard2) {
+            const pos2 = Math.min(originalIdx + 7, finalVideos.length);
+            finalVideos.splice(pos2, 0, mixCard2);
+          }
+          
+          originalIdx += 15;
         }
 
         return res.json({ 

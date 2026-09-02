@@ -13,11 +13,13 @@ interface VideoCardProps {
 
 const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, hideChannelInfo }) => {
   const isPlaylist = video.type === 'playlist' || video.type === 'mix' || !!video.playlistId;
-  const initialThumb = video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
-  const [imgSrc, setImgSrc] = useState(initialThumb);
+  const getThumb = () => {
+    return video.thumbnailUrl || (video as any).thumbnail || video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
+  };
+  const [imgSrc, setImgSrc] = useState(getThumb());
 
   useEffect(() => {
-    setImgSrc(video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : ''));
+    setImgSrc(getThumb());
   }, [video]);
 
   const [displayAuthor, setDisplayAuthor] = useState(video.author && video.author !== 'Unknown' && video.author !== 'Channel' ? video.author : 'チャンネル');
