@@ -1164,13 +1164,9 @@ export default function VideoPlayer({
                     <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
                       <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
                       <div className="flex items-center gap-1">
-                        {isPlaylist ? (
-                          <span className="text-red-600 font-bold uppercase text-[9px] bg-red-50 px-1 rounded border border-red-100">
-                            {isMix ? 'ミックスリスト' : '再生リスト'}
-                          </span>
-                        ) : recVideo.viewCount > 0 ? (
+                        {recVideo.viewCount > 0 && (
                           <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
-                        ) : null}
+                        )}
                         {recVideo.publishedText && (
                           <>
                             {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
