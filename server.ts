@@ -529,6 +529,31 @@ async function startServer() {
     return false;
   }
 
+  function getPrimaryArtist(name: string): string {
+    if (!name) return '';
+    let clean = name;
+    // Remove " - Topic" or " - トピック" or Vevo
+    clean = clean.replace(/\s*-\s*Topic\s*$/i, '');
+    clean = clean.replace(/\s*-\s*トピック\s*$/i, '');
+    clean = clean.replace(/\s*Vevo\s*$/i, '');
+    // Split by common delimiters: "×", "x" (if surrounded by spaces), "&", ",", "/", "and", "feat."
+    const delimiters = [
+      /\s*[×xX]\s+/, 
+      /\s*&\s*/, 
+      /\s*,\s*/, 
+      /\s*\/\s*/, 
+      /\s+and\s+/i, 
+      /\s+feat\.?\s+/i
+    ];
+    for (const delim of delimiters) {
+      const parts = clean.split(delim);
+      if (parts.length > 1 && parts[0].trim().length > 0) {
+        clean = parts[0].trim();
+      }
+    }
+    return clean.trim();
+  }
+
   function formatVideoObject(v: any, defaultAuthor: string = '', channelId?: string) {
     if (!v) return null;
     if (isUnwantedVideo(v)) return null;
@@ -787,7 +812,7 @@ async function startServer() {
         authorAvatar = 'https:' + authorAvatar;
       }
     } else {
-      authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff&size=128`;
+      authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(getPrimaryArtist(authorName))}&background=random&color=fff&size=128`;
     }
 
     const isPremiere = Boolean(
@@ -856,20 +881,15 @@ async function startServer() {
           const historyDetails = await Promise.all(
             sampleHistory.map(async (id) => {
               try {
-                const info = await youtube.getInfo(id);
-                const titleStr = info.primary_info?.title?.text || info.basic_info?.title || '';
-                const authorStr = info.secondary_info?.owner?.author?.name || info.basic_info?.author || '';
-                if (!titleStr) return null; // Ensure we only include valid ones
-                return {
-                  videoId: id,
-                  title: titleStr,
-                  author: authorStr,
-                  videoThumbnails: [{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, width: 480, height: 360 }],
-                  lengthSeconds: info.basic_info?.duration || 0,
-                  viewCount: info.basic_info?.view_count || 0,
-                  type: 'video',
-                  publishedText: 'もう一度見る'
-                };
+                const searchRes = await youtube.search(id);
+                const firstVideo = searchRes.videos?.[0];
+                if (!firstVideo) return null;
+                const formatted = formatVideoObject(firstVideo);
+                if (formatted && formatted.videoId) {
+                  formatted.publishedText = 'もう一度見る';
+                  return formatted;
+                }
+                return null;
               } catch {
                 return null;
               }
@@ -1125,7 +1145,7 @@ async function startServer() {
       while (pIdx < formattedPersonalized.length || gIdx < formattedGeneral.length) {
         let addedThisRound = 0;
 
-        for (let k = 0; k < 9 && pIdx < formattedPersonalized.length; k++) {
+        for (let k = 0; k < 19 && pIdx < formattedPersonalized.length; k++) {
           const item = formattedPersonalized[pIdx++];
           if (item && item.videoId && !uniqueMap.has(item.videoId)) {
             uniqueMap.set(item.videoId, true);
@@ -2057,9 +2077,16 @@ async function startServer() {
               try {
                 const ch = await youtube.getChannel(chId);
                 const header = ch.header as any;
-                const foundTitle = header?.author?.name || ch.metadata?.title;
+                const foundTitle = header?.author?.name || ch.metadata?.title || '';
                 if (foundTitle && !authorName) authorName = foundTitle;
-                avatarUrl = header?.author?.best_thumbnail?.url || header?.author?.thumbnails?.[0]?.url || ch.metadata?.avatar?.[0]?.url || "";
+                
+                // If it is a Topic or Various Artists channel, we do NOT want its generic avatar
+                const isGenericChannel = foundTitle.toLowerCase().includes('topic') || 
+                                         foundTitle.toLowerCase().includes('トピック') || 
+                                         foundTitle.toLowerCase().includes('various artists');
+                if (!isGenericChannel) {
+                  avatarUrl = header?.author?.best_thumbnail?.url || header?.author?.thumbnails?.[0]?.url || ch.metadata?.avatar?.[0]?.url || "";
+                }
               } catch {}
             }
 
@@ -2072,19 +2099,28 @@ async function startServer() {
                   try {
                     const ch = await youtube.getChannel(chId);
                     const header = ch.header as any;
-                    avatarUrl = header?.author?.best_thumbnail?.url || header?.author?.thumbnails?.[0]?.url || ch.metadata?.avatar?.[0]?.url || "";
+                    const foundTitle = header?.author?.name || ch.metadata?.title || '';
+                    const isGenericChannel = foundTitle.toLowerCase().includes('topic') || 
+                                             foundTitle.toLowerCase().includes('トピック') || 
+                                             foundTitle.toLowerCase().includes('various artists');
+                    if (!isGenericChannel) {
+                      avatarUrl = header?.author?.best_thumbnail?.url || header?.author?.thumbnails?.[0]?.url || ch.metadata?.avatar?.[0]?.url || "";
+                    }
                   } catch {}
                 }
               } catch {}
             }
 
-            if (!avatarUrl && authorName && authorName !== 'チャンネル' && authorName !== 'Unknown' && !isMetadataNotAuthor(authorName)) {
+            const cleanAuthor = getPrimaryArtist(authorName);
+            if (!avatarUrl && cleanAuthor && cleanAuthor !== 'チャンネル' && cleanAuthor !== 'Unknown' && !isMetadataNotAuthor(cleanAuthor)) {
               try {
-                const searchRes = await youtube.search(authorName, { type: 'channel' });
+                const searchRes = await youtube.search(cleanAuthor, { type: 'channel' });
                 if (searchRes.channels && searchRes.channels[0]) {
                   const foundCh = searchRes.channels[0] as any;
                   const foundTitle = foundCh.author?.name || foundCh.title?.text || "";
-                  if (!originalAuthor || (foundTitle && (foundTitle.toLowerCase().includes(originalAuthor.toLowerCase()) || originalAuthor.toLowerCase().includes(foundTitle.toLowerCase())))) {
+                  const isCleanMatch = foundTitle.toLowerCase().includes(cleanAuthor.toLowerCase()) || 
+                                       cleanAuthor.toLowerCase().includes(foundTitle.toLowerCase());
+                  if (isCleanMatch) {
                     chId = foundCh.id || chId;
                     avatarUrl = foundCh.author?.best_thumbnail?.url || foundCh.author?.thumbnails?.[0]?.url || foundCh.thumbnails?.[0]?.url || "";
                   }
