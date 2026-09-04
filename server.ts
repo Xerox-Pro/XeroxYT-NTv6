@@ -848,25 +848,36 @@ async function startServer() {
       let usedAi = false;
       let historyVideoTitles: string[] = [];
       let historyAuthors: string[] = [];
+      let historyFullObjects: any[] = [];
 
       if (historyIds.length > 0) {
         try {
-          const sampleHistory = historyIds.slice(0, 12);
+          const sampleHistory = historyIds.slice(0, 15);
           const historyDetails = await Promise.all(
             sampleHistory.map(async (id) => {
               try {
-                const info = await youtube.getBasicInfo(id);
+                const info = await youtube.getInfo(id);
+                const titleStr = info.primary_info?.title?.text || info.basic_info?.title || '';
+                const authorStr = info.secondary_info?.owner?.author?.name || info.basic_info?.author || '';
+                if (!titleStr) return null; // Ensure we only include valid ones
                 return {
-                  title: info.basic_info.title || '',
-                  author: info.basic_info.author || ''
+                  videoId: id,
+                  title: titleStr,
+                  author: authorStr,
+                  videoThumbnails: [{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, width: 480, height: 360 }],
+                  lengthSeconds: info.basic_info?.duration || 0,
+                  viewCount: info.basic_info?.view_count || 0,
+                  type: 'video',
+                  publishedText: 'もう一度見る'
                 };
               } catch {
                 return null;
               }
             })
           );
-          historyVideoTitles = historyDetails.filter(Boolean).map(h => h!.title).filter(t => t.length > 0);
-          historyAuthors = Array.from(new Set(historyDetails.filter(Boolean).map(h => h!.author).filter(a => a.length > 0)));
+          historyFullObjects = historyDetails.filter(Boolean);
+          historyVideoTitles = historyFullObjects.map(h => h.title).filter(t => t.length > 0);
+          historyAuthors = Array.from(new Set(historyFullObjects.map(h => h.author).filter(a => a.length > 0)));
         } catch (e) {
           console.warn("[Recs] Error fetching history details:", e);
         }
@@ -989,33 +1000,84 @@ async function startServer() {
       const neededCatCount = Math.max(2, 11 - selectedQueries.length);
       selectedQueries.push(...shuffledCategories.slice(0, neededCatCount));
 
-      let sampledHistoryIds: string[] = [];
-      if (historyIds.length > 0) {
-        const hCopy = [...historyIds];
-        for (let i = hCopy.length - 1; i > 0; i--) {
-          const j = Math.floor(getSeedRandom(page * 7 + i) * (i + 1));
-          [hCopy[i], hCopy[j]] = [hCopy[j], hCopy[i]];
-        }
-        sampledHistoryIds = hCopy.slice(0, 15);
-      }
+      let relatedResults: any[][] = [];
+      let sampledHistoryIds = historyIds.slice(0, 15);
 
-      const relatedTasks = sampledHistoryIds.map(async (id) => {
-        try {
-          const info = await youtube.getInfo(id);
-          return info.watch_next_feed || [];
-        } catch {
-          return [];
+      if (sampledHistoryIds.length > 0) {
+        const firstLevelTasks = sampledHistoryIds.map(async (id) => {
+          try {
+            const info = await youtube.getInfo(id);
+            return info.watch_next_feed || [];
+          } catch {
+            return [];
+          }
+        });
+        const firstLevelFeeds = await Promise.all(firstLevelTasks);
+        relatedResults.push(...firstLevelFeeds);
+
+        if (sampledHistoryIds.length < 5) {
+          const flatFirstLevel = firstLevelFeeds.flat().filter(v => v && v.type !== 'Mix' && v.type !== 'Playlist');
+          if (flatFirstLevel.length > 0) {
+            const candidates: string[] = [];
+            for (let i = 0; i < flatFirstLevel.length; i++) {
+              const item = flatFirstLevel[i];
+              const vid = item.id || item.videoId || item.content_id;
+              if (vid && !sampledHistoryIds.includes(vid) && !candidates.includes(vid)) {
+                candidates.push(vid);
+              }
+            }
+            const shuffledCandidates = candidates
+              .sort(() => getSeedRandom() - 0.5)
+              .slice(0, 5);
+
+            if (shuffledCandidates.length > 0) {
+              const secondLevelTasks = shuffledCandidates.map(async (id) => {
+                try {
+                  const info = await youtube.getInfo(id);
+                  return info.watch_next_feed || [];
+                } catch {
+                  return [];
+                }
+              });
+              const secondLevelFeeds = await Promise.all(secondLevelTasks);
+              relatedResults.push(...secondLevelFeeds);
+            }
+          }
         }
-      });
+      } else {
+        try {
+          const trendingSearch = await youtube.search("日本 トレンド 総合 2026", { type: "video" });
+          const trendingVideos = trendingSearch.videos || [];
+          if (trendingVideos.length > 0) {
+            const seeds = trendingVideos
+              .sort(() => getSeedRandom() - 0.5)
+              .slice(0, 5)
+              .map(v => v.id || v.videoId || v.content_id)
+              .filter((id): id is string => typeof id === 'string');
+
+            if (seeds.length > 0) {
+              const simulatedTasks = seeds.map(async (id) => {
+                try {
+                  const info = await youtube.getInfo(id);
+                  return info.watch_next_feed || [];
+                } catch {
+                  return [];
+                }
+              });
+              const simulatedFeeds = await Promise.all(simulatedTasks);
+              relatedResults.push(...simulatedFeeds);
+            }
+          }
+        } catch (err) {
+          console.warn("[Recs] Simulated history fetch failed:", err);
+        }
+      }
 
       const searchTasks = selectedQueries.map(q => 
         youtube.search(q, { type: "video", prioritize: "popularity" }).catch(() => null)
       );
       
-      const [searchResults, relatedResults] = await Promise.all([
-        Promise.all(searchTasks),
-        Promise.all(relatedTasks)
-      ]);
+      const searchResults = await Promise.all(searchTasks);
 
       let personalizedVideos: any[] = [];
       let generalVideos: any[] = [];
@@ -1036,7 +1098,7 @@ async function startServer() {
         }
       });
 
-      const formattedPersonalized = personalizedVideos
+      let formattedPersonalized = personalizedVideos
         .map((v: any) => formatVideoObject(v))
         .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
 
@@ -1044,6 +1106,7 @@ async function startServer() {
         .map((v: any) => formatVideoObject(v))
         .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
 
+      // Shuffle personalized & general pools
       for (let i = formattedPersonalized.length - 1; i > 0; i--) {
         const j = Math.floor(getSeedRandom(page * 31 + i * 17) * (i + 1));
         [formattedPersonalized[i], formattedPersonalized[j]] = [formattedPersonalized[j], formattedPersonalized[i]];
@@ -1060,20 +1123,42 @@ async function startServer() {
       let gIdx = 0;
 
       while (pIdx < formattedPersonalized.length || gIdx < formattedGeneral.length) {
-        for(let k = 0; k < 3 && pIdx < formattedPersonalized.length; k++) {
+        let addedThisRound = 0;
+
+        for (let k = 0; k < 9 && pIdx < formattedPersonalized.length; k++) {
           const item = formattedPersonalized[pIdx++];
-          if (!uniqueMap.has(item.videoId)) {
+          if (item && item.videoId && !uniqueMap.has(item.videoId)) {
             uniqueMap.set(item.videoId, true);
             allUnique.push(item);
+            addedThisRound++;
           }
         }
-        if (gIdx < formattedGeneral.length) {
+
+        for (let k = 0; k < 1 && gIdx < formattedGeneral.length; k++) {
           const item = formattedGeneral[gIdx++];
-          if (!uniqueMap.has(item.videoId)) {
+          if (item && item.videoId && !uniqueMap.has(item.videoId)) {
             uniqueMap.set(item.videoId, true);
             allUnique.push(item);
+            addedThisRound++;
           }
         }
+
+        if (addedThisRound === 0 && pIdx >= formattedPersonalized.length && gIdx >= formattedGeneral.length) {
+          break;
+        }
+      }
+
+      // Inject the watched history videos at highly visible and spread-out indices!
+      if (historyFullObjects.length > 0) {
+        const shuffledHistory = [...historyFullObjects].sort(() => getSeedRandom() - 0.5);
+        shuffledHistory.forEach((item, idx) => {
+          const targetIndex = 1 + idx * 4;
+          if (targetIndex <= allUnique.length) {
+            allUnique.splice(targetIndex, 0, item);
+          } else {
+            allUnique.push(item);
+          }
+        });
       }
 
       if (allUnique.length > 0) {
