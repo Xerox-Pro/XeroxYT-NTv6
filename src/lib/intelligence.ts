@@ -64,6 +64,16 @@ export class LocalIntelligence {
     if (video.description) {
       this.extractAndSaveHashtags(video.description, 0.5);
     }
+    if (Array.isArray(video.hashtags)) {
+      video.hashtags.forEach((t: string) => {
+        if (typeof t === 'string') this.extractAndSaveHashtags(t.startsWith('#') ? t : `#${t}`, 1.5);
+      });
+    }
+    if (Array.isArray(video.tags)) {
+      video.tags.forEach((t: string) => {
+        if (typeof t === 'string') this.extractAndSaveHashtags(t.startsWith('#') ? t : `#${t}`, 1.0);
+      });
+    }
 
     // 1. Title analysis
     const title = (video.title || '').toLowerCase();
@@ -153,6 +163,13 @@ export class LocalIntelligence {
     // Shuffle and pick `limit` (default 5)
     const shuffled = tags.sort(() => Math.random() - 0.5);
     return shuffled.slice(0, limit).map(([tag]) => `#${tag}`);
+  }
+
+  /**
+   * Return map of saved hashtags with their appearance frequency weights
+   */
+  getHashtagsMap(): Record<string, number> {
+    return { ...this.profile.hashtags };
   }
 
   /**

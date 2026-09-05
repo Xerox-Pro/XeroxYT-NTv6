@@ -123,6 +123,33 @@ export default function VideoPlayer({
   const [cooldownSec, setCooldownSec] = useState(0);
   const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
+  const [isLiked, setIsLiked] = useState(false);
+  const [isDisliked, setIsDisliked] = useState(false);
+  const [likeCountDelta, setLikeCountDelta] = useState(0);
+  const [copiedToast, setCopiedToast] = useState(false);
+
+  const handleLike = () => {
+    if (isLiked) {
+      setIsLiked(false);
+      setLikeCountDelta(0);
+    } else {
+      setIsLiked(true);
+      setIsDisliked(false);
+      setLikeCountDelta(1);
+    }
+  };
+
+  const handleDislike = () => {
+    if (isDisliked) {
+      setIsDisliked(false);
+    } else {
+      setIsDisliked(true);
+      if (isLiked) {
+        setIsLiked(false);
+        setLikeCountDelta(0);
+      }
+    }
+  };
 
   // EduKey 取得
   useEffect(() => {
@@ -593,20 +620,37 @@ export default function VideoPlayer({
                     : 'bg-gray-900 hover:bg-black text-white'
                 }`}
               >
-                {isSubscribed ? '登録済み' : 'チャンネル登録'}
+                {isSubscribed ? (
+                  <span className="flex items-center gap-1.5">
+                    <Bell size={13} className="animate-bounce" />
+                    <span>登録済み</span>
+                  </span>
+                ) : (
+                  <span>チャンネル登録</span>
+                )}
               </button>
             </div>
 
             {/* アクションボタン */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
               <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
-                <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors">
-                  <ThumbsUp size={15} />
-                  <span>{formatNumberJP(videoData.likeCount || 0)}</span>
+                <button 
+                  onClick={handleLike}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-l-full transition-all duration-200 active:scale-90 ${
+                    isLiked ? 'text-blue-600 bg-blue-50' : 'text-gray-800 hover:bg-gray-200'
+                  }`}
+                >
+                  <ThumbsUp size={15} className={`${isLiked ? 'fill-blue-600 text-blue-600 animate-yt-pop' : ''}`} />
+                  <span>{formatNumberJP((videoData.likeCount || 0) + likeCountDelta)}</span>
                 </button>
                 <div className="w-[1px] h-4 bg-gray-300"></div>
-                <button className="px-3 py-1.5 text-xs text-gray-800 hover:bg-gray-200 rounded-r-full transition-colors">
-                  <ThumbsDown size={15} />
+                <button 
+                  onClick={handleDislike}
+                  className={`px-3 py-1.5 text-xs rounded-r-full transition-all duration-200 active:scale-90 ${
+                    isDisliked ? 'text-blue-600 bg-blue-50' : 'text-gray-800 hover:bg-gray-200'
+                  }`}
+                >
+                  <ThumbsDown size={15} className={`${isDisliked ? 'fill-blue-600 text-blue-600 animate-yt-pop' : ''}`} />
                 </button>
               </div>
 
@@ -616,10 +660,11 @@ export default function VideoPlayer({
                     navigator.share({ title: videoData.title, url: window.location.href }).catch(() => {});
                   } else {
                     navigator.clipboard.writeText(window.location.href);
-                    alert('リンクをクリップボードにコピーしました！');
+                    setCopiedToast(true);
+                    setTimeout(() => setCopiedToast(false), 2500);
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-all duration-200"
               >
                 <Share2 size={15} />
                 <span>共有</span>
@@ -1094,6 +1139,13 @@ export default function VideoPlayer({
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* クリップボードコピー通知 (YouTube風Toast) */}
+      {copiedToast && (
+        <div className="fixed bottom-6 left-6 z-50 bg-[#0f0f0f] text-white px-4 py-2.5 rounded-lg text-xs font-medium shadow-xl flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
+          <span>リンクをクリップボードにコピーしました</span>
         </div>
       )}
     </div>

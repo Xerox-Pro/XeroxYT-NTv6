@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { Channel, ChannelSubscription, Video, CommunityPost, ReleaseItem } from '../types';
 import { 
   Loader2, Bell, AlertCircle, Play, Layers, ChevronRight, 
@@ -238,23 +239,24 @@ export default function ChannelPage({
               </p>
             )}
 
-            <button
+            <motion.button
+              whileTap={{ scale: 0.94 }}
               onClick={handleSubClick}
               className={`px-6 py-2.5 rounded-full text-sm font-bold transition-all duration-200 flex items-center gap-2 shadow-2xs ${
                 isSubscribed
                   ? 'bg-gray-100 hover:bg-gray-200 text-gray-900 border border-gray-300'
-                  : 'bg-black hover:bg-gray-800 text-white active:scale-95'
+                  : 'bg-black hover:bg-gray-800 text-white'
               }`}
             >
               {isSubscribed ? (
                 <>
-                  <Bell size={16} />
+                  <Bell size={16} className="animate-bounce" />
                   <span>登録済み</span>
                 </>
               ) : (
                 <span>チャンネル登録</span>
               )}
-            </button>
+            </motion.button>
           </div>
         </div>
       </div>
@@ -275,7 +277,11 @@ export default function ChannelPage({
                 {tab.icon}
                 <span>{tab.label}</span>
                 {isActive && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-full transition-all duration-300 animate-in fade-in"></div>
+                  <motion.div 
+                    layoutId="channelTabIndicator"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-full"
+                    transition={{ type: "spring", stiffness: 500, damping: 35 }}
+                  />
                 )}
               </Link>
             );

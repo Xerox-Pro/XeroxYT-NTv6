@@ -9,6 +9,8 @@ import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
 import VideoCard from './components/VideoCard';
+import VideoSkeleton from './components/VideoSkeleton';
+import TopProgressBar from './components/TopProgressBar';
 import VideoPlayer from './components/VideoPlayer';
 import ChannelPage from './components/ChannelPage';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
@@ -483,6 +485,7 @@ export default function App() {
     try {
       const keywords = getHistoryKeywords();
       const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).join(',');
+      const userHashtags = JSON.stringify(localAI.getHashtagsMap());
       const refreshNonce = Date.now() + Math.floor(Math.random() * 1000000);
       let data = [];
       
@@ -496,7 +499,7 @@ export default function App() {
         }
       }
 
-      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
+      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&userHashtags=${encodeURIComponent(userHashtags)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
       const publicData = result.videos || [];
       
       // AIの分析結果を保存
@@ -716,6 +719,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+      <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
         <Navbar
@@ -821,10 +825,7 @@ export default function App() {
           ) : view === 'debug' ? (
             <DebugAPI />
           ) : loading && videos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] gap-3 bg-white">
-              <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
-              <span className="text-sm font-medium text-gray-600">動画を読み込み中...</span>
-            </div>
+            <VideoSkeleton count={16} />
           ) : error && videos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-gray-700 gap-3 bg-white">
               <AlertCircle className="w-10 h-10 text-red-500" />

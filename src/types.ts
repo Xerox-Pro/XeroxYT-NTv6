@@ -19,6 +19,8 @@ export interface Video {
   lengthSeconds: number;
   videoThumbnails: VideoThumbnail[];
   description?: string;
+  tags?: string[];
+  hashtags?: string[];
   subCount?: number;
   likeCount?: number;
   recommendedVideos?: Video[];

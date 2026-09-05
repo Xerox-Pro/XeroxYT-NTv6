@@ -799,9 +799,26 @@ async function startServer() {
   app.get("/api/recommendations", async (req, res) => {
     const keywords = (req.query.keywords as string) || "";
     const historyIds = ((req.query.historyIds as string) || "").split(",").filter(id => id && id.trim().length > 0);
+    const userHashtagsParam = (req.query.userHashtags as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
     const clientSeed = parseInt((req.query.seed || req.query.refreshNonce) as string, 10);
     const seed = Number.isFinite(clientSeed) ? clientSeed : (Date.now() + Math.floor(Math.random() * 100000));
+
+    // ユーザーが見た動画のハッシュタグ頻度マップ（出没回数）
+    const hashtagFrequencyMap: Record<string, number> = {};
+    if (userHashtagsParam) {
+      try {
+        const parsed = JSON.parse(userHashtagsParam);
+        if (typeof parsed === 'object' && parsed !== null) {
+          for (const [k, v] of Object.entries(parsed)) {
+            const clean = k.replace(/^#/, '').toLowerCase().trim();
+            if (clean && typeof v === 'number' && v > 0) {
+              hashtagFrequencyMap[clean] = (hashtagFrequencyMap[clean] || 0) + v;
+            }
+          }
+        }
+      } catch {}
+    }
 
     // シード付き疑似乱数生成器
     const getSeedRandom = (offset: number = 0) => {
@@ -826,9 +843,25 @@ async function startServer() {
             sampleHistory.map(async (id) => {
               try {
                 const info = await youtube.getBasicInfo(id);
+                const basic = info.basic_info;
+                // タイトルやタグからハッシュタグを抽出して頻度加算
+                const title = basic.title || '';
+                const hashMatches = (title.match(/#[a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f]+/g) || [])
+                  .map(h => h.replace(/^#/, '').toLowerCase().trim());
+                hashMatches.forEach(tag => {
+                  if (tag && tag.length >= 2) hashtagFrequencyMap[tag] = (hashtagFrequencyMap[tag] || 0) + 2;
+                });
+                if (Array.isArray(basic.keywords)) {
+                  basic.keywords.forEach((k: string) => {
+                    const tag = k.replace(/^#/, '').toLowerCase().trim();
+                    if (tag && tag.length >= 2) {
+                      hashtagFrequencyMap[tag] = (hashtagFrequencyMap[tag] || 0) + 1;
+                    }
+                  });
+                }
                 return {
-                  title: info.basic_info.title || '',
-                  author: info.basic_info.author || ''
+                  title: basic.title || '',
+                  author: basic.author || ''
                 };
               } catch {
                 return null;
@@ -967,6 +1000,33 @@ async function startServer() {
         }
       }
 
+      // ユーザーが見た動画のハッシュタグ（出没しやすいものの確率を上げて重み付けランダムサンプリング）
+      const sampleWeightedHashtags = (map: Record<string, number>, count: number = 2): string[] => {
+        const entries = Object.entries(map).filter(([tag, score]) => tag && score > 0 && tag.length >= 2);
+        if (entries.length === 0) return [];
+
+        const selected: string[] = [];
+        const pool = [...entries];
+
+        for (let step = 0; step < count && pool.length > 0; step++) {
+          const totalWeight = pool.reduce((acc, [, w]) => acc + w, 0);
+          let r = getSeedRandom(page * 71 + step * 23) * totalWeight;
+          let pickedIndex = 0;
+          for (let i = 0; i < pool.length; i++) {
+            r -= pool[i][1];
+            if (r <= 0) {
+              pickedIndex = i;
+              break;
+            }
+          }
+          selected.push(pool[pickedIndex][0]);
+          pool.splice(pickedIndex, 1); // 1回選ばれたものは重複しないよう除外
+        }
+        return selected;
+      };
+
+      const selectedHashtags = sampleWeightedHashtags(hashtagFrequencyMap, 2);
+
       // 一般の検索結果（5%用 または フォールバック用）
       const shuffledCategories = [...categoryPool];
       for (let i = shuffledCategories.length - 1; i > 0; i--) {
@@ -974,8 +1034,16 @@ async function startServer() {
         [shuffledCategories[i], shuffledCategories[j]] = [shuffledCategories[j], shuffledCategories[i]];
       }
       
+      const generalQueries: string[] = [];
+      // ユーザーが見た動画のハッシュタグを確率重み付けで最優先抽出（5%枠）
+      if (selectedHashtags.length > 0) {
+        selectedHashtags.forEach(tag => {
+          generalQueries.push(`#${tag}`);
+          generalQueries.push(`${tag} 人気`);
+        });
+      }
+
       // AI検索結果があればそれを追加
-      const generalQueries = [];
       if (usedAi && geminiKeywords.length > 0) {
         generalQueries.push(...geminiKeywords.slice(0, 2));
       }
@@ -1310,6 +1378,14 @@ async function startServer() {
         }
       }
 
+      // ハッシュタグとキーワードの抽出
+      const rawText = `${basic?.title || ''} ${secondary?.description?.text || basic?.short_description || ''}`;
+      const hashMatches = (rawText.match(/#[a-zA-Z0-9_\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff66-\uff9f]+/g) || [])
+        .map(h => h.replace(/^#/, '').trim())
+        .filter(h => h.length > 0);
+      const keywords = (basic?.keywords || []).map((k: string) => k.replace(/^#/, '').trim()).filter((k: string) => k.length > 0);
+      const combinedTags = Array.from(new Set([...hashMatches, ...keywords]));
+
       res.json({
         videoId: req.params.id,
         title: basic?.title || primary?.title?.text,
@@ -1321,6 +1397,8 @@ async function startServer() {
         likeCount: basic?.like_count,
         publishedText: primary?.published?.text || primary?.relative_date?.text,
         description: secondary?.description?.text || basic?.short_description,
+        tags: combinedTags,
+        hashtags: hashMatches,
         subCount: parseCount(owner?.subscriber_count?.text),
         videoThumbnails: basic?.thumbnail || [],
         recommendedVideos: recs
