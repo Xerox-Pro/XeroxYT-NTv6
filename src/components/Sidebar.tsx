@@ -1,4 +1,5 @@
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
 import { ChannelSubscription } from '../types';
 import Avatar from './Avatar';
@@ -17,13 +18,13 @@ interface SidebarProps {
 }
 
 const section1 = [
-  { icon: Home, label: 'ホーム', activeValue: 'home' },
-  { icon: PlaySquare, label: '登録チャンネル', activeValue: 'subscriptions' },
+  { icon: Home, label: 'ホーム', activeValue: 'home', path: '/' },
+  { icon: PlaySquare, label: '登録チャンネル', activeValue: 'subscriptions', path: '/feed/subscriptions' },
 ];
 
 const section2 = [
-  { icon: Folder, label: 'ライブラリ', activeValue: 'library' },
-  { icon: History, label: '履歴', activeValue: 'history' },
+  { icon: Folder, label: 'ライブラリ', activeValue: 'library', path: '/feed/library' },
+  { icon: History, label: '履歴', activeValue: 'history', path: '/feed/history' },
 ];
 
 export default function Sidebar({ 
@@ -65,8 +66,9 @@ export default function Sidebar({
   const renderLink = (link: any) => {
     const isActive = currentView === link.activeValue;
     return (
-      <button
+      <Link
         key={link.label}
+        to={link.path}
         onClick={() => handleClick(link.activeValue)}
         title={link.label}
         className={`w-full flex items-center ${
@@ -85,7 +87,7 @@ export default function Sidebar({
         <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
           {link.label}
         </span>
-      </button>
+      </Link>
     );
   };
 
@@ -126,7 +128,8 @@ export default function Sidebar({
               </h4>
               {section2.map(renderLink)}
               
-              <button
+              <Link
+                to="/debug/api"
                 onClick={() => handleClick('debug')}
                 className={`w-full flex items-center ${
                   isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
@@ -140,7 +143,7 @@ export default function Sidebar({
                 <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
                   APIデバッグ
                 </span>
-              </button>
+              </Link>
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
@@ -153,16 +156,22 @@ export default function Sidebar({
                 <p className="px-3 text-xs text-gray-400">登録チャンネルはありません</p>
               ) : (
                 subscriptions.map((sub) => (
-                  <button
+                  <Link
+                    to={`/channel/${sub.id}`}
                     key={sub.id}
-                    onClick={() => onSelectChannel && onSelectChannel(sub.id)}
+                    onClick={(e) => {
+                      if (onSelectChannel) {
+                        e.preventDefault();
+                        onSelectChannel(sub.id);
+                      }
+                    }}
                     className="w-full flex items-center gap-4 px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-left group"
                   >
                     <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-xs shrink-0" />
                     <span className="text-[14px] font-normal text-gray-800 truncate">
                       {sub.title}
                     </span>
-                  </button>
+                  </Link>
                 ))
               )}
             </div>
@@ -171,22 +180,24 @@ export default function Sidebar({
           <>
             <hr className="border-gray-200 my-1.5" />
             <div className="flex flex-col gap-1">
-              <button
+              <Link
+                to="/feed/library"
                 onClick={() => handleClick('library')}
                 className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
                 title="ライブラリ"
               >
                 <Folder size={20} strokeWidth={1.8} />
                 <span className="text-[10px] text-center truncate w-full">ライブラリ</span>
-              </button>
-              <button
+              </Link>
+              <Link
+                to="/feed/history"
                 onClick={() => handleClick('history')}
                 className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
                 title="履歴"
               >
                 <History size={20} strokeWidth={1.8} />
                 <span className="text-[10px] text-center truncate w-full">履歴</span>
-              </button>
+              </Link>
             </div>
           </>
         )}

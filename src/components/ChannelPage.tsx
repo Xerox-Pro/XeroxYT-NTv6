@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Channel, ChannelSubscription, Video, CommunityPost, ReleaseItem } from '../types';
 import { 
   Loader2, Bell, AlertCircle, Play, Layers, ChevronRight, 
-  Zap, Radio, Disc, MessageSquare, ThumbsUp, Check, Users
+  Zap, Radio, Disc, MessageSquare, ThumbsUp, Check, Users, PlaySquare
 } from 'lucide-react';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
@@ -25,10 +26,15 @@ export default function ChannelPage({
   onToggleSubscribe,
   onSelectChannel
 }: ChannelPageProps) {
+  const location = useLocation();
+  const navigate = useNavigate();
   const [channelData, setChannelData] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState<TabType>('home');
+  
+  const pathParts = location.pathname.split('/');
+  const activeTab: TabType = (pathParts[3] as TabType) || 'home';
+
   const [videoSort, setVideoSort] = useState<'latest' | 'popular'>('latest');
 
   // Pagination state for Videos & Shorts
@@ -174,8 +180,8 @@ export default function ChannelPage({
 
   const tabs: { id: TabType; label: string; icon?: React.ReactNode }[] = [
     { id: 'home', label: 'ホーム' },
-    { id: 'videos', label: '動画' },
-    { id: 'shorts', label: 'ショート' },
+    { id: 'videos', label: '動画', icon: <PlaySquare size={14} /> },
+    { id: 'shorts', label: 'ショート', icon: <Zap size={14} className="text-red-500" /> },
     { id: 'live', label: 'ライブ配信', icon: <Radio size={14} className="text-red-500" /> },
     { id: 'releases', label: 'リリース', icon: <Disc size={14} /> },
     { id: 'community', label: 'コミュニティ', icon: <MessageSquare size={14} /> },
@@ -259,9 +265,9 @@ export default function ChannelPage({
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
-              <button
+              <Link
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                to={`/channel/${channelData.id || channelId}${tab.id === 'home' ? '' : `/${tab.id}`}`}
                 className={`py-3.5 text-sm sm:text-base font-bold relative transition-colors duration-200 whitespace-nowrap flex items-center gap-1.5 ${
                   isActive ? 'text-gray-900' : 'text-gray-500 hover:text-gray-800'
                 }`}
@@ -271,7 +277,7 @@ export default function ChannelPage({
                 {isActive && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gray-900 rounded-full transition-all duration-300 animate-in fade-in"></div>
                 )}
-              </button>
+              </Link>
             );
           })}
         </div>

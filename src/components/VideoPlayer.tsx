@@ -5,7 +5,7 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell
 } from 'lucide-react';
 import Avatar from './Avatar';
 
@@ -208,6 +208,7 @@ export default function VideoPlayer({
   const [superChatMessage, setSuperChatMessage] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
+  const [showMultiChannelDialog, setShowMultiChannelDialog] = useState(false);
   const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
   const [multiChannelsData, setMultiChannelsData] = useState<any[]>([]);
 
@@ -485,6 +486,14 @@ export default function VideoPlayer({
     });
   };
 
+  const handleAuthorClick = () => {
+    if (videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
+      setShowMultiChannelDialog(true);
+    } else {
+      onSelectChannel(videoData.authorId || videoData.author);
+    }
+  };
+
   let histIdx = 0;
 
   if (baseRecs.length === 0) {
@@ -543,55 +552,49 @@ export default function VideoPlayer({
           
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
             {/* チャンネル情報 */}
-            <div className="flex flex-wrap items-center gap-4">
-              {(multiChannelsData.length > 0 ? multiChannelsData : [{
-                id: videoData.authorId || videoData.author,
-                title: videoData.author,
-                avatar: videoData.authorAvatar,
-                subCount: videoData.subCount
-              }]).map((channel, idx) => {
-                const channelId = channel.id || channel.authorId;
-                const channelTitle = channel.title || channel.author || channel.name;
-                const channelAvatar = channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url);
-                const isSub = subscriptions.some(s => s.id === channelId || s.title === channelTitle);
-                return (
-                  <div key={channelId || idx} className="flex items-center gap-3 bg-gray-50/50 pr-4 rounded-full border border-gray-100">
-                    <button
-                      onClick={() => onSelectChannel(channelId || channelTitle)}
-                      className="hover:opacity-80 transition-opacity"
-                      title={`${channelTitle}のチャンネルを開く`}
-                    >
-                      <Avatar
-                        src={channelAvatar}
-                        name={channelTitle}
-                        className="w-11 h-11 text-base shadow-xs"
-                      />
-                    </button>
-                    
-                    <div className="flex flex-col">
-                      <button
-                        onClick={() => onSelectChannel(channelId || channelTitle)}
-                        className="flex items-center gap-1 text-left hover:underline"
-                      >
-                        <h3 className="font-bold text-gray-900 text-[14px] truncate max-w-[150px]">{channelTitle}</h3>
-                        <span className="w-3 h-3 bg-gray-500 rounded-full flex items-center justify-center text-white text-[7px] font-bold shrink-0">✓</span>
-                      </button>
-                      <p className="text-[11px] font-normal text-gray-500">
-                        {channel.subCountText ? channel.subCountText : (channel.subCount ? `登録者数 ${formatNumberJP(channel.subCount)}人` : '登録者数 非公開')}
-                      </p>
-                    </div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleAuthorClick}
+                className="hover:opacity-80 transition-opacity"
+                title={`${videoData.author}のチャンネルを開く`}
+              >
+                <Avatar
+                  src={videoData.authorAvatar}
+                  name={videoData.author}
+                  className="w-11 h-11 text-base shadow-xs"
+                />
+              </button>
+              
+              <div className="flex flex-col">
+                <button
+                  onClick={handleAuthorClick}
+                  className="flex items-center gap-1 text-left hover:underline"
+                >
+                  <h3 className="font-bold text-gray-900 text-[15px] max-w-[200px] sm:max-w-xs truncate">
+                    {videoData.author}
+                    {videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1 && (
+                      <span className="text-gray-500 font-normal ml-1">...他 {videoData.multipleChannelIds.length - 1} チャンネル</span>
+                    )}
+                  </h3>
+                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
+                </button>
+                {(!videoData.multipleChannelIds || videoData.multipleChannelIds.length <= 1) && (
+                  <p className="text-xs font-normal text-gray-500">
+                    {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
+                  </p>
+                )}
+              </div>
 
-                    <button
-                      onClick={() => onToggleSubscribe({ id: channelId, title: channelTitle, avatar: channelAvatar })}
-                      className={`ml-2 px-3 py-1.5 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 ${
-                        isSub ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' : 'bg-gray-900 hover:bg-black text-white'
-                      }`}
-                    >
-                      {isSub ? '登録済み' : '登録'}
-                    </button>
-                  </div>
-                );
-              })}
+              <button
+                onClick={handleSubClick}
+                className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 ${
+                  isSubscribed 
+                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
+                    : 'bg-gray-900 hover:bg-black text-white'
+                }`}
+              >
+                {isSubscribed ? '登録済み' : 'チャンネル登録'}
+              </button>
             </div>
 
             {/* アクションボタン */}
@@ -1012,7 +1015,87 @@ export default function VideoPlayer({
         </div>
       )}
 
-      {/* Removed Multi Channel Modal */}
+      {/* Multi Channel Selection Modal */}
+      {showMultiChannelDialog && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 relative max-h-[80vh]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">コラボレーター</h2>
+              <button
+                onClick={() => setShowMultiChannelDialog(false)}
+                className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+              >
+                <X size={20} className="text-gray-600" />
+              </button>
+            </div>
+            
+            <div className="overflow-y-auto pr-1 -mr-1 flex flex-col gap-3">
+              {multiChannelsLoading ? (
+                <div className="flex justify-center p-4">
+                  <div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                </div>
+              ) : multiChannelsData.length > 0 ? (
+                multiChannelsData.map((channel, i) => {
+                  const isSub = subscriptions.some(s => s.id === channel.id || s.title === channel.title || s.id === channel.authorId || s.title === channel.name);
+                  const handleId = channel.authorId || channel.id || '';
+                  
+                  return (
+                    <div key={i} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors">
+                      <button
+                        onClick={() => {
+                          setShowMultiChannelDialog(false);
+                          onSelectChannel(handleId);
+                        }}
+                        className="shrink-0"
+                      >
+                        <Avatar
+                          src={channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url)}
+                          name={channel.title || channel.author || channel.name}
+                          className="w-12 h-12 shadow-sm"
+                        />
+                      </button>
+                      <div className="flex flex-col overflow-hidden flex-1">
+                        <button
+                          onClick={() => {
+                            setShowMultiChannelDialog(false);
+                            onSelectChannel(handleId);
+                          }}
+                          className="flex items-center gap-1 text-left"
+                        >
+                          <span className="font-bold text-gray-900 text-[15px] truncate max-w-[160px]">
+                            {channel.title || channel.author || channel.name}
+                          </span>
+                          <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
+                        </button>
+                        <span className="text-xs text-gray-500 truncate">
+                          @{handleId.substring(0, 15)} • {channel.subCountText ? channel.subCountText : (channel.subCount ? `チャンネル登録者数 ${formatNumberJP(channel.subCount)}人` : '登録者数 非公開')}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => onToggleSubscribe({ 
+                          id: handleId, 
+                          title: channel.title || channel.author || channel.name, 
+                          avatar: channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url) 
+                        })}
+                        className={`shrink-0 px-3 py-1.5 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 flex items-center gap-1 ${
+                          isSub 
+                            ? 'bg-gray-100 text-gray-800 hover:bg-gray-200' 
+                            : 'bg-gray-900 text-white hover:bg-black'
+                        }`}
+                      >
+                        {isSub && <Bell size={12} />}
+                        <span>{isSub ? '登録済み' : 'チャンネル登録'}</span>
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <p className="text-sm text-gray-500 text-center p-4">チャンネル情報を読み込めませんでした。</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

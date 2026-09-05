@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
@@ -52,7 +53,12 @@ export default function Navbar({
         >
           <Menu size={22} strokeWidth={2} />
         </button>
-        <div className="flex items-center gap-2 cursor-pointer select-none" onClick={onHome}>
+        <Link to="/" className="flex items-center gap-2 select-none" onClick={(e) => {
+          if (window.location.pathname === '/') {
+            e.preventDefault();
+            onHome();
+          }
+        }}>
           <img 
             src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvrN3FNoHzYnXNfVvvvuP-mBKnl4JUP7tyzaJzIaA-5S21wei4MmKP4L08YGfUOnOU2Jug18mVZ4mzGgAtgKmj9AgYD-u9AAShb_PwiI_rFBWFTlO7Vmds1lDHcJPqpI_Xs-vYnNnNxzt8n0TLG8IJ-2O4BjADNtFZeIcbd1KU-PjCIFFpcUB6rWfz6_y6/s1600/YouTubePro.png"
             alt="YouTube Logo" 
@@ -60,7 +66,7 @@ export default function Navbar({
             referrerPolicy="no-referrer"
           />
           <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT-NTv6</span>
-        </div>
+        </Link>
       </div>
       
       {/* 中央: 検索バー */}

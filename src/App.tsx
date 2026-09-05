@@ -102,7 +102,8 @@ export default function App() {
         setView('video');
       }
     } else if (path.startsWith('/channel/')) {
-      const channelId = path.replace('/channel/', '');
+      const parts = path.split('/');
+      const channelId = parts[2];
       setSelectedChannelId(channelId);
       setView('channel');
     } else if (path === '/feed/subscriptions') {
