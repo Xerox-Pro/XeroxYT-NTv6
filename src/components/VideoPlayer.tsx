@@ -5,10 +5,9 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell, PlayCircle
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X
 } from 'lucide-react';
 import Avatar from './Avatar';
-import { MixPlaylist } from './MixPlaylist';
 
 interface CommentItemProps {
   comment: Comment;
@@ -18,6 +17,7 @@ interface CommentItemProps {
 const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   
+  // 3行以上または長いテキストの判定
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
 
@@ -90,7 +90,7 @@ interface LiveChatMessage {
 interface VideoPlayerProps {
   videoId: string;
   playlistId?: string;
-  onVideoSelect: (id: string, video?: Video, explicitPlaylistId?: string | null) => void;
+  onVideoSelect: (id: string, video?: Video) => void;
   onSelectChannel: (channelIdOrName: string) => void;
   subscriptions: ChannelSubscription[];
   onToggleSubscribe: (channel: ChannelSubscription) => void;
@@ -124,52 +124,7 @@ export default function VideoPlayer({
   const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
 
-  const [activePlaylistId, setActivePlaylistId] = useState<string | null>(playlistId || null);
-  const [mixVideos, setMixVideos] = useState<Video[]>([]);
-  const [mixTitle, setMixTitle] = useState<string>('ミックスリスト');
-  const [mixSubtitle, setMixSubtitle] = useState<string>('ミックスリストとは、YouTube があなたのために作成したプレイリストです');
-  const [isMixOpen, setIsMixOpen] = useState<boolean>(true);
-  const [loopMode, setLoopMode] = useState<'none' | 'all' | 'one'>('none');
-  const [isShuffle, setIsShuffle] = useState<boolean>(false);
-  const [iframeKey, setIframeKey] = useState<number>(0);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const internalYtVideoId = useRef<string>(videoId);
-  const skipNextReload = useRef<boolean>(false);
-
-  const [currentIframeSrc, setCurrentIframeSrc] = useState<string>('');
-
-  useEffect(() => {
-    setActivePlaylistId(playlistId || null);
-  }, [playlistId]);
-
-  useEffect(() => {
-    let newSrc = '';
-    if (playlistId) {
-      if (videoId) {
-        newSrc = `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}&enablejsapi=1&list=${playlistId}&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`;
-      } else {
-        newSrc = `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1&enablejsapi=1${eduKey}`;
-      }
-    } else {
-      newSrc = `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}&enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : '')}`;
-    }
-    
-    if (skipNextReload.current) {
-      skipNextReload.current = false;
-      return;
-    }
-    
-    setCurrentIframeSrc(newSrc);
-    internalYtVideoId.current = videoId;
-    if (iframeRef.current && iframeRef.current.contentWindow && !playlistId) {
-      iframeRef.current.contentWindow.postMessage(JSON.stringify({
-        event: 'command',
-        func: 'loadVideoById',
-        args: [videoId]
-      }), '*');
-    }
-  }, [videoId, playlistId, eduKey]);
-
+  // EduKey 取得
   useEffect(() => {
     const fetchEduKey = async () => {
       try {
@@ -184,6 +139,7 @@ export default function VideoPlayer({
     fetchEduKey();
   }, []);
 
+  // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
     if (cooldownSec <= 0) return;
     const timer = setInterval(() => {
@@ -192,6 +148,7 @@ export default function VideoPlayer({
     return () => clearInterval(timer);
   }, [cooldownSec]);
 
+  // EduKey 再取得・プレイヤー再読み込み
   const handleReloadEduKey = async () => {
     if (refreshingEduKey || cooldownSec > 0) return;
     setRefreshingEduKey(true);
@@ -208,12 +165,14 @@ export default function VideoPlayer({
     }
   };
 
+  // ドキュメントタイトルの更新 (動画表示時: タイトル - XeroxYT-NTv6)
   useEffect(() => {
     if (videoData && videoData.title) {
       document.title = `${videoData.title} - XeroxYT-NTv6`;
     }
   }, [videoData]);
 
+  // ダウンロード処理 (https://min-plum.vercel.app/360/G5fbV3KefbQ プロキシ経由)
   const handleDownload = async () => {
     if (downloading || !videoId) return;
     setDownloading(true);
@@ -232,13 +191,16 @@ export default function VideoPlayer({
     }
   };
 
+  // Watch duration tracker
   const watchSecondsRef = useRef<number>(0);
   const activeVideoRef = useRef<Video | null>(null);
 
+  // Comments state
   const [comments, setComments] = useState<Comment[]>([]);
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
 
+  // Live Chat state
   const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
   const [newLiveMessage, setNewLiveMessage] = useState('');
   const [showSuperChatModal, setShowSuperChatModal] = useState(false);
@@ -246,12 +208,35 @@ export default function VideoPlayer({
   const [superChatMessage, setSuperChatMessage] = useState('');
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  const [showCollaboratorModal, setShowCollaboratorModal] = useState(false);
+  const [showMultiChannelDialog, setShowMultiChannelDialog] = useState(false);
+  const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
+  const [multiChannelsData, setMultiChannelsData] = useState<any[]>([]);
 
+  useEffect(() => {
+    if (videoData?.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
+      setMultiChannelsLoading(true);
+      Promise.all(
+        videoData.multipleChannelIds.map((id: string) => 
+          fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
+        )
+      ).then(channels => {
+        setMultiChannelsData(channels.filter(Boolean));
+        setMultiChannelsLoading(false);
+      }).catch(err => {
+        console.error('Failed to load multi channels', err);
+        setMultiChannelsLoading(false);
+      });
+    } else {
+      setMultiChannelsData([]);
+    }
+  }, [videoData?.multipleChannelIds]);
+
+  // Track video viewing duration for recommendation AI
   useEffect(() => {
     watchSecondsRef.current = 0;
     const interval = setInterval(() => {
       watchSecondsRef.current += 1;
+      // Periodic engagement update every 20 seconds
       if (watchSecondsRef.current % 20 === 0 && activeVideoRef.current) {
         localAI.processWatchDuration(activeVideoRef.current, watchSecondsRef.current);
       }
@@ -265,6 +250,7 @@ export default function VideoPlayer({
     };
   }, [videoId]);
 
+  // Fetch video metadata
   useEffect(() => {
     const fetchVideo = async () => {
       setLoading(true);
@@ -274,19 +260,18 @@ export default function VideoPlayer({
         setVideoData(data);
         activeVideoRef.current = data;
         
+        // Local Intelligence Analysis
         if (data) {
           localAI.processVideoInteraction(data, 1.5);
           if (onRecordHistory) {
             onRecordHistory(data);
-          }
-          if (data.title) {
-            document.title = `${data.title} - YouTube`;
           }
         }
         if (onCacheVideo && data) {
           onCacheVideo(data);
         }
 
+        // If it's a real live stream, auto-switch sidebar to live chat
         if (data?.isLive && !data?.isPremiere && !data?.isUpcoming) {
           setSidebarTab('liveChat');
           initLiveChat(data.author || 'チャンネル');
@@ -321,167 +306,7 @@ export default function VideoPlayer({
     setIsDescExpanded(false);
   }, [videoId]);
 
-  useEffect(() => {
-    if (!activePlaylistId) {
-      if (mixVideos.length > 0) {
-        setMixVideos([]);
-      }
-      return;
-    }
-
-    if (!videoData) return;
-
-    const existsInMix = mixVideos.some((v) => v.videoId === videoId);
-    if (existsInMix) {
-      return;
-    }
-
-    const initialList: Video[] = [
-      videoData,
-      ...(videoData.recommendedVideos || []),
-    ];
-    setMixVideos(initialList);
-
-    const authorName = videoData.author && videoData.author !== 'Unknown' && videoData.author !== 'チャンネル'
-      ? videoData.author
-      : '';
-    const defaultMixTitle = authorName
-      ? `ミックスリスト - ${authorName}`
-      : `ミックスリスト - ${videoData.title}`;
-    setMixTitle(defaultMixTitle);
-
-    const fetchFullMix = async () => {
-      try {
-        const mixRes = await fetchJSON(
-          `/api/mix/${videoId}?list=${encodeURIComponent(activePlaylistId)}`
-        );
-        if (mixRes && Array.isArray(mixRes.videos) && mixRes.videos.length > 0) {
-          setMixVideos(mixRes.videos);
-          if (mixRes.title) {
-            setMixTitle(mixRes.title);
-          }
-          if (mixRes.description) {
-            setMixSubtitle(mixRes.description);
-          }
-        }
-      } catch (e) {
-        console.warn('[VideoPlayer] Background mix fetch warning:', e);
-      }
-    };
-
-    fetchFullMix();
-  }, [videoId, activePlaylistId, videoData?.title]);
-
-  const handleStartMix = (targetVideoId?: string, author?: string) => {
-    const vId = targetVideoId || videoId;
-    const newPlaylistId = `RD${vId}`;
-    setActivePlaylistId(newPlaylistId);
-    setIsMixOpen(true);
-
-    if (videoData) {
-      const initialList: Video[] = [
-        videoData,
-        ...(videoData.recommendedVideos || []),
-      ];
-      setMixVideos(initialList);
-      const name = author || videoData.author;
-      setMixTitle(name && name !== 'Unknown' && name !== 'チャンネル' ? `ミックスリスト - ${name}` : `ミックスリスト - ${videoData.title}`);
-      onVideoSelect(vId, { ...videoData, playlistId: newPlaylistId });
-    }
-  };
-
-  const handleCycleLoopMode = () => {
-    setLoopMode((prev) => {
-      if (prev === 'none') return 'all';
-      if (prev === 'all') return 'one';
-      return 'none';
-    });
-  };
-
-  const handleToggleShuffle = () => {
-    setIsShuffle((prev) => !prev);
-  };
-
-  const getNextVideo = (forward: boolean = true): Video | null => {
-    if (!mixVideos || mixVideos.length === 0) return null;
-    const currIdx = mixVideos.findIndex((v) => v.videoId === videoId);
-
-    if (isShuffle && forward && mixVideos.length > 1) {
-      let randomIdx = Math.floor(Math.random() * mixVideos.length);
-      if (randomIdx === currIdx) {
-        randomIdx = (randomIdx + 1) % mixVideos.length;
-      }
-      return mixVideos[randomIdx];
-    }
-
-    if (forward) {
-      if (currIdx >= 0 && currIdx < mixVideos.length - 1) {
-        return mixVideos[currIdx + 1];
-      } else if (loopMode === 'all') {
-        return mixVideos[0];
-      }
-    } else {
-      if (currIdx > 0) {
-        return mixVideos[currIdx - 1];
-      } else if (loopMode === 'all') {
-        return mixVideos[mixVideos.length - 1];
-      }
-    }
-    return null;
-  };
-
-  const handleNextTrack = () => {
-    const next = getNextVideo(true);
-    if (next && next.videoId) {
-      setVideoData(next);
-      onVideoSelect(next.videoId, next);
-    }
-  };
-
-  const handlePrevTrack = () => {
-    const prev = getNextVideo(false);
-    if (prev && prev.videoId) {
-      setVideoData(prev);
-      onVideoSelect(prev.videoId, prev);
-    }
-  };
-
-  const handleTrackEnded = () => {
-    if (loopMode === 'one') {
-      setIframeKey((k) => k + 1);
-      return;
-    }
-    handleNextTrack();
-  };
-
-  useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      try {
-        if (!event.data) return;
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-
-        if (data.event === 'infoDelivery' && data.info && data.info.videoData) {
-          const ytVideoId = data.info.videoData.video_id;
-          if (ytVideoId && ytVideoId !== internalYtVideoId.current) {
-            internalYtVideoId.current = ytVideoId;
-            skipNextReload.current = true;
-            onVideoSelect(ytVideoId, undefined, activePlaylistId);
-          }
-        }
-
-        if (data && (data.event === 'onStateChange' || data.info !== undefined)) {
-          if (data.info === 0 || data.data === 0) {
-            handleTrackEnded();
-          }
-        }
-      } catch {
-      }
-    };
-
-    window.addEventListener('message', handleMessage);
-    return () => window.removeEventListener('message', handleMessage);
-  }, [mixVideos, videoId, loopMode, isShuffle, onVideoSelect]);
-
+  // Initialize live chat
   const initLiveChat = (channelName: string) => {
     setLiveChatMessages([
       {
@@ -562,7 +387,7 @@ export default function VideoPlayer({
     setNewComment('');
   };
 
-  if (loading && !videoData) {
+  if (loading) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] gap-3 bg-white text-gray-900">
         <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
@@ -594,6 +419,7 @@ export default function VideoPlayer({
     });
   };
 
+  // 過去の視聴履歴（現在再生中の動画を除く最大5件）
   const pastHistoryVideos = watchHistory
     .filter(h => h.videoId !== videoId)
     .slice(0, 5)
@@ -609,6 +435,7 @@ export default function VideoPlayer({
       type: 'video'
     }));
 
+  // 通常の関連動画リストの中にしれっと過去履歴をブレンド
   const blendedRecommendations: any[] = [];
   const baseRecs = videoData.recommendedVideos || [];
 
@@ -659,18 +486,9 @@ export default function VideoPlayer({
     });
   };
 
-  const hasMultipleChannels = Boolean(
-    (videoData.channels && videoData.channels.length > 1) || 
-    (videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1)
-  );
-
-  const otherChannelsCount = videoData.channels && videoData.channels.length > 1
-    ? videoData.channels.length - 1
-    : (videoData.multipleChannelIds ? videoData.multipleChannelIds.length - 1 : 0);
-
   const handleAuthorClick = () => {
-    if (hasMultipleChannels) {
-      setShowCollaboratorModal(true);
+    if (videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1) {
+      setShowMultiChannelDialog(true);
     } else {
       onSelectChannel(videoData.authorId || videoData.author);
     }
@@ -683,6 +501,7 @@ export default function VideoPlayer({
   } else {
     baseRecs.forEach((item, index) => {
       blendedRecommendations.push(item);
+      // 2つ目、5つ目、8つ目... の位置にしれっと履歴動画を差し込む
       if ((index % 3 === 1) && histIdx < pastHistoryVideos.length) {
         blendedRecommendations.push(pastHistoryVideos[histIdx]);
         histIdx++;
@@ -696,13 +515,13 @@ export default function VideoPlayer({
 
   return (
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
-      
+      {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
           <iframe
-            ref={iframeRef}
-            key={`youtube-player-${iframeKey}`}
-            src={currentIframeSrc}
+            src={playlistId && !videoId 
+              ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey}`
+              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}${playlistId ? `&list=${playlistId}` : ''}`}
             className="w-full h-full border-0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
@@ -711,7 +530,7 @@ export default function VideoPlayer({
         </div>
         
         <div className="mt-4 flex flex-col">
-          
+          {/* 実際のライブ配信時のみバッジを表示 */}
           {isLive && (
             <div className="flex items-center gap-2 mb-2">
               <span className="inline-flex items-center gap-1.5 bg-red-600 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-xs animate-pulse">
@@ -732,11 +551,11 @@ export default function VideoPlayer({
           </h1>
           
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
-            
+            {/* チャンネル情報 */}
             <div className="flex items-center gap-3">
               <button
-                onClick={() => onSelectChannel(videoData.authorId || videoData.author)}
-                className="hover:opacity-85 transition-opacity cursor-pointer shrink-0"
+                onClick={handleAuthorClick}
+                className="hover:opacity-80 transition-opacity"
                 title={`${videoData.author}のチャンネルを開く`}
               >
                 <Avatar
@@ -749,17 +568,16 @@ export default function VideoPlayer({
               <div className="flex flex-col">
                 <button
                   onClick={handleAuthorClick}
-                  className="group/author flex items-center gap-1.5 text-left transition-colors duration-200 cursor-pointer active:scale-[0.98]"
-                  title={hasMultipleChannels ? 'コラボレーターを表示' : `${videoData.author}のチャンネルを開く`}
+                  className="flex items-center gap-1 text-left hover:underline"
                 >
-                  <h3 className="font-bold text-gray-900 text-[15px] group-hover/author:text-blue-600 transition-colors duration-200 tracking-tight leading-snug flex items-center gap-1 flex-wrap">
-                    <span>{videoData.author}</span>
-                    
-                    <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
-                  </h3>
+                  <h3 className="font-bold text-gray-900 text-[15px]">{videoData.author}</h3>
+                  <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
+                  {videoData.multipleChannelIds && videoData.multipleChannelIds.length > 1 && (
+                    <ChevronDown size={14} className="text-gray-500 shrink-0" />
+                  )}
                 </button>
-                {!hasMultipleChannels && (
-                  <p className="text-xs font-normal text-gray-500 mt-0.5">
+                {(!videoData.multipleChannelIds || videoData.multipleChannelIds.length <= 1) && (
+                  <p className="text-xs font-normal text-gray-500">
                     {videoData.subCount ? `登録者数 ${formatNumberJP(videoData.subCount)}人` : '登録者数 非公開'}
                   </p>
                 )}
@@ -767,25 +585,17 @@ export default function VideoPlayer({
 
               <button
                 onClick={handleSubClick}
-                className={`ml-3 px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 cursor-pointer ${
+                className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 ${
                   isSubscribed 
-                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200/80 flex items-center gap-1.5' 
+                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
                     : 'bg-gray-900 hover:bg-black text-white'
                 }`}
               >
-                {isSubscribed ? (
-                  <>
-                    <Bell size={13} className="text-gray-700" />
-                    <span>登録済み</span>
-                    <ChevronDown size={13} className="text-gray-500" />
-                  </>
-                ) : (
-                  'チャンネル登録'
-                )}
+                {isSubscribed ? '登録済み' : 'チャンネル登録'}
               </button>
             </div>
 
-            
+            {/* アクションボタン */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
               <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
                 <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 hover:bg-gray-200 rounded-l-full transition-colors">
@@ -863,7 +673,7 @@ export default function VideoPlayer({
             </div>
           </div>
 
-          
+          {/* 概要欄 */}
           <div className="mt-4 p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-sm border border-gray-200">
             <div className="flex items-center gap-3 font-semibold text-gray-800 text-xs mb-2">
               <span>{formatNumberJP(videoData.viewCount)} 回視聴</span>
@@ -885,7 +695,7 @@ export default function VideoPlayer({
             )}
           </div>
 
-          
+          {/* コメントセクション */}
           <div className="mt-8 pt-6 border-t border-gray-200">
             <div className="flex items-center gap-2 mb-6">
               <MessageSquare size={22} className="text-gray-900" />
@@ -894,7 +704,7 @@ export default function VideoPlayer({
               </h2>
             </div>
 
-            
+            {/* コメントフォーム */}
             <form onSubmit={handleAddComment} className="flex gap-3 mb-8">
               <Avatar name="自分" className="w-10 h-10 text-sm border border-gray-300" />
               <div className="flex-1 flex flex-col gap-2">
@@ -925,7 +735,7 @@ export default function VideoPlayer({
               </div>
             </form>
 
-            
+            {/* コメント一覧 */}
             {loadingComments ? (
               <div className="flex items-center gap-2 py-6 text-gray-500 justify-center">
                 <Loader2 className="w-5 h-5 animate-spin" />
@@ -948,9 +758,9 @@ export default function VideoPlayer({
         </div>
       </div>
       
-      
+      {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
-        
+        {/* サイドバーヘッダー・タブ切替（ライブ時のみ表示） */}
         {isLive && (
           <div className="flex items-center justify-between border-b border-gray-100 pb-2">
             <div className="flex bg-gray-100 p-1 rounded-lg">
@@ -977,7 +787,7 @@ export default function VideoPlayer({
         
         {isRelatedOpen && sidebarTab === 'liveChat' && (
           <div className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs">
-            
+            {/* チャットヘッダー */}
             <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping"></span>
@@ -992,7 +802,7 @@ export default function VideoPlayer({
               </button>
             </div>
 
-            
+            {/* チャットメッセージスクロール領域 */}
             <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs">
               {liveChatMessages.map((msg) => (
                 <div 
@@ -1032,7 +842,7 @@ export default function VideoPlayer({
               <div ref={chatBottomRef} />
             </div>
 
-            
+            {/* チャット送信フォーム */}
             <form onSubmit={handleSendLiveMessage} className="p-2.5 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
               <input
                 type="text"
@@ -1054,31 +864,7 @@ export default function VideoPlayer({
 
         {isRelatedOpen && sidebarTab === 'related' && (
           <div className="flex flex-col gap-3">
-            
-            {Boolean(activePlaylistId && mixVideos.length > 0) && (
-              <MixPlaylist
-                currentVideoId={videoId}
-                videos={mixVideos}
-                playlistTitle={mixTitle}
-                playlistSubtitle={mixSubtitle}
-                isOpen={isMixOpen}
-                onToggleOpen={() => setIsMixOpen((prev) => !prev)}
-                onSelectVideo={(selId, selVideo) => {
-                  if (selVideo) {
-                    setVideoData(selVideo);
-                  }
-                  onVideoSelect(selId, selVideo);
-                }}
-                loopMode={loopMode}
-                onCycleLoopMode={handleCycleLoopMode}
-                isShuffle={isShuffle}
-                onToggleShuffle={handleToggleShuffle}
-                onNextTrack={handleNextTrack}
-                onPrevTrack={handlePrevTrack}
-              />
-            )}
-
-            
+            {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
               {[
                 { id: 'all', label: 'すべて' },
@@ -1101,89 +887,57 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            
-            {blendedRecommendations.map((recVideo, idx) => {
-              const isMix = recVideo.type === 'mix';
-              const isPlaylist = isMix || recVideo.type === 'playlist' || Boolean(recVideo.playlistId);
-              const effectiveVid = recVideo.videoId || (recVideo.playlistId && recVideo.playlistId.startsWith('RD') && recVideo.playlistId.length >= 13 ? recVideo.playlistId.substring(2, 13) : '');
-              const thumbUrl = recVideo.videoThumbnails?.[0]?.url || (effectiveVid ? `https://i.ytimg.com/vi/${effectiveVid}/hqdefault.jpg` : '');
-
-              return (
-                <div 
-                  key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
-                  className="flex gap-2.5 group cursor-pointer"
-                  onClick={() => {
-                    if (isPlaylist) {
-                      const pId = recVideo.playlistId || (effectiveVid ? `RD${effectiveVid}` : undefined);
-                      if (pId) {
-                        setActivePlaylistId(pId);
-                        onVideoSelect(effectiveVid || recVideo.videoId || '', { ...recVideo, videoId: effectiveVid || recVideo.videoId, playlistId: pId });
-                      } else {
-                        onVideoSelect(recVideo.videoId || '', recVideo);
-                      }
-                    } else {
-                      setActivePlaylistId(null);
-                      setVideoData(recVideo);
-                      onVideoSelect(recVideo.videoId || '', recVideo);
-                    }
-                  }}
-                >
-                  <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                    <img 
-                      src={thumbUrl || (effectiveVid ? `https://i.ytimg.com/vi/${effectiveVid}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
-                      alt={recVideo.title}
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        if (effectiveVid && !target.src.includes('mqdefault')) {
-                          target.src = `https://i.ytimg.com/vi/${effectiveVid}/mqdefault.jpg`;
-                        }
-                      }}
-                      className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
-                    />
-                    {isPlaylist && (
-                      <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <PlayCircle size={24} className="text-white fill-white/20" />
-                      </div>
+            {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
+            {blendedRecommendations.map((recVideo, idx) => (
+              <div 
+                key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
+                className="flex gap-2.5 group cursor-pointer"
+                onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
+              >
+                <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                  <img 
+                    src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
+                    alt={recVideo.title}
+                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded font-medium flex items-center gap-1">
+                    {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
+                      <ListMusic size={10} />
+                    ) : (
+                      formatDuration(recVideo.lengthSeconds)
                     )}
-                    <div className="absolute bottom-1 right-1 bg-black/80 backdrop-blur-xs text-white text-[10px] px-1.5 py-0.5 rounded font-semibold flex items-center gap-1">
-                      {isPlaylist ? (
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5 overflow-hidden py-0.5 pr-1 flex-1">
+                  <h4 className="font-semibold text-gray-900 leading-snug line-clamp-2 text-xs group-hover:text-blue-600 transition-colors">
+                    {recVideo.title}
+                  </h4>
+                  <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
+                    <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
+                    <div className="flex items-center gap-1">
+                      {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
+                        <span className="text-red-600 font-bold uppercase text-[9px] bg-red-50 px-1 rounded border border-red-100">
+                          {recVideo.type === 'mix' ? 'MIX' : 'PLAYLIST'}
+                        </span>
+                      ) : recVideo.viewCount > 0 ? (
+                        <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
+                      ) : null}
+                      {recVideo.publishedText && (
                         <>
-                          <ListMusic size={11} />
-                          <span>{isMix ? 'MIX' : '再生リスト'}</span>
+                          {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
+                          <span>{recVideo.publishedText}</span>
                         </>
-                      ) : (
-                        formatDuration(recVideo.lengthSeconds)
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-0.5 overflow-hidden py-0.5 pr-1 flex-1">
-                    <h4 className="font-semibold text-gray-900 leading-snug line-clamp-2 text-xs group-hover:text-blue-600 transition-colors">
-                      {recVideo.title}
-                    </h4>
-                    <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
-                      <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
-                      <div className="flex items-center gap-1">
-                        {recVideo.viewCount > 0 && (
-                          <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
-                        )}
-                        {recVideo.publishedText && (
-                          <>
-                            {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
-                            <span>{recVideo.publishedText}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </div>
-              );
-            })}
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      
+      {/* Super Chat Modal */}
       {showSuperChatModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4">
@@ -1204,7 +958,7 @@ export default function VideoPlayer({
               {videoData.author} さんの配信にメッセージと応援を送ります。
             </p>
 
-            
+            {/* 金額選択 */}
             <div className="grid grid-cols-4 gap-2">
               {[
                 { amount: '500', color: 'border-cyan-500 bg-cyan-50 text-cyan-800' },
@@ -1227,7 +981,7 @@ export default function VideoPlayer({
               ))}
             </div>
 
-            
+            {/* メッセージ入力 */}
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-gray-700">応援メッセージ</label>
               <textarea
@@ -1259,105 +1013,55 @@ export default function VideoPlayer({
         </div>
       )}
 
-      
-      {showCollaboratorModal && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-[2px] animate-in fade-in duration-200"
-          onClick={() => setShowCollaboratorModal(false)}
-        >
-          <div 
-            className="bg-white rounded-2xl max-w-[460px] w-full p-6 shadow-2xl relative animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col"
-            onClick={(e) => e.stopPropagation()}
-          >
-            
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900 tracking-tight">コラボレーター</h2>
+      {/* Multi Channel Selection Modal */}
+      {showMultiChannelDialog && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 relative max-h-[80vh]">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-bold text-gray-900">チャンネルを選択</h2>
               <button
-                onClick={() => setShowCollaboratorModal(false)}
-                className="p-1.5 hover:bg-gray-100 rounded-full text-gray-500 hover:text-gray-800 transition-colors duration-200 cursor-pointer"
-                title="閉じる"
+                onClick={() => setShowMultiChannelDialog(false)}
+                className="p-1 hover:bg-gray-100 rounded-full"
               >
-                <X size={20} />
+                <X size={20} className="text-gray-600" />
               </button>
             </div>
-
             
-            <div className="overflow-y-auto divide-y divide-gray-100/90 pt-1 -mx-2 px-2">
-              {(videoData.channels && videoData.channels.length > 0 ? videoData.channels : [
-                {
-                  id: videoData.authorId || '',
-                  name: videoData.author,
-                  avatar: videoData.authorAvatar,
-                  handle: `@${videoData.author.replace(/[\s\/]/g, '_')}`,
-                  subCountText: videoData.subCount ? `チャンネル登録者数 ${formatNumberJP(videoData.subCount)}人` : ''
-                }
-              ]).map((collab) => {
-                const isCollabSubscribed = subscriptions.some(
-                  s => s.id === collab.id || s.title === collab.name
-                );
-
-                return (
-                  <div 
-                    key={collab.id} 
-                    className="flex items-center justify-between py-3.5 gap-3 hover:bg-gray-50/80 px-2.5 rounded-xl transition-colors duration-150"
+            <div className="overflow-y-auto pr-1 -mr-1 flex flex-col gap-2">
+              {multiChannelsLoading ? (
+                <div className="flex justify-center p-4">
+                  <div className="animate-spin h-6 w-6 border-2 border-gray-400 border-t-transparent rounded-full"></div>
+                </div>
+              ) : multiChannelsData.length > 0 ? (
+                multiChannelsData.map((channel, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setShowMultiChannelDialog(false);
+                      onSelectChannel(channel.authorId || channel.id);
+                    }}
+                    className="flex items-center gap-3 p-3 hover:bg-gray-50 rounded-xl transition-colors text-left"
                   >
-                    
-                    <div 
-                      onClick={() => {
-                        setShowCollaboratorModal(false);
-                        onSelectChannel(collab.id || collab.name);
-                      }}
-                      className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer group/item"
-                    >
-                      <Avatar
-                        src={collab.avatar}
-                        name={collab.name}
-                        className="w-10 h-10 text-sm shadow-2xs shrink-0 ring-1 ring-gray-200/80 group-hover/item:opacity-90 transition-opacity"
-                      />
-                      <div className="flex flex-col min-w-0 pr-1">
-                        <div className="flex items-center gap-1">
-                          <span className="font-bold text-gray-900 text-[14.5px] truncate group-hover/item:text-blue-600 transition-colors">
-                            {collab.name}
-                          </span>
-                          <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
-                        </div>
-                        <p className="text-[12px] text-gray-500 truncate mt-0.5 font-normal">
-                          {collab.handle ? `${collab.handle} ` : ''}
-                          {collab.handle && collab.subCountText ? '・ ' : ''}
-                          {collab.subCountText}
-                        </p>
-                      </div>
-                    </div>
-
-                    
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleSubscribe({
-                          id: collab.id,
-                          title: collab.name,
-                          avatar: collab.avatar || ''
-                        });
-                      }}
-                      className={`shrink-0 px-3.5 py-1.5 text-xs font-semibold rounded-full transition-all duration-200 active:scale-95 cursor-pointer ${
-                        isCollabSubscribed
-                          ? 'bg-gray-100 hover:bg-gray-200 text-gray-800 flex items-center gap-1.5 border border-gray-200/70'
-                          : 'bg-black hover:bg-gray-800 text-white shadow-2xs'
-                      }`}
-                    >
-                      {isCollabSubscribed ? (
-                        <>
-                          <Bell size={13} className="text-gray-700" />
-                          <span>登録済み</span>
-                          <ChevronDown size={13} className="text-gray-500" />
-                        </>
-                      ) : (
-                        'チャンネル登録'
+                    <Avatar
+                      src={channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url)}
+                      name={channel.title || channel.author || channel.name}
+                      className="w-12 h-12 shadow-sm shrink-0"
+                    />
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="font-bold text-gray-900 text-sm truncate">
+                        {channel.title || channel.author || channel.name}
+                      </span>
+                      {(channel.subCountText || channel.subCount) && (
+                        <span className="text-xs text-gray-500">
+                          {channel.subCountText || channel.subCount}
+                        </span>
                       )}
-                    </button>
-                  </div>
-                );
-              })}
+                    </div>
+                  </button>
+                ))
+              ) : (
+                <p className="text-sm text-gray-500 text-center p-4">チャンネル情報を読み込めませんでした。</p>
+              )}
             </div>
           </div>
         </div>

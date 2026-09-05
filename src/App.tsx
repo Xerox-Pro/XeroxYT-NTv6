@@ -1,5 +1,9 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
@@ -14,7 +18,7 @@ import DebugAPI from './components/DebugAPI';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
-import { Loader2, AlertCircle, ListMusic, History } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchJSON } from './utils';
 
@@ -38,9 +42,8 @@ export default function App() {
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
   const [authFlow, setAuthFlow] = useState<{ userCode: string, verificationUrl: string } | null>(null);
   const [isPolling, setIsPolling] = useState(false);
-  const [menuOpenVideoId, setMenuOpenVideoId] = useState<string | null>(null);
-  const observerTarget = useRef<HTMLDivElement>(null);
   
+  // Cache for static video/channel data
   const [videoCache, setVideoCache] = useState<Record<string, Video | ShortVideo>>(() => {
     try {
       const saved = localStorage.getItem('xerox_video_cache');
@@ -50,6 +53,7 @@ export default function App() {
     }
   });
 
+  // AI Analysis Cache
   const [aiInterests, setAiInterests] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('xerox_ai_interests');
@@ -59,6 +63,7 @@ export default function App() {
     }
   });
 
+  // Auth state
   const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
     try {
       const saved = localStorage.getItem('xerox_user_info');
@@ -89,15 +94,8 @@ export default function App() {
         fetchSearch(q, 1, false);
       }
     } else if (path === '/watch') {
-      let v = searchParams.get('v');
-      let list = searchParams.get('list');
-      
-      if (v && v.startsWith('RD') && v.length >= 13) {
-        list = list || v;
-        const match = v.match(/RD(?:MM)?([a-zA-Z0-9_-]{11})/);
-        v = match ? match[1] : v.substring(v.length - 11);
-      }
-
+      const v = searchParams.get('v');
+      const list = searchParams.get('list');
       if (v) {
         setCurrentVideoId(v);
         setCurrentPlaylistId(list);
@@ -169,15 +167,19 @@ export default function App() {
     return () => window.removeEventListener('resize', handleResize);
   }, [view]);
 
+  // 無限スクロール用ページ制御
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const isFetchingMore = useRef(false);
 
+  // モーダル
   const [playlistModalVideo, setPlaylistModalVideo] = useState<Video | null>(null);
 
+  // 連続再生キュー
   const [currentPlaylistQueue, setCurrentPlaylistQueue] = useState<Video[]>([]);
   const [playlistQueueIndex, setPlaylistQueueIndex] = useState<number>(-1);
 
+  // Subscriptions state saved in LocalStorage
   const [subscriptions, setSubscriptions] = useState<ChannelSubscription[]>(() => {
     try {
       const saved = localStorage.getItem('xerox_subscriptions');
@@ -187,6 +189,7 @@ export default function App() {
     }
   });
 
+  // Watch history
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => {
     try {
       const saved = localStorage.getItem('xerox_watch_history');
@@ -196,6 +199,7 @@ export default function App() {
     }
   });
 
+  // User Playlists saved in LocalStorage
   const [playlists, setPlaylists] = useState<UserPlaylist[]>(() => {
     try {
       const saved = localStorage.getItem('xerox_user_playlists');
@@ -282,6 +286,7 @@ export default function App() {
     performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [playlists]);
 
+  // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {
     setWatchHistory(prev => {
       const filtered = prev.filter(item => item.videoId !== video.videoId);
@@ -300,6 +305,7 @@ export default function App() {
     });
   };
 
+  // 閲覧履歴（ショート動画）記録
   const handleRecordShortHistory = (short: ShortVideo) => {
     setWatchHistory(prev => {
       const filtered = prev.filter(item => item.videoId !== short.videoId);
@@ -327,16 +333,20 @@ export default function App() {
     });
   };
 
+  // 閲覧履歴からキーワード抽出（登録チャンネルや高評価動画、視聴履歴を深層分析）
   const getHistoryKeywords = (): string => {
     const historyData = watchHistory.slice(0, 20);
     
+    // AIの提案履歴があればそれを優先的に含める
     let baseKeywords = aiInterests.slice(0, 5).join(' ');
     
+    // ローカルAIの分析結果も加味する (独自AIによる分析)
     const localKeywords = localAI.getTopSuggestedQueries(8).join(' ');
     if (localKeywords) baseKeywords += ' ' + localKeywords;
 
     if (historyData.length === 0 && !searchQuery && !baseKeywords && subscriptions.length === 0) return "";
 
+    // タイトルから単語を抽出
     const words = historyData
       .map(h => h.title)
       .join(' ')
@@ -344,6 +354,7 @@ export default function App() {
       .split(/\s+/)
       .filter(w => w.length >= 2 && !['動画', '最新', 'の', 'は', 'で', 'を', 'に', 'と', 'が', 'て', 'た', '！'].includes(w.toLowerCase()));
 
+    // 出現頻度順にソートして上位を取得
     const counts: Record<string, number> = {};
     words.forEach(w => counts[w] = (counts[w] || 0) + 1);
     
@@ -352,6 +363,7 @@ export default function App() {
       .slice(0, 8)
       .map(([w]) => w);
 
+    // 視聴履歴のチャンネル名＋登録チャンネル名
     const historyChannels = historyData.map(h => h.author);
     const subChannels = subscriptions.map(s => s.title);
     const allChannels = Array.from(new Set([...historyChannels, ...subChannels])).slice(0, 6);
@@ -362,6 +374,7 @@ export default function App() {
     return finalKeywords;
   };
 
+  // おすすめ動画データ読み込み (ページ別)
 
   useEffect(() => {
     if (userInfo) {
@@ -410,6 +423,7 @@ export default function App() {
 
       localStorage.setItem('webauthn_credential_id', credentialId);
       
+      // Load data from server
       const res = await fetchJSON('/api/sync/load', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -423,6 +437,7 @@ export default function App() {
         if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
         setTimeout(() => { skipNextSync.current = false; }, 1000);
       } else {
+        // No data on server yet, do initial save
         await performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
       }
 
@@ -470,6 +485,7 @@ export default function App() {
       const refreshNonce = Date.now() + Math.floor(Math.random() * 1000000);
       let data = [];
       
+      // If logged in, prioritize liked content for the first page
       if (userInfo && pageNum === 1) {
         try {
           data = await fetchJSON('/api/user/liked-videos');
@@ -482,14 +498,17 @@ export default function App() {
       const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
       const publicData = result.videos || [];
       
+      // AIの分析結果を保存
       if (result.aiKeywords && result.aiKeywords.length > 0) {
         setAiInterests(result.aiKeywords);
       }
       
       updateCache(publicData);
       
+      // Combine personalized data (if any) with public recommendations
       const combinedData = [...data, ...publicData];
       
+      // Remove duplicates
       const uniqueMap = new Map();
       combinedData.forEach(v => {
         if (v && v.videoId && !uniqueMap.has(v.videoId)) {
@@ -518,6 +537,7 @@ export default function App() {
     }
   };
 
+  // 検索動画データ読み込み (ページ別)
   const fetchSearch = async (q: string, pageNum: number = 1, append: boolean = false) => {
     if (append) {
       setLoadingMore(true);
@@ -558,6 +578,7 @@ export default function App() {
     }
   }, [view]);
 
+  // 無限スクロール検知
   const handleScroll = useCallback(() => {
     if (view !== 'home' && view !== 'search') return;
     if (loading || loadingMore || !hasMore || isFetchingMore.current) return;
@@ -566,6 +587,7 @@ export default function App() {
     const windowHeight = window.innerHeight;
     const totalHeight = document.documentElement.scrollHeight;
 
+    // スクロール位置が下部近辺（1000px以内）に達したら次のページを事前取得
     if (scrollTop + windowHeight >= totalHeight - 1000) {
       isFetchingMore.current = true;
       const nextPage = page + 1;
@@ -596,91 +618,7 @@ export default function App() {
     }
   };
 
-  const homeMixCards = useMemo(() => {
-    if (view !== 'home' || !watchHistory || watchHistory.length === 0) return [];
-
-    const artistMap = new Map<string, { count: number; videos: WatchHistoryItem[] }>();
-    const videoRepeatMap = new Map<string, { count: number; item: WatchHistoryItem }>();
-
-    for (const item of watchHistory) {
-      const author = (item.author || '').trim();
-      if (author && author !== 'Unknown' && author !== 'チャンネル') {
-        if (!artistMap.has(author)) {
-          artistMap.set(author, { count: 0, videos: [] });
-        }
-        const aData = artistMap.get(author)!;
-        aData.count += 1;
-        aData.videos.push(item);
-      }
-
-      if (item.videoId) {
-        if (!videoRepeatMap.has(item.videoId)) {
-          videoRepeatMap.set(item.videoId, { count: 0, item });
-        }
-        videoRepeatMap.get(item.videoId)!.count += 1;
-      }
-    }
-
-    const cards: Video[] = [];
-
-    const sortedRepeats = Array.from(videoRepeatMap.values()).sort((a, b) => b.count - a.count);
-    if (sortedRepeats.length > 0) {
-      const topRepeat = sortedRepeats[0].item;
-      cards.push({
-        videoId: topRepeat.videoId,
-        title: `マイミックスリスト - あなたのリピート曲`,
-        author: `YouTube`,
-        authorAvatar: topRepeat.authorAvatar,
-        type: 'mix',
-        playlistId: `RDMM${topRepeat.videoId}`,
-        videoThumbnails: [{ url: topRepeat.thumbnailUrl || `https://i.ytimg.com/vi/${topRepeat.videoId}/hqdefault.jpg`, width: 480, height: 360 }],
-        viewCount: 0,
-        publishedText: 'YouTubeが作成',
-        lengthSeconds: 0,
-      });
-    }
-
-    const sortedArtists = Array.from(artistMap.entries()).sort((a, b) => b[1].count - a[1].count);
-    for (let i = 0; i < Math.min(2, sortedArtists.length); i++) {
-      const [author, data] = sortedArtists[i];
-      const topVideo = data.videos[0];
-      if (topVideo && !cards.some(c => c.playlistId === `RD${topVideo.videoId}`)) {
-        cards.push({
-          videoId: topVideo.videoId,
-          title: `ミックスリスト - ${author}`,
-          author: `YouTube`,
-          authorAvatar: topVideo.authorAvatar,
-          type: 'mix',
-          playlistId: `RD${topVideo.videoId}`,
-          videoThumbnails: [{ url: topVideo.thumbnailUrl || `https://i.ytimg.com/vi/${topVideo.videoId}/hqdefault.jpg`, width: 480, height: 360 }],
-          viewCount: 0,
-          publishedText: 'ミックスリスト',
-          lengthSeconds: 0,
-        });
-      }
-    }
-
-    return cards;
-  }, [view, watchHistory]);
-
-  const blendedHomeVideos = useMemo(() => {
-    if (view !== 'home' || homeMixCards.length === 0) {
-      return videos;
-    }
-    const result: Video[] = [...videos];
-    if (homeMixCards[0]) {
-      result.splice(1, 0, homeMixCards[0]);
-    }
-    if (homeMixCards[1]) {
-      result.splice(5, 0, homeMixCards[1]);
-    }
-    if (homeMixCards[2]) {
-      result.splice(9, 0, homeMixCards[2]);
-    }
-    return result;
-  }, [videos, homeMixCards, view]);
-
-  const handleVideoSelect = (videoId: string, videoObj?: Video, explicitPlaylistId?: string | null) => {
+  const handleVideoSelect = (videoId: string, videoObj?: Video) => {
     if (videoObj) {
       localAI.processVideoInteraction(videoObj, 1.0);
       updateCache([videoObj]);
@@ -688,7 +626,7 @@ export default function App() {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
     }
     
-    const playlistId = explicitPlaylistId !== undefined ? explicitPlaylistId : (videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null));
+    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
     navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
   };
 
@@ -696,6 +634,7 @@ export default function App() {
     navigate(`/channel/${channelIdOrName}`);
   };
 
+  // プレイリスト操作関数群
   const handleCreatePlaylist = (title: string, description?: string): string => {
     const newPl: UserPlaylist = {
       id: `pl-${Date.now()}`,
@@ -776,7 +715,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
-      
+      {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
         <Navbar
           onSearch={handleSearch}
@@ -790,7 +729,7 @@ export default function App() {
       </div>
 
       <div className="flex flex-1 relative items-start">
-        
+        {/* サイドバー: Desktopではsticky、モバイルではfixed overlay */}
         <Sidebar
           isOpen={isSidebarOpen}
           onClose={() => setIsSidebarOpen(false)}
@@ -804,7 +743,7 @@ export default function App() {
           onDebugAPI={() => navigate('/debug/api')}
         />
 
-        
+        {/* メインコンテンツビュー */}
         <main
           className="flex-1 transition-all duration-200 min-w-0"
         >
@@ -817,7 +756,7 @@ export default function App() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="w-full"
             >
-              
+              {/* カテゴリーバー（ホーム ＆ 検索画面のみ） */}
               {(view === 'home' || view === 'search') && (
                 <CategoryBar
                   selectedCategory={selectedCategory}
@@ -825,12 +764,12 @@ export default function App() {
                 />
               )}
 
-          
+          {/* ビュー分岐 */}
           {view === 'video' && currentVideoId ? (
             <VideoPlayer
               videoId={currentVideoId}
               playlistId={currentPlaylistId || undefined}
-              onVideoSelect={handleVideoSelect}
+              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
               onSelectChannel={handleSelectChannel}
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
@@ -897,93 +836,102 @@ export default function App() {
               </button>
             </div>
           ) : (
-            <div className="p-4 sm:p-6 md:p-8 max-w-[2000px] mx-auto min-h-screen">
+            /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
+            <div className="p-4 sm:p-6 max-w-[2200px] mx-auto bg-white min-h-screen">
               {view === 'search' && (
-                <div className="mb-6 flex items-center justify-between">
-                  <h2 className="text-xl font-bold">「{searchQuery}」の検索結果</h2>
-                  <span className="text-sm text-gray-500 font-medium">{videos.length}件の動画</span>
-                </div>
+                <h2 className="text-lg font-bold text-gray-900 tracking-tight mb-6 border-b border-gray-200 pb-3">
+                  "{searchQuery}" の検索結果
+                </h2>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 md:landscape:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
-                {(view === 'home' ? blendedHomeVideos : videos).map((video, idx) => (
-                  <div key={`${video.videoId}-${video.playlistId || ''}-${idx}`} className="relative group">
+                {videos.map((video, idx) => (
+                  <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard
                       video={video}
                       onClick={() => handleVideoSelect(video.videoId, video)}
-                      onOpenMenu={(e) => {
-                        e.stopPropagation();
-                        setMenuOpenVideoId(video.videoId);
-                      }}
                       onSelectChannel={handleSelectChannel}
                     />
-                    
-                    <AnimatePresence>
-                      {menuOpenVideoId === video.videoId && (
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.95 }}
-                          transition={{ duration: 0.15 }}
-                          className="absolute top-10 right-2 z-50 bg-white rounded-xl shadow-lg border border-gray-100 py-1.5 min-w-[200px]"
-                        >
-                          <button
-                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-3 text-gray-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPlaylistModalVideo(video);
-                              setMenuOpenVideoId(null);
-                            }}
-                          >
-                            <ListMusic size={18} />
-                            プレイリストに保存
-                          </button>
-                          <button
-                            className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 flex items-center gap-3 text-gray-700"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRecordHistory(video);
-                              setMenuOpenVideoId(null);
-                            }}
-                          >
-                            <History size={18} />
-                            履歴に追加
-                          </button>
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPlaylistModalVideo(video);
+                      }}
+                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
+                      title="再生リストに保存"
+                    >
+                      + 保存
+                    </button>
                   </div>
                 ))}
               </div>
 
-              {loading && videos.length > 0 && (
-                <div className="flex justify-center my-12">
-                  <Loader2 className="w-8 h-8 text-red-600 animate-spin" />
+              {/* 無限スクロールローディングスピナー */}
+              {loadingMore && (
+                <div className="flex items-center justify-center py-10 gap-3 text-gray-600">
+                  <Loader2 className="w-6 h-6 animate-spin text-red-600" />
+                  <span className="text-xs font-bold">次の動画を読み込んでいます...</span>
                 </div>
               )}
-              
-              {!loading && videos.length > 0 && (
-                <div className="h-20" ref={observerTarget} />
-              )}
             </div>
-          )}
-            </motion.div>
-          </AnimatePresence>
+          )
+        }
+        </motion.div>
+      </AnimatePresence>
         </main>
       </div>
 
-      <AnimatePresence>
-        {playlistModalVideo && (
-          <AddToPlaylistModal
-            video={playlistModalVideo}
-            playlists={playlists}
-            onCreatePlaylist={handleCreatePlaylist}
-            onToggleVideoInPlaylist={handleToggleVideoInPlaylist}
-            onClose={() => setPlaylistModalVideo(null)}
-          />
-        )}
-      </AnimatePresence>
+      {/* プレイリスト保存モーダル */}
+      {playlistModalVideo && (
+        <AddToPlaylistModal
+          video={playlistModalVideo}
+          playlists={playlists}
+          onClose={() => setPlaylistModalVideo(null)}
+          onToggleVideoInPlaylist={handleToggleVideoInPlaylist}
+          onCreatePlaylist={handleCreatePlaylist}
+        />
+      )}
+
+      {/* YouTube Auth Flow Modal */}
+      {authFlow && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center"
+          >
+            <h2 className="text-2xl font-bold text-gray-900 mb-4 font-sans">YouTube ログイン</h2>
+            <p className="text-gray-600 mb-6 leading-relaxed text-sm">
+              以下のURLにアクセスし、お手元のデバイスでコードを入力して承認してください。
+            </p>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6">
+              <a 
+                href={authFlow.verificationUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="text-red-600 font-bold text-lg hover:underline block mb-3 break-all"
+              >
+                {authFlow.verificationUrl}
+              </a>
+              <div className="text-3xl font-mono font-black text-gray-800 tracking-widest bg-white py-3 border border-gray-200 rounded-lg">
+                {authFlow.userCode}
+              </div>
+            </div>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-center gap-2 text-sm text-gray-500 font-medium">
+                <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
+                承認を待機中...
+              </div>
+              <button 
+                onClick={() => { setAuthFlow(null); setIsPolling(false); isPollingRef.current = false; }}
+                className="text-gray-500 text-xs hover:text-gray-800 font-bold uppercase tracking-wider mt-2"
+              >
+                キャンセル
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }
-

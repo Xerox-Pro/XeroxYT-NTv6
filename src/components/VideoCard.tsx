@@ -45,7 +45,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
 
   return (
     <div className="group cursor-pointer flex flex-col transition-transform duration-200 ease-out active:scale-[0.98] select-none">
-      
+      {/* 16:9 サムネイルカード */}
       <div 
         onClick={onClick}
         className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200/80 shadow-2xs group-hover:shadow-md transition-all duration-300"
@@ -83,7 +83,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
         </div>
       </div>
       
-      
+      {/* 情報エリア */}
       <div className="mt-3.5 flex items-start space-x-3">
         {!hideChannelInfo && (
           <button 
@@ -119,16 +119,12 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
                 onClick={handleChannelClick} 
                 className="hover:text-gray-900 transition-colors flex items-center gap-1 font-normal cursor-pointer text-gray-700"
               >
-                <span className="truncate">
-                  {authorName}
-                </span>
+                <span className="truncate">{authorName}</span>
                 <span className="w-3.5 h-3.5 bg-gray-500 rounded-full flex items-center justify-center text-white text-[8px] font-bold shrink-0">✓</span>
               </span>
             )}
             <span onClick={onClick} className="text-gray-500 text-xs mt-0.5">
-              {video.type === 'mix'
-                ? 'ミックスリスト • YouTube'
-                : `${formatNumberJP(video.viewCount)}回視聴 • ${video.publishedText}`}
+              {formatNumberJP(video.viewCount)}回視聴 • {video.publishedText}
             </span>
           </div>
         </div>

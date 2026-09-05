@@ -5,14 +5,6 @@ export interface VideoThumbnail {
   quality?: string;
 }
 
-export interface VideoChannelInfo {
-  id: string;
-  name: string;
-  avatar?: string;
-  handle?: string;
-  subCountText?: string;
-}
-
 export interface Video {
   videoId?: string;
   playlistId?: string;
@@ -22,7 +14,6 @@ export interface Video {
   authorId?: string;
   authorAvatar?: string;
   multipleChannelIds?: string[];
-  channels?: VideoChannelInfo[];
   viewCount: number;
   publishedText: string;
   lengthSeconds: number;
