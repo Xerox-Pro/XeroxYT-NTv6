@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 import { localAI } from '../lib/intelligence';
@@ -582,12 +583,14 @@ export default function VideoPlayer({
             <div className="flex items-center gap-3">
               <button
                 onClick={handleAuthorClick}
-                className="hover:opacity-80 transition-opacity"
+                className="hover:scale-105 active:scale-95 transition-transform duration-150"
                 title={`${videoData.author}のチャンネルを開く`}
               >
                 <Avatar
                   src={videoData.authorAvatar}
                   name={videoData.author}
+                  channelId={videoData.authorId}
+                  videoId={videoData.videoId}
                   className="w-11 h-11 text-base shadow-xs"
                 />
               </button>
@@ -612,9 +615,10 @@ export default function VideoPlayer({
                 )}
               </div>
 
-              <button
+              <motion.button
                 onClick={handleSubClick}
-                className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 ${
+                whileTap={{ scale: 0.93 }}
+                className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-colors duration-200 shadow-xs ${
                   isSubscribed 
                     ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
                     : 'bg-gray-900 hover:bg-black text-white'
@@ -622,39 +626,41 @@ export default function VideoPlayer({
               >
                 {isSubscribed ? (
                   <span className="flex items-center gap-1.5">
-                    <Bell size={13} className="animate-bounce" />
+                    <Bell size={13} className="animate-bell-ring text-gray-700" />
                     <span>登録済み</span>
                   </span>
                 ) : (
                   <span>チャンネル登録</span>
                 )}
-              </button>
+              </motion.button>
             </div>
 
             {/* アクションボタン */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200">
-                <button 
+              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shadow-2xs">
+                <motion.button 
                   onClick={handleLike}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-l-full transition-all duration-200 active:scale-90 ${
+                  whileTap={{ scale: 0.88 }}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-l-full transition-colors duration-150 ${
                     isLiked ? 'text-blue-600 bg-blue-50' : 'text-gray-800 hover:bg-gray-200'
                   }`}
                 >
                   <ThumbsUp size={15} className={`${isLiked ? 'fill-blue-600 text-blue-600 animate-yt-pop' : ''}`} />
                   <span>{formatNumberJP((videoData.likeCount || 0) + likeCountDelta)}</span>
-                </button>
+                </motion.button>
                 <div className="w-[1px] h-4 bg-gray-300"></div>
-                <button 
+                <motion.button 
                   onClick={handleDislike}
-                  className={`px-3 py-1.5 text-xs rounded-r-full transition-all duration-200 active:scale-90 ${
+                  whileTap={{ scale: 0.88 }}
+                  className={`px-3 py-1.5 text-xs rounded-r-full transition-colors duration-150 ${
                     isDisliked ? 'text-blue-600 bg-blue-50' : 'text-gray-800 hover:bg-gray-200'
                   }`}
                 >
                   <ThumbsDown size={15} className={`${isDisliked ? 'fill-blue-600 text-blue-600 animate-yt-pop' : ''}`} />
-                </button>
+                </motion.button>
               </div>
 
-              <button 
+              <motion.button 
                 onClick={() => {
                   if (navigator.share) {
                     navigator.share({ title: videoData.title, url: window.location.href }).catch(() => {});
@@ -664,17 +670,19 @@ export default function VideoPlayer({
                     setTimeout(() => setCopiedToast(false), 2500);
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-all duration-200"
+                whileTap={{ scale: 0.92 }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
               >
                 <Share2 size={15} />
                 <span>共有</span>
-              </button>
+              </motion.button>
 
-              <button 
+              <motion.button 
                 onClick={handleDownload}
+                whileTap={{ scale: 0.92 }}
                 disabled={downloading}
                 title="動画をダウンロード"
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
                 {downloading ? (
                   <Loader2 size={15} className="animate-spin text-red-600" />
@@ -682,13 +690,14 @@ export default function VideoPlayer({
                   <Download size={15} />
                 )}
                 <span>ダウンロード</span>
-              </button>
+              </motion.button>
 
-              <button 
+              <motion.button 
                 onClick={handleReloadEduKey}
+                whileTap={{ scale: 0.92 }}
                 disabled={refreshingEduKey || cooldownSec > 0}
                 title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのEduKeyを再取得してプレイヤーを再読み込み"}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 active:bg-gray-300 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
               >
                 {refreshingEduKey ? (
                   <Loader2 size={15} className="animate-spin text-blue-600" />
@@ -696,16 +705,17 @@ export default function VideoPlayer({
                   <RotateCw size={15} className={cooldownSec > 0 ? "opacity-50" : ""} />
                 )}
                 <span>{cooldownSec > 0 ? `再読み込み (${cooldownSec}s)` : '再読み込み'}</span>
-              </button>
+              </motion.button>
 
               {onOpenAddToPlaylist && (
-                <button 
+                <motion.button 
                   onClick={() => onOpenAddToPlaylist(videoData)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors"
+                  whileTap={{ scale: 0.92 }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
                 >
                   <Plus size={15} />
                   <span>保存</span>
-                </button>
+                </motion.button>
               )}
 
               {isLive && (

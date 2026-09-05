@@ -537,6 +537,53 @@ async function startServer() {
     return false;
   }
 
+  // 複数チャンネル・コラボレーション動画からメインチャンネルの情報（アイコン・ID・名前）を抽出
+  function extractCollabMainChannel(v: any): { name?: string; id?: string; avatar?: string } | null {
+    if (!v) return null;
+    try {
+      const epCandidates = [
+        v.author?.endpoint,
+        v.author?.navigation_endpoint,
+        v.owner?.endpoint,
+        v.owner?.navigation_endpoint,
+        v.short_byline?.endpoint,
+        v.byline?.endpoint,
+        v.navigation_endpoint,
+        v.endpoint
+      ];
+
+      for (const ep of epCandidates) {
+        if (!ep) continue;
+        const cmd = ep.command || ep.payload?.command || ep.show_dialog_command || ep.payload?.show_dialog_command || ep.showDialogCommand || ep;
+        const dialog = cmd.inline_content || cmd.payload?.inline_content || cmd.inlineContent || cmd;
+        const custom = dialog.custom_content || dialog.customContent || dialog;
+        const items = custom.items || custom.contents;
+        if (Array.isArray(items) && items.length > 0) {
+          const main = items[0];
+          const name = main.title?.text || main.title?.runs?.[0]?.text || (typeof main.title === 'string' ? main.title : undefined);
+          const avatar = main.leading_accessory?.image?.[0]?.url ||
+                         main.leading_accessory?.avatarViewModel?.image?.sources?.[0]?.url ||
+                         main.leadingAccessory?.avatarViewModel?.image?.sources?.[0]?.url ||
+                         main.leading_accessory?.thumbnails?.[0]?.url ||
+                         main.thumbnail?.thumbnails?.[0]?.url;
+          const id = main.endpoint?.payload?.browseId ||
+                     main.title?.endpoint?.payload?.browseId ||
+                     main.renderer_context?.command_context?.on_tap?.payload?.browseId ||
+                     main.renderer_context?.command_context?.on_tap?.innertubeCommand?.browseEndpoint?.browseId ||
+                     main.command_context?.on_tap?.payload?.browseId;
+          if (avatar || id || name) {
+            return {
+              name: name?.trim(),
+              id: id?.trim(),
+              avatar: avatar?.startsWith('//') ? 'https:' + avatar : avatar
+            };
+          }
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   // 安全で正確な動画オブジェクト正規化関数
   function formatVideoObject(v: any, defaultAuthor: string = '', channelId?: string) {
     if (!v) return null;
@@ -633,8 +680,12 @@ async function startServer() {
         authorCandidate = v.short_byline?.text || v.author?.name || (defaultAuthor && !isMetadataNotAuthor(defaultAuthor) ? defaultAuthor : 'チャンネル');
       }
 
+      const collabInfo = extractCollabMainChannel(v);
+      const cleanAuthorCandidate = (authorCandidate || '').split(/、他|\s*and\s+\d+\s+other/i)[0].trim();
+
       let authorAvatar = '';
-      const avatarCandidate = v.metadata?.avatar?.thumbnails?.[0]?.url || 
+      const avatarCandidate = collabInfo?.avatar ||
+                              v.metadata?.avatar?.thumbnails?.[0]?.url || 
                               v.metadata?.avatar?.[0]?.url || 
                               v.author?.best_thumbnail?.url || 
                               v.author?.thumbnails?.[0]?.url || 
@@ -643,8 +694,18 @@ async function startServer() {
       if (avatarCandidate) {
         authorAvatar = avatarCandidate.startsWith('//') ? 'https:' + avatarCandidate : avatarCandidate;
       }
-      if (!authorAvatar) {
-        authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorCandidate)}&background=random&color=fff&size=128`;
+      if (!authorAvatar && cleanAuthorCandidate && batchChannelCache.has(cleanAuthorCandidate)) {
+        authorAvatar = batchChannelCache.get(cleanAuthorCandidate)!.authorAvatar;
+      }
+      if (authorAvatar) {
+        if (cleanAuthorCandidate) {
+          batchChannelCache.set(cleanAuthorCandidate, { author: cleanAuthorCandidate, authorAvatar, authorId: collabInfo?.id || channelId });
+        }
+        if (authorCandidate && authorCandidate !== cleanAuthorCandidate) {
+          batchChannelCache.set(authorCandidate, { author: authorCandidate, authorAvatar, authorId: collabInfo?.id || channelId });
+        }
+      } else {
+        authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanAuthorCandidate || authorCandidate)}&background=random&color=fff&size=128`;
       }
 
       const calculatedViews = extractViewCount(v) || parseCount(viewText) || 0;
@@ -655,7 +716,7 @@ async function startServer() {
         type: 'video',
         title: titleText,
         author: authorCandidate,
-        authorId: channelId,
+        authorId: collabInfo?.id || channelId,
         authorAvatar: authorAvatar,
         viewCount: calculatedViews,
         publishedText: publishedText,
@@ -713,15 +774,24 @@ async function startServer() {
       authorName = (defaultAuthor && defaultAuthor !== 'Channel' && defaultAuthor !== 'Unknown' && !isMetadataNotAuthor(defaultAuthor)) ? defaultAuthor : 'チャンネル';
     }
 
-    const finalAuthorId = v.author?.id || 
+    const collabInfo = extractCollabMainChannel(v);
+    const cleanAuthor = (authorName || '').split(/、他|\s*and\s+\d+\s+other/i)[0].trim();
+
+    let finalAuthorId = v.author?.id || 
                           v.author?.endpoint?.browse_endpoint?.browse_id || 
                           v.channel?.id || 
                           v.owner?.endpoint?.browse_endpoint?.browse_id || 
+                          collabInfo?.id ||
                           channelId;
+
+    if (!finalAuthorId && cleanAuthor && batchChannelCache.has(cleanAuthor)) {
+      finalAuthorId = batchChannelCache.get(cleanAuthor)!.authorId;
+    }
 
     // アバターURLの多階層探索
     let authorAvatar = '';
     const avatarCandidates = [
+      collabInfo?.avatar,
       v.author?.best_thumbnail?.url,
       v.author?.thumbnails?.[v.author?.thumbnails?.length - 1]?.url,
       v.author?.thumbnails?.[0]?.url,
@@ -747,12 +817,30 @@ async function startServer() {
       }
     }
 
+    if (!authorAvatar && cleanAuthor && batchChannelCache.has(cleanAuthor)) {
+      authorAvatar = batchChannelCache.get(cleanAuthor)!.authorAvatar;
+    }
+
     if (authorAvatar) {
       if (authorAvatar.startsWith('//')) {
         authorAvatar = 'https:' + authorAvatar;
       }
+      if (cleanAuthor) {
+        batchChannelCache.set(cleanAuthor, {
+          author: cleanAuthor,
+          authorAvatar: authorAvatar,
+          authorId: finalAuthorId
+        });
+      }
+      if (authorName && authorName !== cleanAuthor) {
+        batchChannelCache.set(authorName, {
+          author: authorName,
+          authorAvatar: authorAvatar,
+          authorId: finalAuthorId
+        });
+      }
     } else {
-      authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff&size=128`;
+      authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanAuthor || authorName)}&background=random&color=fff&size=128`;
     }
 
     // ライブ判定とプレミア判定（プレミア公開を生配信と誤判定しない）
@@ -1817,7 +1905,8 @@ async function startServer() {
           try {
             let chId = item.channelId;
             let originalAuthor = (item.author && item.author !== 'チャンネル' && item.author !== 'Unknown' && !isMetadataNotAuthor(item.author)) ? item.author : '';
-            let authorName = originalAuthor;
+            let cleanAuthor = originalAuthor.split(/、他|\s*and\s+\d+\s+other/i)[0].trim();
+            let authorName = cleanAuthor || originalAuthor;
             let avatarUrl = "";
 
             // 1. UCで始まるチャンネルIDの場合
@@ -1831,7 +1920,7 @@ async function startServer() {
               } catch {}
             }
 
-            // 2. videoId が指定されている場合
+            // 2. videoId が指定されている場合 (基本情報からメインチャンネルIDとアイコンを高精度取得)
             if (!avatarUrl && item.videoId) {
               try {
                 const basic = await youtube.getBasicInfo(item.videoId);
@@ -1847,15 +1936,16 @@ async function startServer() {
               } catch {}
             }
 
-            // 3. チャンネル名から検索してアイコン解決（元のチャンネル名と一致する場合のみ採用）
-            if (!avatarUrl && authorName && authorName !== 'チャンネル' && authorName !== 'Unknown' && !isMetadataNotAuthor(authorName)) {
+            // 3. チャンネル名から検索してアイコン解決（複数チャンネル表記の場合はメインチャンネル名で検索）
+            const searchTarget = cleanAuthor || authorName;
+            if (!avatarUrl && searchTarget && searchTarget !== 'チャンネル' && searchTarget !== 'Unknown' && !isMetadataNotAuthor(searchTarget)) {
               try {
-                const searchRes = await youtube.search(authorName, { type: 'channel' });
+                const searchRes = await youtube.search(searchTarget, { type: 'channel' });
                 if (searchRes.channels && searchRes.channels[0]) {
                   const foundCh = searchRes.channels[0] as any;
                   const foundTitle = foundCh.author?.name || foundCh.title?.text || "";
-                  // 不一致なチャンネルアイコンの誤付与を防止するため、元のチャンネル名と部分一致・完全一致する場合のみ採用
-                  if (!originalAuthor || (foundTitle && (foundTitle.toLowerCase().includes(originalAuthor.toLowerCase()) || originalAuthor.toLowerCase().includes(foundTitle.toLowerCase())))) {
+                  // メインチャンネル名と部分一致・完全一致する場合に採用
+                  if (!searchTarget || (foundTitle && (foundTitle.toLowerCase().includes(searchTarget.toLowerCase()) || searchTarget.toLowerCase().includes(foundTitle.toLowerCase())))) {
                     chId = foundCh.id || chId;
                     avatarUrl = foundCh.author?.best_thumbnail?.url || foundCh.author?.thumbnails?.[0]?.url || foundCh.thumbnails?.[0]?.url || "";
                   }
@@ -1871,6 +1961,8 @@ async function startServer() {
               };
               batchChannelCache.set(key, info);
               if (chId) batchChannelCache.set(chId, info);
+              if (cleanAuthor) batchChannelCache.set(cleanAuthor, info);
+              if (originalAuthor && originalAuthor !== cleanAuthor) batchChannelCache.set(originalAuthor, info);
               results[key] = info;
             }
           } catch (err) {

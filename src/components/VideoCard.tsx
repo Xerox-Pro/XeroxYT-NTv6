@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Video } from '../types';
 import { formatNumberJP, formatDuration } from '../utils';
 import { PlayCircle, ListMusic } from 'lucide-react';
@@ -31,7 +32,9 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
   const handleChannelClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onSelectChannel) {
-      onSelectChannel(video.authorId || authorName);
+      // 複数チャンネル表記の場合はメインチャンネル名またはIDで開く
+      const cleanName = authorName.split(/、他|\s*and\s+\d+\s+other/i)[0].trim();
+      onSelectChannel(video.authorId || cleanName || authorName);
     }
   };
 
@@ -44,11 +47,16 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
   };
 
   return (
-    <div className="group cursor-pointer flex flex-col transition-transform duration-200 ease-out active:scale-[0.98] select-none">
+    <motion.div 
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.18, ease: "easeOut" }}
+      className="group cursor-pointer flex flex-col select-none"
+    >
       {/* 16:9 サムネイルカード */}
       <div 
         onClick={onClick}
-        className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200/80 shadow-2xs group-hover:shadow-md transition-all duration-300"
+        className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200/80 shadow-2xs group-hover:shadow-md transition-shadow duration-300"
       >
         {imgSrc ? (
           <img
@@ -56,7 +64,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
             referrerPolicy="no-referrer"
             onError={handleImgError}
             alt={video.title}
-            className="object-cover w-full h-full transition-transform duration-300 group-hover:scale-105"
+            className="object-cover w-full h-full transition-transform duration-300 ease-out group-hover:scale-105"
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-200">
@@ -84,11 +92,11 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
       </div>
       
       {/* 情報エリア */}
-      <div className="mt-3.5 flex items-start space-x-3">
+      <div className="mt-3 flex items-start space-x-3">
         {!hideChannelInfo && (
           <button 
             onClick={handleChannelClick}
-            className="shrink-0 hover:opacity-80 transition-opacity mt-0.5"
+            className="shrink-0 hover:scale-105 active:scale-95 transition-transform duration-150 mt-0.5"
             title={`${authorName}のチャンネルを開く`}
           >
             <Avatar 
@@ -96,7 +104,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
               name={authorName} 
               channelId={video.authorId}
               videoId={video.videoId}
-              className="w-10 h-10 text-sm ring-1 ring-gray-200" 
+              className="w-9 h-9 text-sm ring-1 ring-gray-200 shadow-2xs" 
               onResolved={(info) => {
                 if ((!video.author || video.author === 'チャンネル' || video.author === 'Unknown' || video.author === 'Channel') && info.author && info.author !== 'チャンネル') {
                   setDisplayAuthor(info.author);
@@ -109,7 +117,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
         <div className="flex flex-col gap-1 overflow-hidden flex-1">
           <h3 
             onClick={onClick}
-            className="font-semibold text-gray-900 leading-snug line-clamp-2 text-[15px] sm:text-[16px] group-hover:text-blue-600 transition-colors"
+            className="font-semibold text-gray-900 leading-snug line-clamp-2 text-[14px] sm:text-[15px] group-hover:text-blue-600 transition-colors duration-150"
           >
             {video.title}
           </h3>
@@ -129,7 +137,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
           </div>
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 };
 

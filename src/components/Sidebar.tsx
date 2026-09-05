@@ -1,5 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'motion/react';
 import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
 import { ChannelSubscription } from '../types';
 import Avatar from './Avatar';
@@ -66,28 +67,29 @@ export default function Sidebar({
   const renderLink = (link: any) => {
     const isActive = currentView === link.activeValue;
     return (
-      <Link
-        key={link.label}
-        to={link.path}
-        onClick={() => handleClick(link.activeValue)}
-        title={link.label}
-        className={`w-full flex items-center ${
-          isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
-        } transition-colors ${
-          isActive
-            ? 'bg-gray-100 text-black font-semibold'
-            : 'text-gray-800 hover:bg-gray-100 font-normal'
-        }`}
-      >
-        <link.icon 
-          size={isOpen ? 22 : 20} 
-          strokeWidth={isActive ? 2.2 : 1.8} 
-          className={`shrink-0`} 
-        />
-        <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
-          {link.label}
-        </span>
-      </Link>
+      <motion.div key={link.label} whileTap={{ scale: 0.95 }} className="w-full">
+        <Link
+          to={link.path}
+          onClick={() => handleClick(link.activeValue)}
+          title={link.label}
+          className={`w-full flex items-center ${
+            isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
+          } transition-colors ${
+            isActive
+              ? 'bg-gray-100 text-black font-semibold'
+              : 'text-gray-800 hover:bg-gray-100 font-normal'
+          }`}
+        >
+          <link.icon 
+            size={isOpen ? 22 : 20} 
+            strokeWidth={isActive ? 2.2 : 1.8} 
+            className={`shrink-0`} 
+          />
+          <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
+            {link.label}
+          </span>
+        </Link>
+      </motion.div>
     );
   };
 
@@ -156,22 +158,23 @@ export default function Sidebar({
                 <p className="px-3 text-xs text-gray-400">登録チャンネルはありません</p>
               ) : (
                 subscriptions.map((sub) => (
-                  <Link
-                    to={`/channel/${sub.id}`}
-                    key={sub.id}
-                    onClick={(e) => {
-                      if (onSelectChannel) {
-                        e.preventDefault();
-                        onSelectChannel(sub.id);
-                      }
-                    }}
-                    className="w-full flex items-center gap-4 px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-left group"
-                  >
-                    <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-xs shrink-0" />
-                    <span className="text-[14px] font-normal text-gray-800 truncate">
-                      {sub.title}
-                    </span>
-                  </Link>
+                  <motion.div key={sub.id} whileTap={{ scale: 0.96 }} className="w-full">
+                    <Link
+                      to={`/channel/${sub.id}`}
+                      onClick={(e) => {
+                        if (onSelectChannel) {
+                          e.preventDefault();
+                          onSelectChannel(sub.id);
+                        }
+                      }}
+                      className="w-full flex items-center gap-4 px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-left group"
+                    >
+                      <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-xs shrink-0" />
+                      <span className="text-[14px] font-normal text-gray-800 truncate">
+                        {sub.title}
+                      </span>
+                    </Link>
+                  </motion.div>
                 ))
               )}
             </div>

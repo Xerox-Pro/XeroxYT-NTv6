@@ -18,20 +18,25 @@ const bgColors = [
 export default function Avatar({ src, name, channelId, videoId, className = "w-8 h-8 text-sm", onResolved }: AvatarProps) {
   const [imgError, setImgError] = useState(false);
   const [fetchedAvatar, setFetchedAvatar] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     setImgError(false);
     setFetchedAvatar(null);
+    setLoaded(false);
   }, [src]);
+
+  const cleanName = (name || 'User').split(/、他|\s*and\s+\d+\s+other/i)[0].trim() || 'User';
 
   // If src is missing, is a placeholder, or errored out, trigger batch avatar fetcher
   useEffect(() => {
     const isPlaceholder = !src || src.includes('ui-avatars.com');
     if ((isPlaceholder || imgError) && !fetchedAvatar) {
-      const key = channelId || videoId || (name && name !== 'チャンネル' && name !== 'Unknown' ? name : '');
+      const searchAuthor = cleanName && cleanName !== 'チャンネル' && cleanName !== 'Unknown' ? cleanName : name;
+      const key = channelId || videoId || searchAuthor;
       if (key) {
         batchAvatarFetcher.register(
-          { key, channelId, videoId, author: name },
+          { key, channelId, videoId, author: searchAuthor },
           (data) => {
             if (data.authorAvatar) {
               setFetchedAvatar(data.authorAvatar);
@@ -44,10 +49,12 @@ export default function Avatar({ src, name, channelId, videoId, className = "w-8
         );
       }
     }
-  }, [src, imgError, fetchedAvatar, channelId, videoId, name, onResolved]);
+  }, [src, imgError, fetchedAvatar, channelId, videoId, name, cleanName, onResolved]);
 
-  const activeSrc = fetchedAvatar || src;
-  const displayName = name || 'User';
+  // Do not show ui-avatars as a real image if we haven't resolved yet
+  const isServerPlaceholder = src && src.includes('ui-avatars.com');
+  const activeSrc = fetchedAvatar || (!isServerPlaceholder ? src : null);
+  const displayName = cleanName;
   const initial = displayName.charAt(0).toUpperCase();
   
   // Pick deterministic color based on name
@@ -64,14 +71,17 @@ export default function Avatar({ src, name, channelId, videoId, className = "w-8
         src={activeSrc}
         alt={displayName}
         referrerPolicy="no-referrer"
+        onLoad={() => setLoaded(true)}
         onError={() => setImgError(true)}
-        className={`${className} rounded-full object-cover shrink-0`}
+        className={`${className} rounded-full object-cover shrink-0 transition-opacity duration-200 ${
+          loaded ? 'opacity-100' : 'opacity-80'
+        }`}
       />
     );
   }
 
   return (
-    <div className={`${className} ${bgColor} rounded-full flex items-center justify-center text-white font-semibold shrink-0 select-none shadow-inner`}>
+    <div className={`${className} ${bgColor} rounded-full flex items-center justify-center text-white font-semibold shrink-0 select-none shadow-inner transition-transform duration-200`}>
       {initial}
     </div>
   );
