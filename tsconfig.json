@@ -10,6 +10,8 @@
       "DOM.Iterable"
     ],
     "skipLibCheck": true,
+    "downlevelIteration": true,
+    "esModuleInterop": true,
     "moduleResolution": "bundler",
     "isolatedModules": true,
     "moduleDetection": "force",
@@ -22,5 +24,9 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "src",
+    "server.ts"
+  ]
 }
