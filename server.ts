@@ -5,6 +5,20 @@ import { Innertube, UniversalCache } from "youtubei.js";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
 
+// Suppress noisy youtubei.js internal logs
+const originalWarn = console.warn;
+const originalError = console.error;
+console.warn = (...args) => {
+  const msg = args.map(a => String(a)).join(" ");
+  if (msg.includes("[YOUTUBEJS][Parser]:") || msg.includes("PlayerInterstitial") || msg.includes("InterstitialView") || msg.includes("ERROR_HANDLER")) return;
+  originalWarn.apply(console, args);
+};
+console.error = (...args) => {
+  const msg = args.map(a => String(a)).join(" ");
+  if (msg.includes("[YOUTUBEJS][Parser]:") || msg.includes("PlayerInterstitial") || msg.includes("InterstitialView") || msg.includes("ERROR_HANDLER")) return;
+  originalError.apply(console, args);
+};
+
 const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 let yt: Innertube | null = null;
@@ -379,7 +393,8 @@ async function startServer() {
     const id = (req.query.id as string) || "";
     try {
       const youtube = await getYt();
-      const info = await youtube.getInfo(id);
+      let info;
+try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBasicInfo(id); }
       res.json(info);
     } catch (err: any) {
       res.status(500).json({ error: err.message || "サーバー内部エラー" });
@@ -1008,8 +1023,12 @@ async function startServer() {
               usedAi = true;
             }
           }
-        } catch (e) {
-          console.warn("[Recs] Gemini recommendation analysis skipped/failed:", e);
+        } catch (e: any) {
+          if (e?.message?.includes("401") || e?.status === 401 || String(e).includes("401")) {
+             console.warn("[Recs] Gemini recommendation analysis skipped: Invalid or missing API key. Using fallback algorithm.");
+          } else {
+             console.warn("[Recs] Gemini recommendation analysis skipped:", e.message || String(e));
+          }
         }
       }
 
@@ -1042,7 +1061,8 @@ async function startServer() {
       if (sampledHistoryIds.length > 0) {
         const relatedTasks = sampledHistoryIds.map(async (id) => {
           try {
-            const info = await youtube.getInfo(id);
+            let info;
+try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBasicInfo(id); }
             return info.watch_next_feed || [];
           } catch {
             return [];
@@ -1072,7 +1092,8 @@ async function startServer() {
             const deepSample = candidateDeepIds.slice(0, 5);
             const deepRelatedTasks = deepSample.map(async (id) => {
               try {
-                const info = await youtube.getInfo(id);
+                let info;
+try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBasicInfo(id); }
                 return info.watch_next_feed || [];
               } catch {
                 return [];
@@ -1402,7 +1423,18 @@ async function startServer() {
   app.get("/api/video/:id", async (req, res) => {
     try {
       const youtube = await getYt();
-      const info = await youtube.getInfo(req.params.id);
+      let info;
+      try {
+        info = await youtube.getInfo(req.params.id);
+      } catch (getInfoErr: any) {
+        console.warn(`[YT] getInfo error for ${req.params.id}, trying getBasicInfo fallback:`, getInfoErr.message || getInfoErr);
+        try {
+          info = await youtube.getBasicInfo(req.params.id);
+        } catch (basicErr: any) {
+          console.warn(`[YT] getBasicInfo error for ${req.params.id}, trying IOS client fallback:`, basicErr.message || basicErr);
+          info = await youtube.getInfo(req.params.id, { client: 'IOS' });
+        }
+      }
       
       const basic = info.basic_info;
       const primary = info.primary_info;
@@ -1632,7 +1664,7 @@ async function startServer() {
               .filter((v: any) => v && v.videoId && !isUnwantedVideo(v));
           }
         } catch (e) {
-          console.warn("[Channel] Error calling channel.getVideos():", e);
+          const m = e?.message || String(e); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel] Error calling channel.getVideos():", m);
         }
 
         // 2. ショート動画取得 (YouTube.js getShorts または #shorts 順序検索)
@@ -1646,7 +1678,7 @@ async function startServer() {
             }
           }
         } catch (e) {
-          console.warn("[Channel] Error calling channel.getShorts():", e);
+          const m = e?.message || String(e); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel] Error calling channel.getShorts():", m);
         }
 
         // ショートが空なら「#shorts チャンネル名」で正確にショート動画を取得
@@ -1680,7 +1712,7 @@ async function startServer() {
             }
           }
         } catch (e) {
-          console.warn("[Channel] Error calling channel.getLiveStreams():", e);
+          const m = e?.message || String(e); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel] Error calling channel.getLiveStreams():", m);
         }
 
         // ライブ配信が空の場合、動画リストからライブ配信/アーカイブを抽出
@@ -1703,7 +1735,7 @@ async function startServer() {
             }
           }
         } catch (e) {
-          console.warn("[Channel] Error calling channel.getPlaylists():", e);
+          const m = e?.message || String(e); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel] Error calling channel.getPlaylists():", m);
         }
 
         // 5. コミュニティ投稿取得
@@ -1729,7 +1761,7 @@ async function startServer() {
             }
           }
         } catch (e) {
-          console.warn("[Channel] Error calling channel.getCommunity():", e);
+          const m = e?.message || String(e); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel] Error calling channel.getCommunity():", m);
         }
 
         // コミュニティ投稿のフォールバック生成（チャンネルの最新アクティビティ）
@@ -2096,7 +2128,7 @@ async function startServer() {
           }
         }
       } catch (channelErr) {
-        console.warn("[Channel Tab Continuation Error]:", channelErr);
+        const m = channelErr?.message || String(channelErr); if(!m.includes("not found") && !m.includes("status code 500")) console.warn("[Channel Tab Continuation Error]:", m);
       }
 
       // 2. フォールバック: アップロードプレイリスト (UU...) による継続取得

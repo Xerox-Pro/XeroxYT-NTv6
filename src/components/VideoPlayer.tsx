@@ -89,6 +89,7 @@ interface LiveChatMessage {
 }
 
 interface VideoPlayerProps {
+  key?: React.Key;
   videoId: string;
   playlistId?: string;
   onVideoSelect: (id: string, video?: Video) => void;
@@ -435,14 +436,16 @@ export default function VideoPlayer({
 
   const isLive = !!(videoData.isLive && !videoData.isPremiere && !videoData.isUpcoming);
 
+  const cleanAuthorName = videoData.author ? videoData.author.split(/、他|\s*and\s+\d+\s+other/i)[0].trim() : 'チャンネル';
+
   const isSubscribed = subscriptions.some(s => 
-    s.id === videoData.authorId || s.title === videoData.author
+    s.id === videoData.authorId || s.title === cleanAuthorName || s.title === videoData.author
   );
 
   const handleSubClick = () => {
     onToggleSubscribe({
-      id: videoData.authorId || videoData.author,
-      title: videoData.author,
+      id: videoData.authorId || cleanAuthorName,
+      title: cleanAuthorName,
       avatar: videoData.authorAvatar
     });
   };

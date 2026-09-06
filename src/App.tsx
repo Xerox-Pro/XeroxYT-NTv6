@@ -401,10 +401,20 @@ export default function App() {
       let changed = false;
       videos.forEach(v => {
         if (!next[v.videoId]) {
-          next[v.videoId] = v;
+          const cleanVideo = { ...v };
+          if ('recommendedVideos' in cleanVideo) {
+            delete cleanVideo.recommendedVideos;
+          }
+          next[v.videoId] = cleanVideo;
           changed = true;
         }
       });
+      // キャッシュの上限を設けてクラッシュを防ぐ (最大150件)
+      const keys = Object.keys(next);
+      if (keys.length > 150) {
+        keys.slice(0, keys.length - 150).forEach(k => delete next[k]);
+        changed = true;
+      }
       return changed ? next : prev;
     });
   };
@@ -660,9 +670,14 @@ export default function App() {
     setPlaylists(prev => prev.map(pl => {
       if (pl.id !== playlistId) return pl;
       const exists = pl.videos.some(v => v.videoId === video.videoId);
-      const updatedVideos = exists
-        ? pl.videos.filter(v => v.videoId !== video.videoId)
-        : [...pl.videos, video];
+      let updatedVideos = pl.videos;
+      if (exists) {
+        updatedVideos = pl.videos.filter(v => v.videoId !== video.videoId);
+      } else {
+        const cleanVideo = { ...video };
+        if ('recommendedVideos' in cleanVideo) delete cleanVideo.recommendedVideos;
+        updatedVideos = [...pl.videos, cleanVideo];
+      }
       return {
         ...pl,
         videos: updatedVideos,
@@ -702,7 +717,12 @@ export default function App() {
   };
 
   const handleAddVideosToPlaylist = (playlistId: string, videos: Video[]) => {
-    setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, videos, updatedAt: Date.now() } : p));
+    const cleanVideos = videos.map(v => {
+      const cleanVideo = { ...v };
+      if ('recommendedVideos' in cleanVideo) delete cleanVideo.recommendedVideos;
+      return cleanVideo;
+    });
+    setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, videos: cleanVideos, updatedAt: Date.now() } : p));
   };
 
   const handleStartPlaylistPlay = (playlist: UserPlaylist, shuffle: boolean = false) => {
@@ -772,6 +792,7 @@ export default function App() {
           {/* ビュー分岐 */}
           {view === 'video' && currentVideoId ? (
             <VideoPlayer
+              key={currentVideoId}
               videoId={currentVideoId}
               playlistId={currentPlaylistId || undefined}
               onVideoSelect={(id, v) => handleVideoSelect(id, v)}
