@@ -159,12 +159,20 @@ export default function AIStudio() {
   };
 
   const clearCurrentChat = () => {
-    setSessions(prev => prev.map(s => {
-      if (s.id === currentSessionId) {
-        return { ...s, messages: [], title: '新しいチャット' };
-      }
-      return s;
-    }));
+    const updated = sessions.filter(s => s.id !== currentSessionId);
+    if (updated.length === 0) {
+      const newSession: ChatSession = {
+        id: Date.now().toString(),
+        title: '新しいチャット',
+        messages: [],
+        createdAt: Date.now(),
+      };
+      setSessions([newSession]);
+      setCurrentSessionId(newSession.id);
+    } else {
+      setSessions(updated);
+      setCurrentSessionId(updated[0].id);
+    }
   };
 
   const sendMessage = async () => {
@@ -340,7 +348,7 @@ export default function AIStudio() {
             <button 
               onClick={clearCurrentChat}
               className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
-              title="現在のチャットをクリア"
+              title="現在のチャットを削除"
             >
               <Trash2 className="w-5 h-5" />
             </button>
