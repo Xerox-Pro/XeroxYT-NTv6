@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface NavbarProps {
   onSearch: (q: string) => void;
@@ -118,6 +119,7 @@ export default function Navbar({
 
       {/* 右側: ログイン/アバター */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <PWAInstallButton />
         <Link
           to="/aistudio"
           className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"

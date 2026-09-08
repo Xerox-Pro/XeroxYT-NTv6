@@ -1,3 +1,5 @@
+import { get, set } from 'idb-keyval';
+
 export function formatNumber(num: number): string {
   if (!num) return '0';
   if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
@@ -21,8 +23,26 @@ export function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
 export async function fetchJSON(url: string, options?: RequestInit) {
   try {
+    const isGet = !options || !options.method || options.method === 'GET';
+    const isApiCall = url.startsWith('/api/');
+    const isTimeSensitive = url.includes('/sync/') || url.includes('/auth/');
+    
+    // Check IndexedDB cache for GET requests
+    if (isGet && isApiCall && !isTimeSensitive) {
+      try {
+        const cached = await get(url);
+        if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+          return cached.data;
+        }
+      } catch (e) {
+        console.warn('Cache read error:', e);
+      }
+    }
+
     const res = await fetch(url, options);
     const contentType = res.headers.get('content-type');
     
@@ -46,10 +66,34 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       throw new Error('サーバーから不正なレスポンスが返されました（JSONではありません）');
     }
 
-    return await res.json();
+    const data = await res.json();
+    
+    // Save to IndexedDB cache
+    if (isGet && isApiCall && !isTimeSensitive) {
+      try {
+        await set(url, { timestamp: Date.now(), data });
+      } catch (e) {
+        console.warn('Cache write error:', e);
+      }
+    }
+
+    return data;
   } catch (err: any) {
-    if (err.message.includes('Unexpected token')) {
+    if (err.message && err.message.includes('Unexpected token')) {
       throw new Error('サーバーからの応答を解析できませんでした。');
+    }
+    
+    // Fallback to cache if network fails and cache exists (Offline mode)
+    const isGet = !options || !options.method || options.method === 'GET';
+    if (isGet) {
+       try {
+         const cached = await get(url);
+         if (cached && cached.data) {
+           return cached.data;
+         }
+       } catch (e) {
+         // ignore
+       }
     }
     throw err;
   }
