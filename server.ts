@@ -2220,7 +2220,7 @@ try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBas
       const { messages, systemInstruction, temperature } = req.body;
       
       const response = await genAI.models.generateContent({
-        model: 'gemini-3.0-flash',
+        model: 'gemini-3.5-flash-lite',
         contents: messages,
         config: {
           systemInstruction,
