@@ -271,7 +271,7 @@ export default function AIStudio() {
             </div>
 
             <div className="p-4 border-t border-gray-100 text-xs text-gray-400 text-center">
-              Gemini 3.5 Flash Lite
+              Xray
             </div>
           </motion.aside>
         )}
@@ -298,7 +298,7 @@ export default function AIStudio() {
               </div>
             </div>
             <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 tracking-tight">
-              Gemini Studio
+              Xray
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -476,7 +476,7 @@ export default function AIStudio() {
               </div>
             </div>
             <div className="text-center mt-3 text-[11px] text-gray-400">
-              Gemini 3.5 Flash Lite は不正確な情報を表示する場合があります。
+              Xray は不正確な情報を表示する場合があります。
             </div>
           </div>
         </div>
