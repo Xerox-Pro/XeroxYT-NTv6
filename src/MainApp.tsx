@@ -509,6 +509,9 @@ export default function MainApp() {
         }
       }
 
+      // Fetch recommendations from API
+      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&userHashtags=${encodeURIComponent(userHashtags)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
+
       let publicData: Video[] = [];
       if (Array.isArray(result)) {
         publicData = result;
