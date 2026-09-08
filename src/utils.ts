@@ -25,17 +25,30 @@ export function formatDuration(seconds: number): string {
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
+function hasValidContent(data: any): boolean {
+  if (!data) return false;
+  if (Array.isArray(data)) return data.length > 0;
+  if (Array.isArray(data.videos)) return data.videos.length > 0;
+  return true;
+}
+
 export async function fetchJSON(url: string, options?: RequestInit) {
   try {
     const isGet = !options || !options.method || options.method === 'GET';
-    const isApiCall = url.startsWith('/api/');
-    const isTimeSensitive = url.includes('/sync/') || url.includes('/auth/');
+    const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
+    const isTimeSensitive = 
+      url.includes('/sync/') || 
+      url.includes('/auth/') || 
+      url.includes('/recommendations') || 
+      url.includes('/stream') || 
+      url.includes('/edu') ||
+      url.includes('refreshNonce=');
     
     // Check IndexedDB cache for GET requests
     if (isGet && isApiCall && !isTimeSensitive) {
       try {
         const cached = await get(url);
-        if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+        if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_TTL_MS) && hasValidContent(cached.data)) {
           return cached.data;
         }
       } catch (e) {
@@ -68,8 +81,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
     const data = await res.json();
     
-    // Save to IndexedDB cache
-    if (isGet && isApiCall && !isTimeSensitive) {
+    // Save to IndexedDB cache (only if valid content)
+    if (isGet && isApiCall && !isTimeSensitive && hasValidContent(data)) {
       try {
         await set(url, { timestamp: Date.now(), data });
       } catch (e) {
@@ -88,7 +101,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     if (isGet) {
        try {
          const cached = await get(url);
-         if (cached && cached.data) {
+         if (cached && hasValidContent(cached.data)) {
            return cached.data;
          }
        } catch (e) {

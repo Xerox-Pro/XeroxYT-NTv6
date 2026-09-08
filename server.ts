@@ -362,6 +362,105 @@ const decryptData = (encryptedData: any) => {
 
 async function startServer() {
   const app = express();
+
+// --- /stream/:videoId (/360/:videoId) & /edu/:id (/scratch-edu/:id) Endpoints ---
+const streamCache = new Map<string, { url: string; expires: number }>();
+
+// メモリキャッシュの肥大化を防ぐ定期クリーンアップ (5分毎)
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of streamCache.entries()) {
+    if (v.expires <= now) streamCache.delete(k);
+  }
+}, 5 * 60 * 1000);
+
+const handleStreamRequest = async (req: express.Request, res: express.Response) => {
+  try {
+    const videoId = req.params.videoId || req.params.id;
+    if (!videoId) return res.status(400).send("Video ID is required");
+
+    const now = Date.now();
+    const cached = streamCache.get(videoId);
+    if (cached && cached.expires > now) {
+      res.setHeader("Content-Type", "text/plain");
+      return res.send(cached.url);
+    }
+
+    const apiUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv=${videoId}&formatId=2`;
+    
+    const response = await fetch(apiUrl, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      },
+      redirect: "follow"
+    });
+
+    if (!response.ok) {
+      return res.status(500).send("Error fetching stream URL");
+    }
+
+    const finalUrl = response.url;
+    streamCache.set(videoId, { url: finalUrl, expires: now + 60000 });
+    
+    if (streamCache.size > 1000) {
+      for (const [k, v] of streamCache.entries()) {
+        if (v.expires <= now) streamCache.delete(k);
+      }
+    }
+
+    res.setHeader("Content-Type", "text/plain");
+    return res.send(finalUrl);
+  } catch (err) {
+    console.error("Stream API Error:", err);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+app.get(["/stream/:videoId", "/360/:videoId", "/api/stream/:videoId", "/api/360/:videoId"], handleStreamRequest);
+
+const eduConfigCache = { params: "", expires: 0 };
+
+const handleEduRequest = async (req: express.Request, res: express.Response) => {
+  try {
+    const id = req.params.id || req.params.videoId;
+    if (!id) return res.status(400).send("ID is required");
+
+    let params = "?rel=0&autoplay=1";
+    const now = Date.now();
+
+    if (eduConfigCache.expires > now) {
+      params = eduConfigCache.params;
+    } else {
+      try {
+        const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json");
+        if (confRes.ok) {
+          const config = await confRes.json();
+          if (config && typeof config.params === "string") {
+            params = config.params;
+            eduConfigCache.params = params;
+            eduConfigCache.expires = now + 5 * 60 * 1000;
+          }
+        }
+      } catch (e) {
+        console.warn("Failed to fetch edu config, using fallback/cache:", e);
+        if (eduConfigCache.params) {
+           params = eduConfigCache.params;
+        }
+      }
+    }
+
+    const eduUrl = `https://www.youtubeeducation.com/embed/${id}${params}`;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    return res.send(eduUrl);
+  } catch (err) {
+    console.error("Edu API Error:", err);
+    res.status(500).send("Internal Server Error");
+  }
+};
+
+app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"], handleEduRequest);
+
+
   const PORT = 3000;
 
   app.use(express.json({ limit: "10mb" }));
@@ -411,11 +510,8 @@ async function startServer() {
         { headers: getGithubHeaders() },
       );
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ success: true });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ success: true });
     } catch (err: any) {
       console.error("Save error:", err.response?.data || err.message);
       res.status(500).json({ error: "Failed to save to GitHub" });
@@ -450,18 +546,12 @@ async function startServer() {
       );
 
       const data = decryptData(encryptedPayload);
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ success: true, data });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ success: true, data });
     } catch (err: any) {
       if (err.response?.status === 404) {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ success: true, data: null }); // No existing data
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ success: true, data: null }); // No existing data
       }
       console.error("Load error:", err.response?.data || err.message);
       res.status(500).json({ error: "Failed to load from GitHub" });
@@ -476,11 +566,8 @@ async function startServer() {
 
   // Health Check
   app.get("/api/health", (req, res) => {
-    res.setHeader(
-      "Cache-Control",
-      "s-maxage=3600, stale-while-revalidate=86400",
-    );
-    res.json({
+    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
       status: "ok",
       yt_initialized: !!yt,
       timestamp: new Date().toISOString(),
@@ -527,11 +614,8 @@ async function startServer() {
       currentAuthFlow = await youtube.session.signIn();
       authFlowExpiry = Date.now() + 10 * 60 * 1000; // 10 mins
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         userCode: currentAuthFlow.user_code,
         verificationUrl: currentAuthFlow.verification_url,
       });
@@ -573,11 +657,8 @@ async function startServer() {
       });
 
       if (result.status === "pending") {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ success: false, status: "pending" });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ success: false, status: "pending" });
       }
 
       const youtube = await getYt();
@@ -590,11 +671,8 @@ async function startServer() {
           ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url ||
         "";
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         success: true,
         user: {
           name: userName,
@@ -615,11 +693,8 @@ async function startServer() {
     try {
       const youtube = await getYt();
       await youtube.session.signOut();
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ success: true });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Logout failed" });
     }
@@ -1644,11 +1719,8 @@ async function startServer() {
           [finalVideos[i], finalVideos[j]] = [finalVideos[j], finalVideos[i]];
         }
 
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
           videos: finalVideos,
           aiKeywords: geminiKeywords,
           seed: seed,
@@ -1663,22 +1735,16 @@ async function startServer() {
         .map((v: any) => formatVideoObject(v))
         .filter((v: any) => v && v.videoId);
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         videos: fallbackVideos,
         aiKeywords: [],
         seed: seed,
       });
     } catch (err) {
       console.error("[Recs] Recommendations API error:", err);
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ videos: [], aiKeywords: [], seed: seed });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ videos: [], aiKeywords: [], seed: seed });
     }
   });
 
@@ -1809,19 +1875,13 @@ async function startServer() {
         now - lastForceRefreshTime < REFRESH_COOLDOWN_MS &&
         cachedEduKey
       ) {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ key: cachedEduKey, rateLimited: true });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ key: cachedEduKey, rateLimited: true });
       }
 
       if (!forceRefresh && cachedEduKey && now - eduKeyFetchTime < ONE_DAY_MS) {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ key: cachedEduKey });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ key: cachedEduKey });
       }
 
       if (forceRefresh) {
@@ -1847,11 +1907,8 @@ async function startServer() {
           queryPart = queryPart.replaceAll("&amp;", "&");
           cachedEduKey = queryPart;
           eduKeyFetchTime = now;
-          return res.setHeader(
-            "Cache-Control",
-            "s-maxage=3600, stale-while-revalidate=86400",
-          );
-          res.json({ key: queryPart });
+          res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ key: queryPart });
         }
       }
       throw new Error("Invalid scratch-edu key response format");
@@ -1863,11 +1920,8 @@ async function startServer() {
         cachedEduKey = fallbackKey;
         eduKeyFetchTime = Date.now();
       }
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ key: cachedEduKey });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ key: cachedEduKey });
     }
   });
 
@@ -1889,11 +1943,8 @@ async function startServer() {
         typeof resp.data === "string" ? resp.data : String(resp.data)
       ).trim();
       if (downloadUrl.startsWith("http")) {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ url: downloadUrl });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ url: downloadUrl });
       }
       throw new Error("Invalid download URL response");
     } catch (err: any) {
@@ -2018,11 +2069,8 @@ async function startServer() {
         .filter((k: string) => k.length > 0);
       const combinedTags = Array.from(new Set([...hashMatches, ...keywords]));
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         videoId: req.params.id,
         title: basic?.title || primary?.title?.text,
         author: owner?.author?.name || basic?.author || "Unknown",
@@ -2144,11 +2192,8 @@ async function startServer() {
         }
       }
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         id: playlistId,
         title,
         description,
@@ -2445,11 +2490,8 @@ async function startServer() {
           }
         }
 
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
           id: channelId,
           title: channelTitle,
           description:
@@ -2521,11 +2563,8 @@ async function startServer() {
         ? firstVideo.authorAvatar
         : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random`;
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         id: channelId,
         title: authorName,
         description: "",
@@ -2545,11 +2584,8 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[Channel] Final channel handler error:", err);
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         id: req.params.id,
         title: req.params.id,
         description: "",
@@ -2578,11 +2614,8 @@ async function startServer() {
     try {
       const { items } = req.body || {};
       if (!Array.isArray(items) || items.length === 0) {
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ results: {} });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ results: {} });
       }
 
       const youtube = await getYt();
@@ -2712,11 +2745,8 @@ async function startServer() {
         }),
       );
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ results });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ results });
     } catch (e: any) {
       console.error("[Batch Endpoint Error]:", e);
       res.status(500).json({ error: e.message });
@@ -2781,11 +2811,8 @@ async function startServer() {
       if (session && session.pages.has(page)) {
         session.lastAccess = now;
         const pageVideos = session.pages.get(page) || [];
-        return res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
           page: page,
           videos: pageVideos,
           hasMore: session.hasMore || pageVideos.length > 0,
@@ -2850,11 +2877,8 @@ async function startServer() {
           const pageVideos = session.pages.get(page) || [];
 
           if (pageVideos.length > 0) {
-            return res.setHeader(
-              "Cache-Control",
-              "s-maxage=3600, stale-while-revalidate=86400",
-            );
-            res.json({
+            res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
               page: page,
               videos: pageVideos,
               hasMore: session.hasMore,
@@ -2904,11 +2928,8 @@ async function startServer() {
               });
             }
 
-            return res.setHeader(
-              "Cache-Control",
-              "s-maxage=3600, stale-while-revalidate=86400",
-            );
-            res.json({
+            res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
               page: page,
               videos: pageVideos,
               hasMore:
@@ -2920,22 +2941,16 @@ async function startServer() {
         }
       }
 
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({
         page: page,
         videos: [],
         hasMore: false,
       });
     } catch (e: any) {
       console.error("[Channel Tab API Error]:", e);
-      res.setHeader(
-        "Cache-Control",
-        "s-maxage=3600, stale-while-revalidate=86400",
-      );
-      res.json({ page, videos: [], hasMore: false });
+      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ page, videos: [], hasMore: false });
     }
   });
 
@@ -2984,11 +2999,8 @@ async function startServer() {
           },
         });
 
-        res.setHeader(
-          "Cache-Control",
-          "s-maxage=3600, stale-while-revalidate=86400",
-        );
-        res.json({ text: response.text });
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ text: response.text });
       } catch (e) {
         console.error("[AI Studio] Error calling Gemini API:", e);
         res.status(500).json({ error: e.message || String(e) });

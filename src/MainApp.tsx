@@ -509,12 +509,28 @@ export default function MainApp() {
         }
       }
 
-      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&userHashtags=${encodeURIComponent(userHashtags)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
-      const publicData = result.videos || [];
+      let publicData: Video[] = [];
+      if (Array.isArray(result)) {
+        publicData = result;
+      } else if (result && Array.isArray(result.videos)) {
+        publicData = result.videos;
+      }
       
       // AIの分析結果を保存
-      if (result.aiKeywords && result.aiKeywords.length > 0) {
+      if (result && result.aiKeywords && result.aiKeywords.length > 0) {
         setAiInterests(result.aiKeywords);
+      }
+
+      // フォールバック: 初回読み込みで動画が取得できなかった場合は人気動画(trending)を表示
+      if (publicData.length === 0 && data.length === 0 && pageNum === 1) {
+        try {
+          const trendingData = await fetchJSON('/api/trending');
+          if (Array.isArray(trendingData) && trendingData.length > 0) {
+            publicData = trendingData;
+          }
+        } catch (e) {
+          console.warn('Fallback trending fetch error:', e);
+        }
       }
       
       updateCache(publicData);
