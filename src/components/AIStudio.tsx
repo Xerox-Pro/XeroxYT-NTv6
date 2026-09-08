@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft, Cpu } from 'lucide-react';
+import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface FileData {
@@ -325,8 +325,7 @@ export default function AIStudio() {
 
           <div className="flex items-center gap-3">
             {/* Model Selector */}
-            <div className="flex items-center gap-2 bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-xl">
-              <Cpu className="w-4 h-4 text-purple-600 shrink-0" />
+            <div className="flex items-center bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-xl">
               <select
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}

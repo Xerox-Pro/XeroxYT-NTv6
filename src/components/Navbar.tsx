@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck } from 'lucide-react';
+import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 
@@ -118,6 +118,15 @@ export default function Navbar({
 
       {/* 右側: ログイン/アバター */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <Link
+          to="/aistudio"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-full transition-colors text-sm font-medium shadow-xs"
+          title="Xrayを開く"
+        >
+          <Sparkles size={16} />
+          <span>Xray</span>
+        </Link>
+
         {userInfo ? (
           <div className="relative" ref={dropdownRef}>
             <motion.div 
