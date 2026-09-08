@@ -120,7 +120,7 @@ export default function Navbar({
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <Link
           to="/aistudio"
-          className="px-3.5 py-1.5 bg-black hover:bg-gray-800 text-white rounded-full transition-colors text-sm font-medium shadow-xs"
+          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
           title="Xrayを開く"
         >
           Xray
