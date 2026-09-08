@@ -865,7 +865,7 @@ export default function MainApp() {
           ) : view === 'debug' ? (
             <DebugAPI />
           ) : loading && videos.length === 0 ? (
-            <VideoSkeleton count={16} />
+            <VideoSkeleton count={12} />
           ) : error && videos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-gray-700 gap-3 bg-white">
               <AlertCircle className="w-10 h-10 text-red-500" />
@@ -879,14 +879,14 @@ export default function MainApp() {
             </div>
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
-            <div className="p-4 sm:p-6 max-w-[2200px] mx-auto bg-white min-h-screen">
+            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
               {view === 'search' && (
                 <h2 className="text-lg font-bold text-gray-900 tracking-tight mb-6 border-b border-gray-200 pb-3">
                   "{searchQuery}" の検索結果
                 </h2>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 md:landscape:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-x-6 gap-y-10">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
                 {videos.map((video, idx) => (
                   <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard
