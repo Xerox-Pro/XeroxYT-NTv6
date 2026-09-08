@@ -2213,6 +2213,30 @@ try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBas
     });
   }
 
+  
+  // --- AI Studio API ---
+  app.post("/api/aistudio/chat", express.json({ limit: '50mb' }), async (req, res) => {
+    try {
+      const { messages, systemInstruction, temperature } = req.body;
+      
+      const response = await genAI.models.generateContent({
+        model: 'gemini-3.0-flash',
+        contents: messages,
+        config: {
+          systemInstruction,
+          temperature: temperature || 0.7,
+        }
+      });
+      
+      res.json({ text: response.text });
+    } catch (e) {
+      console.error("[AI Studio] Error calling Gemini API:", e);
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  });
+
+  // ---------------------
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
     // Warm up YouTube client
