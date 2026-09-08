@@ -2217,10 +2217,11 @@ try { info = await youtube.getInfo(id); } catch(e) { info = await youtube.getBas
   // --- AI Studio API ---
   app.post("/api/aistudio/chat", express.json({ limit: '50mb' }), async (req, res) => {
     try {
-      const { messages, systemInstruction, temperature } = req.body;
+      const { messages, systemInstruction, temperature, model } = req.body;
       
+      const selectedModel = model || 'gemini-3.5-flash-lite';
       const response = await genAI.models.generateContent({
-        model: 'gemini-3.5-flash-lite',
+        model: selectedModel,
         contents: messages,
         config: {
           systemInstruction,

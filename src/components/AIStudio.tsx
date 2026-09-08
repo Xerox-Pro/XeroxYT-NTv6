@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
+import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft, Cpu } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
 interface FileData {
@@ -29,12 +29,23 @@ interface ChatSession {
   createdAt: number;
 }
 
+const AVAILABLE_MODELS = [
+  { id: 'gemini-3.5-flash', name: 'Gemini 3.5 Flash' },
+  { id: 'gemini-3.5-flash-lite', name: 'Gemini 3.5 Flash Lite' },
+  { id: 'gemini-3.1-pro-preview', name: 'Gemini 3.1 Pro' },
+  { id: 'gemini-3.0-flash', name: 'Gemini 3.0 Flash' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+];
+
 export default function AIStudio() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
     try {
       const saved = localStorage.getItem('gemini_chat_sessions');
       if (saved) {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
       }
     } catch (e) {
       console.error(e);
@@ -53,6 +64,7 @@ export default function AIStudio() {
     return sessions[0]?.id || 'default-1';
   });
 
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3.5-flash-lite');
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<FileData[]>([]);
   const [loading, setLoading] = useState(false);
@@ -128,22 +140,31 @@ export default function AIStudio() {
 
   const deleteSession = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (sessions.length <= 1) {
-      // Keep at least one session
-      setSessions([{
+    const updated = sessions.filter(s => s.id !== id);
+    if (updated.length === 0) {
+      const newSession: ChatSession = {
         id: Date.now().toString(),
         title: '新しいチャット',
         messages: [],
         createdAt: Date.now(),
-      }]);
-      setCurrentSessionId(sessions[0].id);
-      return;
+      };
+      setSessions([newSession]);
+      setCurrentSessionId(newSession.id);
+    } else {
+      setSessions(updated);
+      if (currentSessionId === id) {
+        setCurrentSessionId(updated[0].id);
+      }
     }
-    const updated = sessions.filter(s => s.id !== id);
-    setSessions(updated);
-    if (currentSessionId === id) {
-      setCurrentSessionId(updated[0].id);
-    }
+  };
+
+  const clearCurrentChat = () => {
+    setSessions(prev => prev.map(s => {
+      if (s.id === currentSessionId) {
+        return { ...s, messages: [], title: '新しいチャット' };
+      }
+      return s;
+    }));
   };
 
   const sendMessage = async () => {
@@ -161,7 +182,6 @@ export default function AIStudio() {
     const userMessage: Message = { role: 'user', parts: newParts };
     const updatedMessages = [...messages, userMessage];
     
-    // Update session title automatically if it's the first message
     const titleText = input.trim() || '添付ファイル付きチャット';
     const currentTitle = messages.length === 0 ? (titleText.length > 20 ? titleText.slice(0, 20) + '...' : titleText) : currentSession.title;
 
@@ -183,7 +203,8 @@ export default function AIStudio() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: updatedMessages,
-          systemInstruction: 'あなたは親切で有能なAIアシスタントです。'
+          systemInstruction: 'あなたは親切で有能なAIアシスタントです。',
+          model: selectedModel
         })
       });
       
@@ -271,7 +292,7 @@ export default function AIStudio() {
             </div>
 
             <div className="p-4 border-t border-gray-100 text-xs text-gray-400 text-center">
-              Xray
+              Xray Engine
             </div>
           </motion.aside>
         )}
@@ -301,11 +322,24 @@ export default function AIStudio() {
               Xray
             </h1>
           </div>
+
           <div className="flex items-center gap-3">
+            {/* Model Selector */}
+            <div className="flex items-center gap-2 bg-gray-100 border border-gray-200 px-3 py-1.5 rounded-xl">
+              <Cpu className="w-4 h-4 text-purple-600 shrink-0" />
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                className="bg-transparent text-xs font-semibold text-gray-700 focus:outline-none cursor-pointer"
+              >
+                {AVAILABLE_MODELS.map(m => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+
             <button 
-              onClick={() => {
-                setSessions(prev => prev.map(s => s.id === currentSessionId ? { ...s, messages: [] } : s));
-              }}
+              onClick={clearCurrentChat}
               className="p-2 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-full transition-colors"
               title="現在のチャットをクリア"
             >
@@ -413,7 +447,7 @@ export default function AIStudio() {
         </main>
 
         {/* Input Area */}
-        <div className="fixed bottom-0 right-0 left-0 md:left-[var(--sidebar-width,0px)] bg-gradient-to-t from-[#F8F9FA] via-[#F8F9FA]/90 to-transparent pt-10 pb-6 px-4 transition-all" style={{ left: sidebarOpen ? '280px' : '0px' }}>
+        <div className="fixed bottom-0 right-0 left-0 bg-gradient-to-t from-[#F8F9FA] via-[#F8F9FA]/90 to-transparent pt-10 pb-6 px-4 transition-all" style={{ left: sidebarOpen ? '280px' : '0px' }}>
           <div className="max-w-4xl mx-auto relative">
             <div className="relative flex flex-col bg-white border border-gray-200 rounded-3xl overflow-hidden focus-within:border-purple-500 focus-within:ring-2 focus-within:ring-purple-500/20 transition-all shadow-lg">
               
