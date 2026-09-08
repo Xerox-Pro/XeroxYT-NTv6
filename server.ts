@@ -2975,8 +2975,25 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+
+    // Service Worker やマニフェスト、HTMLはキャッシュさせず、サイト変更を即時検知できるようにする
+    app.use((req, res, next) => {
+      if (
+        req.path === "/sw.js" || 
+        req.path === "/registerSW.js" || 
+        req.path.startsWith("/workbox-") ||
+        req.path === "/manifest.webmanifest" ||
+        req.path === "/index.html" ||
+        req.path === "/"
+      ) {
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      }
+      next();
+    });
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
