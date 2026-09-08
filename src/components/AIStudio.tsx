@@ -297,7 +297,7 @@ export default function AIStudio() {
                 <Sparkles className="w-4 h-4 text-purple-600" />
               </div>
             </div>
-            <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 tracking-tight">
+            <h1 className="text-xl font-bold text-gray-900 tracking-tight">
               Xray
             </h1>
           </div>
