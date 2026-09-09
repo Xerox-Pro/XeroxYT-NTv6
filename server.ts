@@ -575,42 +575,6 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     });
   });
 
-  // Download Stream Info API via RapidAPI (fallback/alternative)
-  app.get("/api/download-info/:id", async (req, res) => {
-    const videoId = req.params.id;
-    const RAPID_API_HOST = 'ytstream-download-youtube-videos.p.rapidapi.com';
-    const keys = [
-      process.env.RAPIDAPI_KEY_1 || '69e2995a79mshcb657184ba6731cp16f684jsn32054a070ba5',
-      process.env.RAPIDAPI_KEY_2 || 'ece95806fdmshe322f47bce30060p1c3411jsn41a3d4820039',
-      process.env.RAPIDAPI_KEY_3 || '41c9265bc6msha0fa7dfc1a63eabp18bf7cjsne6ef10b79b38'
-    ];
-    const selectedKey = keys[Math.floor(Math.random() * keys.length)];
-
-    const url = `https://${RAPID_API_HOST}/dl?id=${videoId}`;
-    const options = {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': selectedKey,
-        'x-rapidapi-host': RAPID_API_HOST,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    try {
-      const response = await fetch(url, options);
-      const data = await response.json();
-
-      if (data.status !== "OK") {
-        return res.status(400).json({ error: "Failed to fetch video data" });
-      }
-
-      res.json(data);
-    } catch (error) {
-      console.error("RapidAPI Error:", error);
-      res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
   // Debug API: Raw Search
   app.get("/api/debug/search", async (req, res) => {
     const q = (req.query.q as string) || "";
