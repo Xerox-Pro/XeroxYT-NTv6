@@ -813,7 +813,9 @@ async function startServer() {
       // Fetch the device and user code directly from Google's unblocked oauth2.googleapis.com API
       const payload = {
         client_id: clientId,
-        scope: "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content"
+        scope: "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content",
+        device_id: "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d", // Required to generate correct YouTube TV OAuth format code
+        device_model: "ytlr::"
       };
 
       console.log("[Auth] Fetching device code from unblocked Google APIs...");
