@@ -799,41 +799,25 @@ async function startServer() {
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
-      lastCredentials = null; // Reset lastCredentials to capture the new signin
+      lastCredentials = null; // Reset lastCredentials
       const youtube = await getYt();
       
-      let pendingFlow: any = null;
-      const onAuthPending = (flow: any) => {
-        console.log("[Auth] Captured auth-pending payload:", flow);
-        pendingFlow = flow;
+      // Load client ID if not already loaded
+      if (!youtube.session.oauth.client_id) {
+        youtube.session.oauth.client_id = await youtube.session.oauth.getClientID();
+      }
+
+      // Fetch the device and user code directly without starting any unstable background poll
+      const code_obj = await youtube.session.oauth.getDeviceAndUserCode();
+      console.log("[Auth] Direct device code generated:", code_obj.user_code);
+
+      currentAuthFlow = {
+        device_code: code_obj.device_code,
+        user_code: code_obj.user_code,
+        verification_url: code_obj.verification_url,
+        client: youtube.session.oauth.client_id
       };
-
-      // Listen for the pending event
-      youtube.session.once("auth-pending", onAuthPending);
-
-      // Start the signIn process asynchronously so it doesn't block the request
-      youtube.session.signIn().then((credentials) => {
-        console.log("[Auth] signIn completed asynchronously. Credentials received.");
-        lastCredentials = credentials;
-      }).catch((err) => {
-        console.error("[Auth] signIn async process finished/error:", err);
-      });
-
-      // Poll briefly for the auth-pending event to fire
-      for (let i = 0; i < 40; i++) {
-        if (pendingFlow) break;
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-
-      // Unregister to avoid leak if it didn't trigger
-      youtube.session.off("auth-pending", onAuthPending);
-
-      if (!pendingFlow) {
-        throw new Error("Google認証の開始（Device Code取得）がタイムアウトしました。");
-      }
-
-      currentAuthFlow = pendingFlow;
-      authFlowExpiry = Date.now() + (pendingFlow.expires_in || 1800) * 1000;
+      authFlowExpiry = Date.now() + (code_obj.expires_in || 1800) * 1000;
 
       res.setHeader("Cache-Control", "no-store");
       return res.json({
@@ -865,45 +849,79 @@ async function startServer() {
     }
 
     try {
-      // Check if the credentials have been captured yet
-      if (!lastCredentials) {
-        // Not yet authenticated
-        res.setHeader("Cache-Control", "no-store");
-        return res.json({ success: false, status: "pending" });
+      // Manually request Google's OAuth2 token endpoint on demand (during the active HTTP request)
+      // This completely solves the Cloud Run CPU throttling suspension issue!
+      const payload = {
+        client_id: currentAuthFlow.client.client_id,
+        client_secret: currentAuthFlow.client.client_secret,
+        code: currentAuthFlow.device_code,
+        grant_type: "http://oauth.net/grant_type/device/1.0"
+      };
+
+      let response;
+      try {
+        response = await axios.post("https://www.youtube.com/o/oauth2/token", payload, {
+          headers: {
+            "Content-Type": "application/json"
+          }
+        });
+      } catch (err: any) {
+        const errorData = err.response?.data;
+        if (errorData && errorData.error === "authorization_pending") {
+          // Still waiting for approval
+          res.setHeader("Cache-Control", "no-store");
+          return res.json({ success: false, status: "pending" });
+        }
+        // Other authenticaton error (e.g., code expired or access denied)
+        console.error("[Auth] Manual token fetch failed with oauth error:", errorData || err.message);
+        return res.status(400).json({ error: "認証中にエラーが発生しました。再度お試しください。" });
       }
 
-      console.log("[Auth] Polling captured credentials! Authenticating instance...");
-      const youtube = await getYt();
-      
-      // SignIn the current session with the newly acquired credentials
-      await youtube.session.signIn(lastCredentials);
+      const tokenData = response.data;
+      if (tokenData && tokenData.access_token) {
+        console.log("[Auth] Token received from Google. Authenticating instance...");
+        const youtube = await getYt();
 
-      const info = (await youtube.account.getInfo()) as any;
-      const userName =
-        info.contents?.on_response_received_endpoints?.[0]
-          ?.append_contributions_renderer?.user_name?.text || "YouTube User";
-      const userPicture =
-        info.contents?.on_response_received_endpoints?.[0]
-          ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url ||
-        "";
+        const credentials = {
+          access_token: tokenData.access_token,
+          refresh_token: tokenData.refresh_token,
+          expiry_date: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString(),
+          client: currentAuthFlow.client
+        };
 
-      console.log(`[Auth] User authenticated: ${userName}`);
+        // Authenticate the session
+        await youtube.session.signIn(credentials);
 
-      // Save credentials and clear flow state
-      const savedCredentials = { ...lastCredentials };
-      currentAuthFlow = null;
+        const info = (await youtube.account.getInfo()) as any;
+        const userName =
+          info.contents?.on_response_received_endpoints?.[0]
+            ?.append_contributions_renderer?.user_name?.text || "YouTube User";
+        const userPicture =
+          info.contents?.on_response_received_endpoints?.[0]
+            ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url ||
+          "";
+
+        console.log(`[Auth] User authenticated successfully: ${userName}`);
+
+        // Save credentials and clear flow state
+        lastCredentials = credentials;
+        currentAuthFlow = null;
+
+        res.setHeader("Cache-Control", "no-store");
+        return res.json({
+          success: true,
+          user: {
+            name: userName,
+            picture: userPicture,
+            email: "authenticated@youtube.com",
+          },
+          credentials,
+        });
+      }
 
       res.setHeader("Cache-Control", "no-store");
-      return res.json({
-        success: true,
-        user: {
-          name: userName,
-          picture: userPicture,
-          email: "authenticated@youtube.com",
-        },
-        credentials: savedCredentials,
-      });
-    } catch (err) {
+      return res.json({ success: false, status: "pending" });
+    } catch (err: any) {
       console.error("Auth poll error:", err);
       res
         .status(401)
