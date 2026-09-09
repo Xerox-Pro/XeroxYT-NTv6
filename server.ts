@@ -883,8 +883,8 @@ async function startServer() {
         });
       } catch (err: any) {
         const errorData = err.response?.data;
-        if (errorData && errorData.error === "authorization_pending") {
-          // Still waiting for approval
+        if (errorData && (errorData.error === "authorization_pending" || errorData.error === "slow_down")) {
+          // Still waiting for approval or Google requested to slow down polling (both are pending states)
           res.setHeader("Cache-Control", "no-store");
           return res.json({ success: false, status: "pending" });
         }

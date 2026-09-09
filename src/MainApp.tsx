@@ -529,16 +529,16 @@ export default function MainApp() {
           isPollingRef.current = false;
         } else {
           // If pending, poll again
-          timer = setTimeout(poll, 4000);
+          timer = setTimeout(poll, 6000);
         }
       } catch (err: any) {
         console.error('[Auth] Poll failed:', err);
         // Retry polling
-        timer = setTimeout(poll, 4000);
+        timer = setTimeout(poll, 6000);
       }
     };
 
-    timer = setTimeout(poll, 4000);
+    timer = setTimeout(poll, 6000);
     return () => {
       clearTimeout(timer);
     };
