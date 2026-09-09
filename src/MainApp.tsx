@@ -686,16 +686,6 @@ export default function MainApp() {
       const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).join(',');
       const userHashtags = JSON.stringify(localAI.getHashtagsMap());
       let data = [];
-      
-      // If logged in, prioritize liked content for the first page
-      if (userInfo && pageNum === 1) {
-        try {
-          data = await fetchJSON('/api/user/liked-videos');
-          updateCache(data);
-        } catch (err) {
-          console.warn('Failed to fetch liked videos for recommendations', err);
-        }
-      }
 
       // Fetch recommendations from API (deterministic parameters allow Vercel Edge CDN cache)
       const queryParams = new URLSearchParams({
@@ -965,12 +955,6 @@ export default function MainApp() {
           onHome={handleGoHome}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           initialSearchQuery={searchQuery}
-          userInfo={userInfo}
-          onLogin={handleLogin}
-          onLogout={handleLogout}
-          unreadNotificationsCount={unreadNotificationsCount}
-          notifications={notifications}
-          onVideoSelect={(id) => handleVideoSelect(id)}
         />
       </div>
 
@@ -1157,62 +1141,7 @@ export default function MainApp() {
         />
       )}
 
-      {/* YouTube Auth Flow Modal */}
-      {authFlow && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full text-center"
-          >
-            <h2 className="text-2xl font-bold text-gray-900 mb-4 font-sans">YouTube ログイン</h2>
-            <p className="text-gray-600 mb-6 leading-relaxed text-sm">
-              以下のURLにアクセスし、お手元のデバイスでコードを入力して承認してください。
-            </p>
-            {authError ? (
-              <div className="mb-4 text-center">
-                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 mb-6 text-sm text-left font-medium leading-relaxed">
-                  {authError}
-                </div>
-                <button 
-                  onClick={handleLogin}
-                  className="bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 px-6 rounded-xl text-sm transition-all shadow-md hover:shadow-lg"
-                >
-                  再試行
-                </button>
-              </div>
-            ) : (
-              <>
-                <div className="bg-gray-50 border border-gray-200 rounded-xl p-6 mb-6">
-                  <a 
-                    href={authFlow.verificationUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-red-600 font-bold text-lg hover:underline block mb-3 break-all"
-                  >
-                    {authFlow.verificationUrl}
-                  </a>
-                  <div className="text-3xl font-mono font-black text-gray-800 tracking-widest bg-white py-3 border border-gray-200 rounded-lg">
-                    {authFlow.userCode}
-                  </div>
-                </div>
-                <div className="flex items-center justify-center gap-2 text-sm text-gray-500 font-medium mb-2">
-                  <div className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
-                  承認を待機中...
-                </div>
-              </>
-            )}
-            <div className="flex flex-col gap-3">
-              <button 
-                onClick={() => { setAuthFlow(null); setIsPolling(false); isPollingRef.current = false; setAuthError(null); }}
-                className="text-gray-500 text-xs hover:text-gray-800 font-bold uppercase tracking-wider mt-2"
-              >
-                閉じる
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+
     </div>
   );
 }
