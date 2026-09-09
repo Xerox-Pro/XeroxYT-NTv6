@@ -134,4 +134,8 @@ export interface UserInfo {
   picture?: string;
   avatar?: string;
   sub?: string;
+  handle?: string;
+  subscriberCount?: string;
+  videoCount?: string;
+  bannerUrl?: string;
 }

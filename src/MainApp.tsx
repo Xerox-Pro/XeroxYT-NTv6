@@ -218,6 +218,75 @@ export default function MainApp() {
     }
   });
 
+  // YouTube Authenticated Features State
+  const [youtubePlaylists, setYoutubePlaylists] = useState<any[]>([]);
+  const [watchLaterVideos, setWatchLaterVideos] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(0);
+  const [showNotificationsMenu, setShowNotificationsMenu] = useState<boolean>(false);
+
+  const fetchYoutubeAuthData = async () => {
+    const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+    if (!ytCreds) return;
+
+    try {
+      const channelInfo = await fetchJSON('/api/user/channel-info');
+      if (channelInfo && channelInfo.id) {
+        setUserInfo(prev => {
+          if (!prev) return null;
+          const updated = {
+            ...prev,
+            handle: channelInfo.handle,
+            subscriberCount: channelInfo.subscriberCount,
+            videoCount: channelInfo.videoCount,
+            bannerUrl: channelInfo.bannerUrl,
+            picture: channelInfo.avatar || prev.picture
+          };
+          localStorage.setItem('xerox_user_info', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to fetch YouTube channel info:', e);
+    }
+
+    try {
+      const ytPlaylists = await fetchJSON('/api/user/playlists');
+      if (Array.isArray(ytPlaylists)) {
+        setYoutubePlaylists(ytPlaylists);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch YouTube playlists:', e);
+    }
+
+    try {
+      const wlVideos = await fetchJSON('/api/user/watch-later');
+      if (Array.isArray(wlVideos)) {
+        setWatchLaterVideos(wlVideos);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch Watch Later videos:', e);
+    }
+
+    try {
+      const countRes = await fetchJSON('/api/user/notifications/unread-count');
+      if (countRes && typeof countRes.count === 'number') {
+        setUnreadNotificationsCount(countRes.count);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch unread notifications count:', e);
+    }
+
+    try {
+      const notifs = await fetchJSON('/api/user/notifications');
+      if (Array.isArray(notifs)) {
+        setNotifications(notifs);
+      }
+    } catch (e) {
+      console.warn('Failed to fetch notifications list:', e);
+    }
+  };
+
   const [isSyncing, setIsSyncing] = useState(false);
   const skipNextSync = useRef(false);
 
@@ -522,6 +591,9 @@ export default function MainApp() {
           } catch (e) {
             console.warn('Failed to sync subscriptions on login:', e);
           }
+
+          // Fetch additional YouTube features data
+          fetchYoutubeAuthData();
         } else if (res && res.status === 'error') {
           console.error('[Auth] Polling returned error:', res.error);
           setAuthError(res.error || '認証中にエラーが発生しました。最初からやり直してください。');
@@ -561,6 +633,9 @@ export default function MainApp() {
         } catch (e) {
           console.warn('Initial subscriptions sync failed:', e);
         }
+
+        // Fetch additional YouTube features data
+        fetchYoutubeAuthData();
       }
     };
     initYtAuth();
@@ -576,6 +651,11 @@ export default function MainApp() {
     setUserInfo(null);
     setSubscriptions([]);
     setWatchHistory([]);
+    setYoutubePlaylists([]);
+    setWatchLaterVideos([]);
+    setNotifications([]);
+    setUnreadNotificationsCount(0);
+    setShowNotificationsMenu(false);
     setPage(1);
     fetchRecommendations(1, false);
   };
@@ -888,6 +968,9 @@ export default function MainApp() {
           userInfo={userInfo}
           onLogin={handleLogin}
           onLogout={handleLogout}
+          unreadNotificationsCount={unreadNotificationsCount}
+          notifications={notifications}
+          onVideoSelect={(id) => handleVideoSelect(id)}
         />
       </div>
 
@@ -972,6 +1055,8 @@ export default function MainApp() {
               onImportYouTubePlaylist={handleImportYouTubePlaylist}
               onUpdatePlaylistInfo={handleUpdatePlaylistInfo}
               onAddVideosToPlaylist={handleAddVideosToPlaylist}
+              youtubePlaylists={youtubePlaylists}
+              watchLaterVideos={watchLaterVideos}
             />
           ) : view === 'history' ? (
             loadingHistory ? (

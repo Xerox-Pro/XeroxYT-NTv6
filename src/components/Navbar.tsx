@@ -14,6 +14,9 @@ interface NavbarProps {
   userInfo: UserInfo | null;
   onLogin: () => void;
   onLogout: () => void;
+  unreadNotificationsCount?: number;
+  notifications?: any[];
+  onVideoSelect?: (id: string) => void;
 }
 
 export default function Navbar({ 
@@ -23,11 +26,16 @@ export default function Navbar({
   initialSearchQuery,
   userInfo,
   onLogin,
-  onLogout
+  onLogout,
+  unreadNotificationsCount = 0,
+  notifications = [],
+  onVideoSelect
 }: NavbarProps) {
   const [query, setQuery] = useState(initialSearchQuery);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const notificationsRef = useRef<HTMLDivElement>(null);
 
   // 検索履歴 & 候補
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
@@ -175,6 +183,9 @@ export default function Navbar({
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
         setIsProfileOpen(false);
+      }
+      if (notificationsRef.current && !notificationsRef.current.contains(event.target as Node)) {
+        setIsNotificationsOpen(false);
       }
       if (searchContainerRef.current && !searchContainerRef.current.contains(event.target as Node)) {
         setIsSearchFocused(false);
@@ -362,6 +373,101 @@ export default function Navbar({
           Xray
         </Link>
 
+        {userInfo && (
+          <div className="relative" ref={notificationsRef}>
+            <motion.button
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+              className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 text-gray-800 relative transition-colors"
+              title="通知"
+            >
+              <Bell size={21} />
+              {unreadNotificationsCount && unreadNotificationsCount > 0 ? (
+                <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] font-bold rounded-full w-4.5 h-4.5 flex items-center justify-center border border-white">
+                  {unreadNotificationsCount}
+                </span>
+              ) : null}
+            </motion.button>
+
+            <AnimatePresence>
+              {isNotificationsOpen && (
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96, y: -6 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: -6 }}
+                  transition={{ duration: 0.15, ease: "easeOut" }}
+                  className="absolute right-[-80px] sm:right-0 mt-2 w-80 sm:w-96 bg-white border border-gray-200 shadow-2xl rounded-2xl py-2 z-[60] overflow-hidden"
+                >
+                  <div className="px-4 py-2.5 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                    <span className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                      <Bell size={16} className="text-red-600" />
+                      通知
+                    </span>
+                    {unreadNotificationsCount && unreadNotificationsCount > 0 ? (
+                      <span className="text-xs bg-red-50 text-red-600 font-semibold px-2 py-0.5 rounded-full">
+                        未読 {unreadNotificationsCount} 件
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="max-h-[360px] overflow-y-auto divide-y divide-gray-100">
+                    {notifications && notifications.length > 0 ? (
+                      notifications.map((n) => (
+                        <div
+                          key={n.id || Math.random().toString()}
+                          onClick={() => {
+                            if (n.videoId && onVideoSelect) {
+                              onVideoSelect(n.videoId);
+                            }
+                            setIsNotificationsOpen(false);
+                          }}
+                          className={`flex gap-3 px-4 py-3 hover:bg-gray-50 transition-colors cursor-pointer ${
+                            !n.read ? 'bg-blue-50/10' : ''
+                          }`}
+                        >
+                          {n.avatar ? (
+                            <img
+                              src={n.avatar}
+                              alt="author"
+                              className="w-10 h-10 rounded-full object-cover shrink-0 border border-gray-100"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center shrink-0">
+                              <Bell size={16} className="text-gray-400" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-800 leading-normal line-clamp-2">
+                              {n.message}
+                            </p>
+                            <span className="text-[10px] text-gray-400 mt-1 block">
+                              {n.sentTime}
+                            </span>
+                          </div>
+                          {n.thumbnail && (
+                            <img
+                              src={n.thumbnail}
+                              alt="video thumbnail"
+                              className="w-12 h-8 rounded-md object-cover shrink-0 border border-gray-100"
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                        </div>
+                      ))
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 text-gray-400">
+                        <Bell size={32} className="stroke-[1.2] mb-2" />
+                        <span className="text-xs font-medium">通知はありません</span>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
+
         {userInfo ? (
           <div className="relative" ref={dropdownRef}>
             <motion.div 
@@ -383,14 +489,55 @@ export default function Navbar({
                   animate={{ opacity: 1, scale: 1, y: 0 }}
                   exit={{ opacity: 0, scale: 0.96, y: -6 }}
                   transition={{ duration: 0.15, ease: "easeOut" }}
-                  className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 shadow-2xl rounded-xl py-2 z-[60]"
+                  className="absolute right-0 mt-2 w-72 bg-white border border-gray-200 shadow-2xl rounded-2xl overflow-hidden z-[60]"
                 >
-                  <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-                    <Avatar src={userInfo.picture} name={userInfo.name} className="w-10 h-10 text-sm" />
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold text-gray-900 truncate">{userInfo.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{userInfo.email}</div>
-                      <div className="text-[10px] text-red-600 font-medium mt-0.5">YouTube 認証済み</div>
+                  {/* Banner Header Background */}
+                  {userInfo.bannerUrl ? (
+                    <div className="h-16 w-full relative bg-gray-100 border-b border-gray-100">
+                      <img 
+                        src={userInfo.bannerUrl} 
+                        alt="banner" 
+                        className="w-full h-full object-cover" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                    </div>
+                  ) : (
+                    <div className="h-4 w-full bg-gradient-to-r from-red-500 to-red-600" />
+                  )}
+
+                  <div className="px-4 py-4 border-b border-gray-100 flex items-start gap-3 relative">
+                    <Avatar 
+                      src={userInfo.picture} 
+                      name={userInfo.name} 
+                      className={`w-11 h-11 text-sm shrink-0 border-2 border-white ring-1 ring-gray-200 ${userInfo.bannerUrl ? '-mt-8 relative z-10' : ''}`} 
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-gray-900 truncate">
+                        {userInfo.name}
+                      </div>
+                      {userInfo.handle && (
+                        <div className="text-xs text-red-600 font-semibold truncate">{userInfo.handle}</div>
+                      )}
+                      <div className="text-[10px] text-gray-500 truncate">{userInfo.email}</div>
+                      
+                      {/* Subscriber and Video counts */}
+                      {(userInfo.subscriberCount || userInfo.videoCount) && (
+                        <div className="flex gap-2.5 mt-1.5 pt-1.5 border-t border-gray-100/70">
+                          {userInfo.subscriberCount && (
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">登録者数</span>
+                              <span className="text-xs font-bold text-gray-800">{userInfo.subscriberCount}</span>
+                            </div>
+                          )}
+                          {userInfo.videoCount && (
+                            <div className="flex flex-col">
+                              <span className="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">動画数</span>
+                              <span className="text-xs font-bold text-gray-800">{userInfo.videoCount}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                   

@@ -102,6 +102,10 @@ async function getInnertubeInstance(req: express.Request) {
     return getYt();
   }
 
+  if (!credentialsObj.refresh_token) {
+    credentialsObj.refresh_token = "dummy_refresh_token_for_validation";
+  }
+
   const keySource = credentialsObj.refresh_token || credentialsObj.access_token || credentialsHeader;
   const cacheKey = crypto.createHash("sha256").update(keySource).digest("hex");
 
@@ -916,7 +920,7 @@ async function startServer() {
 
         const credentials = {
           access_token: tokenData.access_token,
-          refresh_token: tokenData.refresh_token,
+          refresh_token: tokenData.refresh_token || "dummy_refresh_token_for_validation",
           expiry_date: new Date(Date.now() + (tokenData.expires_in || 3600) * 1000).toISOString(),
           client: currentAuthFlow.client
         };
@@ -924,14 +928,38 @@ async function startServer() {
         // Authenticate the session
         await youtube.session.signIn(credentials);
 
-        const info = (await youtube.account.getInfo()) as any;
-        const userName =
-          info.contents?.on_response_received_endpoints?.[0]
-            ?.append_contributions_renderer?.user_name?.text || "YouTube User";
-        const userPicture =
-          info.contents?.on_response_received_endpoints?.[0]
-            ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url ||
-          "";
+        let userName = "YouTube User";
+        let userPicture = "";
+        try {
+          const accounts = await youtube.account.getInfo(true) as any[];
+          const activeAccount = accounts.find((a: any) => a.is_selected) || accounts[0];
+          if (activeAccount) {
+            userName = activeAccount.account_name?.toString() || "YouTube User";
+            userPicture = activeAccount.account_photo?.thumbnails?.[0]?.url || "";
+            console.log(`[Auth] Extracted user from AccountItem list: name=${userName}, picture=${userPicture}`);
+          }
+        } catch (err: any) {
+          console.warn("[Auth] Failed to get info using getInfo(true):", err.message);
+        }
+
+        // Fallback to the original method if the above failed or produced default values
+        if (userName === "YouTube User" || !userPicture) {
+          try {
+            const info = (await youtube.account.getInfo()) as any;
+            const fallbackName =
+              info.contents?.on_response_received_endpoints?.[0]
+                ?.append_contributions_renderer?.user_name?.text;
+            const fallbackPicture =
+              info.contents?.on_response_received_endpoints?.[0]
+                ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url;
+            
+            if (fallbackName) userName = fallbackName;
+            if (fallbackPicture) userPicture = fallbackPicture;
+            console.log(`[Auth] Extracted user via fallback: name=${userName}, picture=${userPicture}`);
+          } catch (err: any) {
+            console.warn("[Auth] Fallback getInfo failed:", err.message);
+          }
+        }
 
         console.log(`[Auth] User authenticated successfully: ${userName}`);
 
@@ -994,26 +1022,61 @@ async function startServer() {
   app.get("/api/user/subscriptions", async (req, res) => {
     try {
       const youtube = await getInnertubeInstance(req);
-      const subFeed = await youtube.getSubscriptionsFeed();
-      const videos = subFeed.videos || [];
-      const channelsMap = new Map<string, any>();
       
-      for (const v of videos) {
-        const channelId = v.author?.id || v.channel_id || v.author?.channel_id;
-        const channelTitle = v.author?.name || v.author?.text || v.author;
-        const channelAvatar = v.author?.thumbnail?.[0]?.url || v.author?.avatar?.[0]?.url || "";
-        
-        if (channelId && channelTitle) {
+      // Try to get actual subscribed channels from getChannelsFeed
+      let channels: any[] = [];
+      try {
+        const channelsFeed = await youtube.getChannelsFeed();
+        channels = channelsFeed.channels || [];
+        console.log(`[API] Fetched ${channels.length} channels from getChannelsFeed()`);
+      } catch (err: any) {
+        console.warn("[API] getChannelsFeed() failed, falling back to getSubscriptionsFeed():", err.message);
+      }
+
+      const channelsMap = new Map<string, any>();
+
+      // Populate from channels list
+      for (const c of channels) {
+        const channelId = c.id;
+        const channelTitle = c.author?.name || "Unknown Channel";
+        const channelAvatar = c.author?.thumbnails?.[0]?.url || "";
+        if (channelId) {
           channelsMap.set(channelId, {
             id: channelId,
             title: channelTitle,
             avatar: channelAvatar,
-            videoCount: "",
-            subscriberCount: ""
+            videoCount: c.video_count?.toString() || "",
+            subscriberCount: c.subscriber_count?.toString() || c.subscribers?.toString() || ""
           });
         }
       }
-      
+
+      // If empty, fallback to extracting from subscriptions feed (videos feed)
+      if (channelsMap.size === 0) {
+        try {
+          const subFeed = await youtube.getSubscriptionsFeed();
+          const videos = subFeed.videos || [];
+          for (const v of videos) {
+            const channelId = v.author?.id || v.channel_id || v.author?.channel_id;
+            const channelTitle = v.author?.name || v.author?.text || v.author;
+            const channelAvatar = v.author?.thumbnail?.[0]?.url || v.author?.avatar?.[0]?.url || "";
+            
+            if (channelId && channelTitle) {
+              channelsMap.set(channelId, {
+                id: channelId,
+                title: channelTitle,
+                avatar: channelAvatar,
+                videoCount: "",
+                subscriberCount: ""
+              });
+            }
+          }
+          console.log(`[API] Extracted ${channelsMap.size} channels from getSubscriptionsFeed() fallback`);
+        } catch (err: any) {
+          console.error("[API] getSubscriptionsFeed fallback failed:", err.message);
+        }
+      }
+
       const formatted = Array.from(channelsMap.values());
       return res.json(formatted);
     } catch (err: any) {
@@ -1031,6 +1094,124 @@ async function startServer() {
       return res.json(videos);
     } catch (err: any) {
       console.error("[API] Error fetching user history:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User's Playlists using YouTubei.js
+  app.get("/api/user/playlists", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const playlistFeed = await youtube.getPlaylists();
+      const playlists = playlistFeed.playlists || [];
+      
+      const formatted = playlists.map((p: any) => {
+        return {
+          id: p.id || p.playlist_id,
+          title: p.title?.toString() || "Untitled Playlist",
+          videoCount: p.video_count?.toString() || p.video_count_text?.toString() || "",
+          thumbnails: p.thumbnails?.[0]?.url || p.thumbnail?.thumbnails?.[0]?.url || ""
+        };
+      });
+      return res.json(formatted);
+    } catch (err: any) {
+      console.error("[API] Error fetching user playlists:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User's Watch Later using YouTubei.js
+  app.get("/api/user/watch-later", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const watchLaterPlaylist = await youtube.getPlaylist("WL");
+      const videos = (watchLaterPlaylist.videos || [])
+        .map((v: any) => formatVideoObject(v))
+        .filter((v: any) => v !== null);
+      return res.json(videos);
+    } catch (err: any) {
+      console.error("User watch later fetch error:", err);
+      return res.status(500).json({ error: "Failed to fetch watch later videos" });
+    }
+  });
+
+  // User's Own Channel Info using YouTubei.js
+  app.get("/api/user/channel-info", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const accounts = await youtube.account.getInfo(true) as any[];
+      const activeAccount = accounts.find((a: any) => a.is_selected) || accounts[0];
+      
+      if (!activeAccount) {
+        return res.status(404).json({ error: "No active account found" });
+      }
+
+      const channelId = activeAccount.id;
+      const userName = activeAccount.account_name?.toString() || "YouTube User";
+      const userPicture = activeAccount.account_photo?.thumbnails?.[0]?.url || "";
+      const handle = activeAccount.channel_handle?.toString() || "";
+      
+      let subscriberCount = "";
+      let videoCount = "";
+      let bannerUrl = "";
+      
+      try {
+        const channelDetails = await youtube.getChannel(channelId) as any;
+        subscriberCount = channelDetails.subscriber_count?.toString() || "";
+        videoCount = channelDetails.video_count?.toString() || "";
+        bannerUrl = (channelDetails.header as any)?.banner?.thumbnails?.[0]?.url || "";
+      } catch (e: any) {
+        console.warn("[API] Failed to fetch deep channel details, returning basic info:", e.message);
+      }
+
+      return res.json({
+        id: channelId,
+        name: userName,
+        avatar: userPicture,
+        handle: handle,
+        subscriberCount,
+        videoCount,
+        bannerUrl
+      });
+    } catch (err: any) {
+      console.error("[API] Error fetching user channel info:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User's Notifications count using YouTubei.js
+  app.get("/api/user/notifications/unread-count", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const count = await youtube.getUnseenNotificationsCount();
+      return res.json({ count });
+    } catch (err: any) {
+      console.error("[API] Error fetching unseen notifications count:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User's Notifications using YouTubei.js
+  app.get("/api/user/notifications", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const notificationsMenu = await youtube.getNotifications();
+      const contents = notificationsMenu.contents || [];
+      
+      const formatted = contents.map((n: any) => {
+        return {
+          id: n.notification_id,
+          message: n.short_message?.toString() || "",
+          sentTime: n.sent_time?.toString() || "",
+          read: !!n.read,
+          avatar: n.thumbnails?.[0]?.url || "",
+          thumbnail: n.video_thumbnails?.[0]?.url || "",
+          videoId: n.endpoint?.payload?.videoId || ""
+        };
+      });
+      return res.json(formatted);
+    } catch (err: any) {
+      console.error("[API] Error fetching notifications:", err);
       return res.status(500).json({ error: err.message });
     }
   });
@@ -2983,7 +3164,7 @@ async function startServer() {
     }
 
     try {
-      const youtube = await getYt();
+      const youtube = await getInnertubeInstance(req);
       const playlist = await youtube.getPlaylist(playlistId);
 
       const title =

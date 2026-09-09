@@ -21,6 +21,8 @@ interface LibraryPageProps {
   onImportYouTubePlaylist?: (importedPlaylist: UserPlaylist) => void;
   onUpdatePlaylistInfo?: (id: string, title: string, description?: string) => void;
   onAddVideosToPlaylist?: (playlistId: string, videos: Video[]) => void;
+  youtubePlaylists?: any[];
+  watchLaterVideos?: any[];
 }
 
 export default function LibraryPage({
@@ -35,7 +37,9 @@ export default function LibraryPage({
   onNavigateToHistory,
   onImportYouTubePlaylist,
   onUpdatePlaylistInfo,
-  onAddVideosToPlaylist
+  onAddVideosToPlaylist,
+  youtubePlaylists = [],
+  watchLaterVideos = []
 }: LibraryPageProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
     playlists.length > 0 ? playlists[0].id : null
@@ -608,6 +612,132 @@ export default function LibraryPage({
           </div>
         )}
       </div>
+
+      {/* 6. YouTube 認証済みデータ */}
+      {((youtubePlaylists && youtubePlaylists.length > 0) || (watchLaterVideos && watchLaterVideos.length > 0)) && (
+        <div className="mt-12 pt-10 border-t border-gray-100">
+          <h2 className="text-lg font-extrabold text-gray-900 flex items-center gap-2 mb-6">
+            <ListVideo size={20} className="text-red-600" />
+            <span>YouTube 認証済みデータ</span>
+          </h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {/* Watch Later column */}
+            {watchLaterVideos && watchLaterVideos.length > 0 && (
+              <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-200">
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-4">
+                  <Clock size={16} className="text-red-600" />
+                  <span>あとで見る (Watch Later)</span>
+                  <span className="text-xs bg-red-50 text-red-600 font-semibold px-2 py-0.5 rounded-full ml-auto">
+                    {watchLaterVideos.length}本
+                  </span>
+                </h3>
+
+                <div className="max-h-[360px] overflow-y-auto flex flex-col gap-2.5 pr-2">
+                  {watchLaterVideos.map((video, idx) => (
+                    <div
+                      key={`wl-${video.videoId || idx}`}
+                      onClick={() => onVideoSelect(video.videoId!, video)}
+                      className="flex items-center gap-3 p-2 bg-white rounded-xl border border-gray-100 hover:border-gray-200 cursor-pointer transition-all hover:shadow-xs group"
+                    >
+                      <div className="w-16 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
+                        <img
+                          src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
+                          alt={video.title}
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-gray-900 truncate group-hover:text-red-600 transition-colors">
+                          {video.title}
+                        </h4>
+                        <p className="text-[10px] text-gray-500 truncate mt-0.5">{video.author}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Playlists column */}
+            {youtubePlaylists && youtubePlaylists.length > 0 && (
+              <div className="bg-gray-50/50 rounded-2xl p-6 border border-gray-200">
+                <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2 mb-4">
+                  <Library size={16} className="text-red-600" />
+                  <span>YouTube上の再生リスト</span>
+                  <span className="text-xs bg-red-50 text-red-600 font-semibold px-2 py-0.5 rounded-full ml-auto">
+                    {youtubePlaylists.length}個
+                  </span>
+                </h3>
+
+                <div className="max-h-[360px] overflow-y-auto flex flex-col gap-2.5 pr-2">
+                  {youtubePlaylists.map((pl, idx) => (
+                    <div
+                      key={`yt-pl-${pl.id || idx}`}
+                      onClick={async () => {
+                        try {
+                          alert(`YouTubeプレイリスト「${pl.title}」を読み込んでいます...`);
+                          const res = await fetchJSON(`/api/playlist/${encodeURIComponent(pl.id)}`);
+                          if (res && res.videos && res.videos.length > 0) {
+                            const newPl: UserPlaylist = {
+                              id: `yt-import-${Date.now()}`,
+                              title: res.title || pl.title,
+                              description: res.description || 'YouTube上の再生リスト',
+                              createdAt: Date.now(),
+                              updatedAt: Date.now(),
+                              videos: res.videos
+                            };
+                            if (onImportYouTubePlaylist) {
+                              onImportYouTubePlaylist(newPl);
+                            } else {
+                              const createdId = onCreatePlaylist(newPl.title, newPl.description);
+                              if (onAddVideosToPlaylist) {
+                                onAddVideosToPlaylist(createdId, newPl.videos);
+                              }
+                            }
+                            alert(`プレイリスト「${pl.title}」の読み込みが完了しました！`);
+                          } else {
+                            alert('プレイリストに動画が見つかりませんでした。');
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          alert('プレイリストの読み込みに失敗しました。');
+                        }
+                      }}
+                      className="flex items-center gap-3.5 p-2 bg-white rounded-xl border border-gray-100 hover:border-red-100 cursor-pointer transition-all hover:shadow-xs group"
+                    >
+                      <div className="w-16 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
+                        {pl.thumbnails ? (
+                          <img
+                            src={pl.thumbnails}
+                            alt={pl.title}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full bg-gray-200 flex items-center justify-center">
+                            <Library size={16} className="text-gray-400" />
+                          </div>
+                        )}
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[9px] font-bold">
+                          {pl.videoCount}
+                        </div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-xs font-bold text-gray-900 truncate group-hover:text-red-600 transition-colors">
+                          {pl.title}
+                        </h4>
+                        <span className="text-[10px] text-gray-400 mt-0.5 block">
+                          動画 {pl.videoCount} 本 (クリックしてインポート)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
