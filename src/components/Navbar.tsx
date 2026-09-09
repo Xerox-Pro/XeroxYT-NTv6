@@ -265,7 +265,7 @@ export default function Navbar({
             {!query.trim() && searchHistory.length > 0 && (
               <div className="flex items-center justify-between px-4 py-1.5 text-xs font-semibold text-gray-500 border-b border-gray-100 mb-1">
                 <span className="flex items-center gap-1.5">
-                  <History size={13} className="text-purple-700" />
+                  <History size={13} className="text-gray-600" />
                   検索履歴
                 </span>
                 <button
@@ -290,8 +290,8 @@ export default function Navbar({
                     }`}
                   >
                     <div className="flex items-center gap-3.5 min-w-0 flex-1">
-                      <History size={17} className="text-purple-700 shrink-0" />
-                      <span className="text-sm font-semibold text-purple-900 truncate">
+                      <History size={17} className="text-gray-600 shrink-0" />
+                      <span className="text-sm font-semibold text-gray-900 truncate">
                         {item.term}
                       </span>
                     </div>

@@ -69,3 +69,9 @@
   scrollbar-width: none;
 }
 
+/* Ensure links and visited links never turn browser-default purple */
+a, a:visited {
+  color: inherit;
+  text-decoration: inherit;
+}
+
