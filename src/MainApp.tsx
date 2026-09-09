@@ -83,17 +83,13 @@ export default function MainApp() {
   );
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768 && !window.matchMedia('(orientation: landscape)').matches);
 
-  const videosRef = useRef<Video[]>([]);
-  videosRef.current = videos;
   const recommendationRequestIdRef = useRef(0);
 
   useEffect(() => {
     const path = location.pathname;
     if (path === '/') {
       setView('home');
-      if (videosRef.current.length === 0) {
-        fetchRecommendations(1, false);
-      }
+      fetchRecommendations(1, false);
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -496,6 +492,7 @@ export default function MainApp() {
       setLoadingMore(true);
     } else {
       setLoading(true);
+      setVideos([]);
     }
     setError('');
 
@@ -590,6 +587,7 @@ export default function MainApp() {
       setLoadingMore(true);
     } else {
       setLoading(true);
+      setVideos([]);
       setView('search');
     }
     setError('');
@@ -652,7 +650,11 @@ export default function MainApp() {
 
   const handleSelectCategory = (category: string) => {
     if (!category || category === 'すべて' || category === 'あなたへのおすすめ') {
-      navigate('/');
+      if (location.pathname !== '/') {
+        navigate('/');
+      } else {
+        fetchRecommendations(1, false);
+      }
     } else {
       navigate(`/results?search_query=${encodeURIComponent(category)}`);
     }
@@ -871,7 +873,7 @@ export default function MainApp() {
             />
           ) : view === 'debug' ? (
             <DebugAPI />
-          ) : loading && videos.length === 0 ? (
+          ) : loading ? (
             <VideoSkeleton count={12} />
           ) : error && videos.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-gray-700 gap-3 bg-white">
