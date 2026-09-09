@@ -35,6 +35,7 @@ const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
 
 let yt: Innertube | null = null;
 let ytInstancePromise: Promise<Innertube> | null = null;
+let lastCredentials: any = null;
 
 async function getYt() {
   if (yt) return yt;
@@ -54,6 +55,16 @@ async function getYt() {
           lang: "ja",
           retrieve_player: false,
         });
+        
+        instance.session.on("auth", ({ credentials }) => {
+          console.log("[YT] Auth event triggered. Got credentials!");
+          lastCredentials = credentials;
+        });
+        instance.session.on("update-credentials", ({ credentials }) => {
+          console.log("[YT] Update-credentials event triggered. Got credentials!");
+          lastCredentials = credentials;
+        });
+
         yt = instance;
         console.log("[YT] Innertube initialized successfully");
         return instance;
@@ -70,6 +81,52 @@ async function getYt() {
   })();
 
   return ytInstancePromise;
+}
+
+const ytInstancesCache = new Map<string, Innertube>();
+
+async function getInnertubeInstance(req: express.Request) {
+  const credentialsHeader = req.headers["x-youtube-credentials"] as string;
+  if (!credentialsHeader) {
+    return getYt();
+  }
+
+  let credentialsObj: any = null;
+  try {
+    credentialsObj = JSON.parse(credentialsHeader);
+  } catch (e) {
+    return getYt();
+  }
+
+  if (!credentialsObj) {
+    return getYt();
+  }
+
+  const keySource = credentialsObj.refresh_token || credentialsObj.access_token || credentialsHeader;
+  const cacheKey = crypto.createHash("sha256").update(keySource).digest("hex");
+
+  if (ytInstancesCache.has(cacheKey)) {
+    return ytInstancesCache.get(cacheKey)!;
+  }
+
+  console.log(`[YT] Creating new authenticated Innertube instance...`);
+  const instance = await Innertube.create({
+    cache: new UniversalCache(false),
+    location: "JP",
+    lang: "ja",
+    retrieve_player: false,
+  });
+
+  try {
+    await instance.session.signIn(credentialsObj);
+    console.log(`[YT] Authenticated successfully with credentials`);
+  } catch (err) {
+    console.error(`[YT] Failed to sign in with provided credentials:`, err);
+    return getYt();
+  }
+
+  ytInstancesCache.set(cacheKey, instance);
+  return instance;
 }
 
 const INVIDIOUS_INSTANCES = [
@@ -742,12 +799,13 @@ async function startServer() {
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
+      lastCredentials = null; // Reset lastCredentials
       const youtube = await getYt();
       currentAuthFlow = await youtube.session.signIn();
       authFlowExpiry = Date.now() + 10 * 60 * 1000; // 10 mins
 
       res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      return res.json({
         userCode: currentAuthFlow.user_code,
         verificationUrl: currentAuthFlow.verification_url,
       });
@@ -790,7 +848,7 @@ async function startServer() {
 
       if (result.status === "pending") {
         res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ success: false, status: "pending" });
+        return res.json({ success: false, status: "pending" });
       }
 
       const youtube = await getYt();
@@ -804,13 +862,14 @@ async function startServer() {
         "";
 
       res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      return res.json({
         success: true,
         user: {
           name: userName,
           picture: userPicture,
           email: "authenticated@youtube.com",
         },
+        credentials: lastCredentials,
       });
       currentAuthFlow = null;
     } catch (err) {
@@ -826,7 +885,7 @@ async function startServer() {
       const youtube = await getYt();
       await youtube.session.signOut();
       res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ success: true });
+      return res.json({ success: true });
     } catch (err) {
       res.status(500).json({ error: "Logout failed" });
     }
@@ -835,7 +894,7 @@ async function startServer() {
   // User's Liked Videos using YouTubei.js
   app.get("/api/user/liked-videos", async (req, res) => {
     try {
-      const youtube = await getYt();
+      const youtube = await getInnertubeInstance(req);
       // LL is the playlist ID for Liked Videos
       const likedVideosPlaylist = await youtube.getPlaylist("LL");
 
@@ -847,6 +906,51 @@ async function startServer() {
     } catch (err) {
       console.error("User liked videos fetch error:", err);
       res.status(500).json({ error: "Failed to fetch liked videos" });
+    }
+  });
+
+  // User's Subscriptions using YouTubei.js
+  app.get("/api/user/subscriptions", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const subFeed = await youtube.getSubscriptionsFeed();
+      const videos = subFeed.videos || [];
+      const channelsMap = new Map<string, any>();
+      
+      for (const v of videos) {
+        const channelId = v.author?.id || v.channel_id || v.author?.channel_id;
+        const channelTitle = v.author?.name || v.author?.text || v.author;
+        const channelAvatar = v.author?.thumbnail?.[0]?.url || v.author?.avatar?.[0]?.url || "";
+        
+        if (channelId && channelTitle) {
+          channelsMap.set(channelId, {
+            id: channelId,
+            title: channelTitle,
+            avatar: channelAvatar,
+            videoCount: "",
+            subscriberCount: ""
+          });
+        }
+      }
+      
+      const formatted = Array.from(channelsMap.values());
+      return res.json(formatted);
+    } catch (err: any) {
+      console.error("[API] Error fetching user subscriptions:", err);
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
+  // User's Watch History using YouTubei.js
+  app.get("/api/user/history", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const historyFeed = await youtube.getHistory();
+      const videos = extractVideosFromFeed(historyFeed);
+      return res.json(videos);
+    } catch (err: any) {
+      console.error("[API] Error fetching user history:", err);
+      return res.status(500).json({ error: err.message });
     }
   });
 
@@ -1510,6 +1614,25 @@ async function startServer() {
       ? clientSeed
       : Date.now() + Math.floor(Math.random() * 100000);
 
+    const credentialsHeader = req.headers["x-youtube-credentials"] as string;
+    if (credentialsHeader) {
+      try {
+        const youtube = await getInnertubeInstance(req);
+        console.log("[Recs] Logged in! Fetching recommendations from Home Feed...");
+        const home = await youtube.getHomeFeed();
+        const videos = extractVideosFromFeed(home);
+        if (videos && videos.length > 0) {
+          res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+          return res.json({
+            videos: videos,
+            aiKeywords: [],
+          });
+        }
+      } catch (err) {
+        console.error("[Recs] Failed to fetch home feed, falling back to algorithmic recs:", err);
+      }
+    }
+
     // ユーザーが見た動画のハッシュタグ頻度マップ（出没回数）
     const hashtagFrequencyMap: Record<string, number> = {};
     if (userHashtagsParam) {
@@ -2055,6 +2178,22 @@ async function startServer() {
     const selectedChannel = (req.query.selectedChannel as string) || "all";
     const page = parseInt((req.query.page as string) || "1", 10);
     
+    const credentialsHeader = req.headers["x-youtube-credentials"] as string;
+    if (credentialsHeader && selectedChannel === "all") {
+      try {
+        const youtube = await getInnertubeInstance(req);
+        console.log("[Subs] Logged in! Fetching subscriptions feed from Innertube...");
+        const subsFeed = await youtube.getSubscriptionsFeed();
+        const videos = extractVideosFromFeed(subsFeed);
+        if (videos && videos.length > 0) {
+          res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
+          return res.json(videos);
+        }
+      } catch (err) {
+        console.error("[Subs] Failed to fetch subscriptions feed from Innertube:", err);
+      }
+    }
+
     const cacheKey = `subfeed:${selectedChannel}:${page}:${channelTitles.sort().join(",")}`;
     const cached = getFromMemoryCache<any[]>(cacheKey);
     if (cached) {

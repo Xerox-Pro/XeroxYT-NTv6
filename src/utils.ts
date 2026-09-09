@@ -64,7 +64,15 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       }
     }
 
-    const res = await fetch(url, options);
+    const reqOptions = { ...options };
+    const finalHeaders = new Headers(reqOptions.headers || {});
+    const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+    if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
+      finalHeaders.set('x-youtube-credentials', ytCreds);
+    }
+    reqOptions.headers = finalHeaders;
+
+    const res = await fetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
     
     if (!res.ok) {

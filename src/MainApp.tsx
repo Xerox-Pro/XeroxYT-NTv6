@@ -204,6 +204,9 @@ export default function MainApp() {
     }
   });
 
+  const [youtubeHistory, setYoutubeHistory] = useState<WatchHistoryItem[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   // User Playlists saved in LocalStorage
   const [playlists, setPlaylists] = useState<UserPlaylist[]>(() => {
     try {
@@ -249,6 +252,35 @@ export default function MainApp() {
     };
     initSync();
   }, []);
+
+  useEffect(() => {
+    if (view === 'history') {
+      const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+      if (ytCreds && userInfo) {
+        setLoadingHistory(true);
+        fetchJSON('/api/user/history')
+          .then((data) => {
+            if (Array.isArray(data)) {
+              setYoutubeHistory(data.map((v: any) => ({
+                videoId: v.videoId,
+                title: v.title,
+                author: v.author,
+                authorAvatar: v.authorAvatar,
+                thumbnailUrl: v.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`,
+                lengthSeconds: v.lengthSeconds || 0,
+                viewCount: v.viewCount || 0,
+                timestamp: v.timestamp || Date.now(),
+                type: 'video'
+              })));
+            }
+          })
+          .catch((err) => console.error('Failed to fetch YouTube history:', err))
+          .finally(() => setLoadingHistory(false));
+      } else {
+        setYoutubeHistory([]);
+      }
+    }
+  }, [view, userInfo]);
 
   const performServerSync = async (data: any) => {
     const credentialId = localStorage.getItem('webauthn_credential_id');
@@ -425,54 +457,120 @@ export default function MainApp() {
 
   const handleLogin = async () => {
     try {
-      setIsSyncing(true);
-      const { authenticatePasskey, registerPasskey } = await import('./utils/webauthn');
-      
-      let credentialId: string;
-      try {
-        credentialId = await authenticatePasskey();
-      } catch (authErr) {
-        console.log('No existing passkey found, registering new one...');
-        credentialId = await registerPasskey();
-      }
-
-      localStorage.setItem('webauthn_credential_id', credentialId);
-      
-      // Load data from server
-      const res = await fetchJSON('/api/sync/load', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credentialId })
-      });
-
-      if (res.data) {
-        skipNextSync.current = true;
-        if (res.data.subscriptions) setSubscriptions(res.data.subscriptions);
-        if (res.data.watchHistory) setWatchHistory(res.data.watchHistory);
-        if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
-        setTimeout(() => { skipNextSync.current = false; }, 1000);
+      setLoading(true);
+      setError('');
+      const data = await fetchJSON('/api/auth/signin');
+      if (data && data.userCode && data.verificationUrl) {
+        setAuthFlow({
+          userCode: data.userCode,
+          verificationUrl: data.verificationUrl
+        });
+        setIsPolling(true);
+        isPollingRef.current = true;
       } else {
-        // No data on server yet, do initial save
-        await performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
+        throw new Error('Googleログイン処理の開始に失敗しました。');
       }
-
-      setUserInfo({ 
-        name: 'Sync User', 
-        email: 'Logged in with TouchID',
-        avatar: `https://ui-avatars.com/api/?name=User&background=random`
-      });
-
     } catch (err: any) {
-      console.error('Login error:', err);
-      setError(err.message || 'Login failed');
+      console.error('Google login error:', err);
+      setError(err.message || 'ログイン処理に失敗しました。時間をおいて再度お試しください。');
     } finally {
-      setIsSyncing(false);
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    if (!isPolling || !authFlow) return;
+
+    let timer: NodeJS.Timeout;
+    const poll = async () => {
+      if (!isPollingRef.current) return;
+      try {
+        console.log('[Auth] Polling authentication status...');
+        const res = await fetchJSON('/api/auth/poll');
+        if (res && res.success && res.user) {
+          console.log('[Auth] Successfully authenticated!', res.user);
+          const uInfo = {
+            name: res.user.name,
+            email: res.user.email || 'authenticated@youtube.com',
+            picture: res.user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(res.user.name)}&background=random`
+          };
+          setUserInfo(uInfo);
+          localStorage.setItem('xerox_user_info', JSON.stringify(uInfo));
+          if (res.credentials) {
+            localStorage.setItem('xerox_youtube_credentials', JSON.stringify(res.credentials));
+          }
+          setAuthFlow(null);
+          setIsPolling(false);
+          isPollingRef.current = false;
+          
+          // Force refreshing recommendations with their new personal home feed
+          setPage(1);
+          fetchRecommendations(1, false);
+          
+          // Sync Subscribed Channels on login
+          try {
+            const subChannels = await fetchJSON('/api/user/subscriptions');
+            if (Array.isArray(subChannels)) {
+              setSubscriptions(subChannels.map(c => ({
+                id: c.id,
+                title: c.title,
+                avatar: c.avatar
+              })));
+            }
+          } catch (e) {
+            console.warn('Failed to sync subscriptions on login:', e);
+          }
+        } else {
+          // If pending, poll again
+          timer = setTimeout(poll, 4000);
+        }
+      } catch (err: any) {
+        console.error('[Auth] Poll failed:', err);
+        // Retry polling
+        timer = setTimeout(poll, 4000);
+      }
+    };
+
+    timer = setTimeout(poll, 4000);
+    return () => {
+      clearTimeout(timer);
+    };
+  }, [isPolling, authFlow]);
+
+  useEffect(() => {
+    const initYtAuth = async () => {
+      const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+      if (ytCreds && userInfo) {
+        // Sync subscribed channels on load
+        try {
+          const subChannels = await fetchJSON('/api/user/subscriptions');
+          if (Array.isArray(subChannels) && subChannels.length > 0) {
+            setSubscriptions(subChannels.map(c => ({
+              id: c.id,
+              title: c.title,
+              avatar: c.avatar
+            })));
+          }
+        } catch (e) {
+          console.warn('Initial subscriptions sync failed:', e);
+        }
+      }
+    };
+    initYtAuth();
+  }, [userInfo]);
+
   const handleLogout = async () => {
+    try {
+      await fetchJSON('/api/auth/logout', { method: 'POST' }).catch(() => {});
+    } catch {}
+    localStorage.removeItem('xerox_youtube_credentials');
+    localStorage.removeItem('xerox_user_info');
     localStorage.removeItem('webauthn_credential_id');
     setUserInfo(null);
+    setSubscriptions([]);
+    setWatchHistory([]);
+    setPage(1);
+    fetchRecommendations(1, false);
   };
 
   const handleGoHome = useCallback(() => {
@@ -869,13 +967,32 @@ export default function MainApp() {
               onAddVideosToPlaylist={handleAddVideosToPlaylist}
             />
           ) : view === 'history' ? (
-            <HistoryPage
-              history={watchHistory}
-              onVideoSelect={(id) => handleVideoSelect(id)}
-              onClearHistory={() => setWatchHistory([])}
-              onRemoveHistoryItem={(id) => setWatchHistory(prev => prev.filter(i => i.videoId !== id))}
-              onSelectChannel={handleSelectChannel}
-            />
+            loadingHistory ? (
+              <div className="flex-1 flex flex-col items-center justify-center py-20 bg-white">
+                <Loader2 className="w-8 h-8 animate-spin text-red-600 mb-2" />
+                <span className="text-sm font-medium text-gray-500">再生履歴を読み込み中...</span>
+              </div>
+            ) : (
+              <HistoryPage
+                history={localStorage.getItem('xerox_youtube_credentials') ? youtubeHistory : watchHistory}
+                onVideoSelect={(id) => handleVideoSelect(id)}
+                onClearHistory={() => {
+                  if (localStorage.getItem('xerox_youtube_credentials')) {
+                    setYoutubeHistory([]);
+                  } else {
+                    setWatchHistory([]);
+                  }
+                }}
+                onRemoveHistoryItem={(id) => {
+                  if (localStorage.getItem('xerox_youtube_credentials')) {
+                    setYoutubeHistory(prev => prev.filter(i => i.videoId !== id));
+                  } else {
+                    setWatchHistory(prev => prev.filter(i => i.videoId !== id));
+                  }
+                }}
+                onSelectChannel={handleSelectChannel}
+              />
+            )
           ) : view === 'debug' ? (
             <DebugAPI />
           ) : loading ? (
