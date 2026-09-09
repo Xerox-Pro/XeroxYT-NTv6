@@ -36,7 +36,7 @@ export default function ChannelPage({
   const pathParts = location.pathname.split('/');
   const activeTab: TabType = (pathParts[3] as TabType) || 'home';
 
-  const [videoSort, setVideoSort] = useState<'latest' | 'popular'>('latest');
+  const [videoSort, setVideoSort] = useState<'latest' | 'popular' | 'oldest'>('latest');
 
   // Pagination state for Videos & Shorts
   const [videoList, setVideoList] = useState<Video[]>([]);
@@ -65,6 +65,7 @@ export default function ChannelPage({
         setShortList(data.shortVideos || []);
         setVideoPage(1);
         setShortPage(1);
+        setVideoSort('latest');
         setHasMoreVideos(true);
         setHasMoreShorts(true);
       } catch (err: any) {
@@ -77,6 +78,26 @@ export default function ChannelPage({
     fetchChannel();
   }, [channelId]);
 
+  // 並び替えの切り替え (最新順、人気順、古い順)
+  const handleSortChange = async (sort: 'latest' | 'popular' | 'oldest') => {
+    if (sort === videoSort || !channelData || loadingMore) return;
+    setVideoSort(sort);
+    setLoadingMore(true);
+    const targetChannelParam = channelData.id || channelId || channelData.title;
+    try {
+      const res = await fetchJSON(`/api/channel/${encodeURIComponent(targetChannelParam)}/tab/videos?page=1&sort=${sort}`);
+      if (res.videos && Array.isArray(res.videos)) {
+        setVideoList(res.videos);
+        setVideoPage(1);
+        setHasMoreVideos(res.hasMore !== undefined ? res.hasMore : res.videos.length > 0);
+      }
+    } catch (e) {
+      console.error('Failed to change video sort', e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   // Load next page of videos or shorts
   const loadMore = useCallback(async () => {
     if (loadingMore || !channelData) return;
@@ -86,7 +107,7 @@ export default function ChannelPage({
       setLoadingMore(true);
       try {
         const nextPage = videoPage + 1;
-        const res = await fetchJSON(`/api/channel/${encodeURIComponent(targetChannelParam)}/tab/videos?page=${nextPage}`);
+        const res = await fetchJSON(`/api/channel/${encodeURIComponent(targetChannelParam)}/tab/videos?page=${nextPage}&sort=${videoSort}`);
         if (res.videos && res.videos.length > 0) {
           setVideoList((prev) => {
             const existingIds = new Set(prev.map(v => v.videoId));
@@ -94,6 +115,7 @@ export default function ChannelPage({
             return [...prev, ...newItems];
           });
           setVideoPage(nextPage);
+          setHasMoreVideos(res.hasMore !== undefined ? res.hasMore : true);
         } else {
           setHasMoreVideos(false);
         }
@@ -115,6 +137,7 @@ export default function ChannelPage({
             return [...prev, ...newItems];
           });
           setShortPage(nextPage);
+          setHasMoreShorts(res.hasMore !== undefined ? res.hasMore : true);
         } else {
           setHasMoreShorts(false);
         }
@@ -125,7 +148,7 @@ export default function ChannelPage({
         setLoadingMore(false);
       }
     }
-  }, [activeTab, loadingMore, channelData, videoPage, shortPage, hasMoreVideos, hasMoreShorts, channelId]);
+  }, [activeTab, loadingMore, channelData, videoPage, shortPage, hasMoreVideos, hasMoreShorts, channelId, videoSort]);
 
   // Infinite scroll event listener
   useEffect(() => {
@@ -170,13 +193,6 @@ export default function ChannelPage({
       title: channelData.title,
       avatar: channelData.avatar
     });
-  };
-
-  const getSortedVideos = (vList: Video[]) => {
-    if (videoSort === 'popular') {
-      return [...vList].sort((a, b) => (b.viewCount || 0) - (a.viewCount || 0));
-    }
-    return vList;
   };
 
   const tabs: { id: TabType; label: string; icon?: React.ReactNode }[] = [
@@ -399,20 +415,28 @@ export default function ChannelPage({
             <div className="flex items-center justify-between mb-6 pb-2 border-b border-gray-100">
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setVideoSort('latest')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  onClick={() => handleSortChange('latest')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                     videoSort === 'latest' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
                   最新順
                 </button>
                 <button
-                  onClick={() => setVideoSort('popular')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  onClick={() => handleSortChange('popular')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
                     videoSort === 'popular' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  人気の動画
+                  人気順
+                </button>
+                <button
+                  onClick={() => handleSortChange('oldest')}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    videoSort === 'oldest' ? 'bg-black text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  古い順
                 </button>
               </div>
               <span className="text-xs text-gray-500 font-medium">
@@ -421,7 +445,7 @@ export default function ChannelPage({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-              {getSortedVideos(videoList).map((video) => (
+              {videoList.map((video) => (
                 <VideoCard
                   key={video.videoId}
                   video={video}
