@@ -26,6 +26,8 @@ export interface Video {
   recommendedVideos?: Video[];
   isLive?: boolean;
   liveViewerCount?: number;
+  isPremiere?: boolean;
+  isUpcoming?: boolean;
 }
 
 export interface CommunityPost {
@@ -129,6 +131,7 @@ export interface WatchHistoryItem {
 export interface UserInfo {
   name: string;
   email: string;
-  picture: string;
-  sub: string;
+  picture?: string;
+  avatar?: string;
+  sub?: string;
 }

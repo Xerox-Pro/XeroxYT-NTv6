@@ -1826,6 +1826,34 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     }
   });
 
+  // YouTube 検索サジェスト API
+  app.get("/api/suggestions", async (req, res) => {
+    const q = (req.query.q as string) || "";
+    if (!q.trim()) {
+      return res.json([]);
+    }
+
+    try {
+      const url = `https://suggestqueries.google.com/complete/search?client=firefox&ds=yt&oe=utf-8&hl=ja&q=${encodeURIComponent(q.trim())}`;
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          "Accept-Language": "ja,en-US;q=0.9,en;q=0.8",
+        },
+      });
+      if (!response.ok) {
+        return res.json([]);
+      }
+      const data = await response.json();
+      const suggestions = Array.isArray(data) && Array.isArray(data[1]) ? data[1] : [];
+      res.setHeader("Cache-Control", "public, max-age=300");
+      return res.json(suggestions);
+    } catch (err) {
+      console.error("[Suggestions] Error fetching suggestions:", err);
+      return res.json([]);
+    }
+  });
+
   app.get("/api/search", async (req, res) => {
     const q = (req.query.q as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
