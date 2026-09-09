@@ -799,23 +799,54 @@ async function startServer() {
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
-      lastCredentials = null; // Reset lastCredentials
+      lastCredentials = null; // Reset lastCredentials to capture the new signin
       const youtube = await getYt();
-      currentAuthFlow = await youtube.session.signIn();
-      authFlowExpiry = Date.now() + 10 * 60 * 1000; // 10 mins
+      
+      let pendingFlow: any = null;
+      const onAuthPending = (flow: any) => {
+        console.log("[Auth] Captured auth-pending payload:", flow);
+        pendingFlow = flow;
+      };
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+      // Listen for the pending event
+      youtube.session.once("auth-pending", onAuthPending);
+
+      // Start the signIn process asynchronously so it doesn't block the request
+      youtube.session.signIn().then((credentials) => {
+        console.log("[Auth] signIn completed asynchronously. Credentials received.");
+        lastCredentials = credentials;
+      }).catch((err) => {
+        console.error("[Auth] signIn async process finished/error:", err);
+      });
+
+      // Poll briefly for the auth-pending event to fire
+      for (let i = 0; i < 40; i++) {
+        if (pendingFlow) break;
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+
+      // Unregister to avoid leak if it didn't trigger
+      youtube.session.off("auth-pending", onAuthPending);
+
+      if (!pendingFlow) {
+        throw new Error("Google認証の開始（Device Code取得）がタイムアウトしました。");
+      }
+
+      currentAuthFlow = pendingFlow;
+      authFlowExpiry = Date.now() + (pendingFlow.expires_in || 1800) * 1000;
+
+      res.setHeader("Cache-Control", "no-store");
       return res.json({
         userCode: currentAuthFlow.user_code,
         verificationUrl: currentAuthFlow.verification_url,
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("SignIn error:", err);
       res
         .status(500)
         .json({
           error:
-            "ログイン処理の開始に失敗しました。時間をおいて再度お試しください。",
+            err.message || "ログイン処理の開始に失敗しました。時間をおいて再度お試しください。",
         });
     }
   });
@@ -834,24 +865,19 @@ async function startServer() {
     }
 
     try {
-      console.log(`[Auth] Polling for flow: ${currentAuthFlow.user_code}`);
-      // Non-blocking check with timeout
-      const result = await Promise.race([
-        currentAuthFlow.waitForResult(),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("pending")), 15000),
-        ),
-      ]).catch((err) => {
-        if (err.message === "pending") return { status: "pending" };
-        throw err;
-      });
-
-      if (result.status === "pending") {
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+      // Check if the credentials have been captured yet
+      if (!lastCredentials) {
+        // Not yet authenticated
+        res.setHeader("Cache-Control", "no-store");
         return res.json({ success: false, status: "pending" });
       }
 
+      console.log("[Auth] Polling captured credentials! Authenticating instance...");
       const youtube = await getYt();
+      
+      // SignIn the current session with the newly acquired credentials
+      await youtube.session.signIn(lastCredentials);
+
       const info = (await youtube.account.getInfo()) as any;
       const userName =
         info.contents?.on_response_received_endpoints?.[0]
@@ -861,7 +887,13 @@ async function startServer() {
           ?.append_contributions_renderer?.user_avatar?.thumbnails?.[0]?.url ||
         "";
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+      console.log(`[Auth] User authenticated: ${userName}`);
+
+      // Save credentials and clear flow state
+      const savedCredentials = { ...lastCredentials };
+      currentAuthFlow = null;
+
+      res.setHeader("Cache-Control", "no-store");
       return res.json({
         success: true,
         user: {
@@ -869,9 +901,8 @@ async function startServer() {
           picture: userPicture,
           email: "authenticated@youtube.com",
         },
-        credentials: lastCredentials,
+        credentials: savedCredentials,
       });
-      currentAuthFlow = null;
     } catch (err) {
       console.error("Auth poll error:", err);
       res
