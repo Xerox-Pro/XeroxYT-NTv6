@@ -335,6 +335,21 @@ export default function VideoPlayer({
         activeVideoRef.current = data;
         if (data && data.recommendedVideos) {
           setRelatedVideos(data.recommendedVideos);
+          // 初回から自動で2ページ目もバックグラウンドで先読みして結合（ボタン不要で最初から豊富なリストを提供）
+          fetchJSON(`/api/video/${videoId}/related?page=2&filter=all`)
+            .then((res2) => {
+              const p2Items: Video[] = Array.isArray(res2) ? res2 : res2.videos || [];
+              if (p2Items.length > 0) {
+                setRelatedVideos((prev) => {
+                  const existingIds = new Set(prev.map((v) => v.videoId));
+                  const filtered = p2Items.filter((v) => v.videoId && !existingIds.has(v.videoId));
+                  return [...prev, ...filtered];
+                });
+                setRelatedPage(2);
+                setHasMoreRelated(res2.hasMore !== undefined ? res2.hasMore : true);
+              }
+            })
+            .catch(() => {});
         }
         
         // Local Intelligence Analysis
@@ -457,7 +472,7 @@ export default function VideoPlayer({
     }
   }, [loadingMoreRelated, hasMoreRelated, videoId, relatedPage, relatedFilter]);
 
-  // コメントの自動無限スクロール監視 (IntersectionObserver)
+  // コメントの自動無限スクロール監視 (IntersectionObserver & スクロールフォールバック)
   useEffect(() => {
     const target = commentsEndRef.current;
     if (!target || !hasMoreComments || loadingComments || loadingMoreComments) return;
@@ -465,12 +480,25 @@ export default function VideoPlayer({
       if (entries[0].isIntersecting) {
         loadMoreComments();
       }
-    }, { rootMargin: '400px' });
+    }, { rootMargin: '600px' });
     observer.observe(target);
-    return () => observer.disconnect();
+
+    const handleWindowScroll = () => {
+      if (!commentsEndRef.current || !hasMoreComments || loadingComments || loadingMoreComments) return;
+      const rect = commentsEndRef.current.getBoundingClientRect();
+      if (rect.top <= window.innerHeight + 600) {
+        loadMoreComments();
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
   }, [loadMoreComments, hasMoreComments, loadingComments, loadingMoreComments]);
 
-  // 関連動画の自動無限スクロール監視 (IntersectionObserver)
+  // 関連動画の自動無限スクロール監視 (IntersectionObserver & スクロールフォールバック)
   useEffect(() => {
     const target = relatedEndRef.current;
     if (!target || !hasMoreRelated || loadingMoreRelated) return;
@@ -478,9 +506,22 @@ export default function VideoPlayer({
       if (entries[0].isIntersecting) {
         loadMoreRelated();
       }
-    }, { rootMargin: '400px' });
+    }, { rootMargin: '600px' });
     observer.observe(target);
-    return () => observer.disconnect();
+
+    const handleWindowScroll = () => {
+      if (!relatedEndRef.current || !hasMoreRelated || loadingMoreRelated) return;
+      const rect = relatedEndRef.current.getBoundingClientRect();
+      if (rect.top <= window.innerHeight + 600) {
+        loadMoreRelated();
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
   }, [loadMoreRelated, hasMoreRelated, loadingMoreRelated]);
 
   // Initialize live chat
@@ -1180,22 +1221,12 @@ export default function VideoPlayer({
 
             {/* 関連動画自動無限スクロール監視要素 & ローディング表示 */}
             <div ref={relatedEndRef} className="h-6" />
-            {loadingMoreRelated ? (
+            {loadingMoreRelated && (
               <div className="flex items-center gap-2 py-4 text-gray-500 justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-red-600" />
-                <span className="text-xs font-medium">次の関連動画を読み込み中...</span>
+                <span className="text-xs font-medium">次の関連動画を自動読み込み中...</span>
               </div>
-            ) : hasMoreRelated ? (
-              <div className="flex justify-center py-2">
-                <button
-                  type="button"
-                  onClick={() => loadMoreRelated()}
-                  className="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors active:scale-95"
-                >
-                  関連動画をさらに読み込む
-                </button>
-              </div>
-            ) : null}
+            )}
           </div>
         )}
       </div>
