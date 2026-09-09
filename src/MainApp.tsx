@@ -83,11 +83,17 @@ export default function MainApp() {
   );
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768 && !window.matchMedia('(orientation: landscape)').matches);
 
+  const videosRef = useRef<Video[]>([]);
+  videosRef.current = videos;
+  const recommendationRequestIdRef = useRef(0);
+
   useEffect(() => {
     const path = location.pathname;
     if (path === '/') {
       setView('home');
-      fetchRecommendations(1, false);
+      if (videosRef.current.length === 0) {
+        fetchRecommendations(1, false);
+      }
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -485,6 +491,7 @@ export default function MainApp() {
   }, [location.pathname, navigate]);
 
   const fetchRecommendations = async (pageNum: number = 1, append: boolean = false) => {
+    const currentReqId = ++recommendationRequestIdRef.current;
     if (append) {
       setLoadingMore(true);
     } else {
@@ -512,6 +519,8 @@ export default function MainApp() {
       // Fetch recommendations from API
       const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&userHashtags=${encodeURIComponent(userHashtags)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
 
+      if (currentReqId !== recommendationRequestIdRef.current) return;
+
       let publicData: Video[] = [];
       if (Array.isArray(result)) {
         publicData = result;
@@ -536,6 +545,8 @@ export default function MainApp() {
         }
       }
       
+      if (currentReqId !== recommendationRequestIdRef.current) return;
+
       updateCache(publicData);
       
       // Combine personalized data (if any) with public recommendations
@@ -561,12 +572,15 @@ export default function MainApp() {
       }
       setHasMore(finalData.length > 0);
     } catch (err: any) {
+      if (currentReqId !== recommendationRequestIdRef.current) return;
       console.error(err);
       if (!append) setError(err.message || 'エラーが発生しました');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      isFetchingMore.current = false;
+      if (currentReqId === recommendationRequestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        isFetchingMore.current = false;
+      }
     }
   };
 
@@ -603,13 +617,6 @@ export default function MainApp() {
       isFetchingMore.current = false;
     }
   };
-
-  useEffect(() => {
-    if (view === 'home') {
-      setPage(1);
-      fetchRecommendations(1, false);
-    }
-  }, [view]);
 
   // 無限スクロール検知
   const handleScroll = useCallback(() => {
