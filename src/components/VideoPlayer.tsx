@@ -465,7 +465,7 @@ export default function VideoPlayer({
       if (entries[0].isIntersecting) {
         loadMoreComments();
       }
-    }, { rootMargin: '300px' });
+    }, { rootMargin: '400px' });
     observer.observe(target);
     return () => observer.disconnect();
   }, [loadMoreComments, hasMoreComments, loadingComments, loadingMoreComments]);
@@ -478,7 +478,7 @@ export default function VideoPlayer({
       if (entries[0].isIntersecting) {
         loadMoreRelated();
       }
-    }, { rootMargin: '300px' });
+    }, { rootMargin: '400px' });
     observer.observe(target);
     return () => observer.disconnect();
   }, [loadMoreRelated, hasMoreRelated, loadingMoreRelated]);
@@ -1179,13 +1179,23 @@ export default function VideoPlayer({
             ))}
 
             {/* 関連動画自動無限スクロール監視要素 & ローディング表示 */}
-            <div ref={relatedEndRef} className="h-4" />
-            {loadingMoreRelated && (
+            <div ref={relatedEndRef} className="h-6" />
+            {loadingMoreRelated ? (
               <div className="flex items-center gap-2 py-4 text-gray-500 justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-red-600" />
-                <span className="text-xs font-medium">次の関連動画を自動読み込み中...</span>
+                <span className="text-xs font-medium">次の関連動画を読み込み中...</span>
               </div>
-            )}
+            ) : hasMoreRelated ? (
+              <div className="flex justify-center py-2">
+                <button
+                  type="button"
+                  onClick={() => loadMoreRelated()}
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors active:scale-95"
+                >
+                  関連動画をさらに読み込む
+                </button>
+              </div>
+            ) : null}
           </div>
         )}
       </div>

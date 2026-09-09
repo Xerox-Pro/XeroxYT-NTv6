@@ -2356,6 +2356,16 @@ async function startServer() {
         recommendedVideos: recs,
       };
 
+      // 関連動画セッションを即座にウォームアップ
+      relatedVideosSessions.set(`${videoId}:related`, {
+        videoId,
+        currentPage: 1,
+        feed: info,
+        pages: new Map([[1, recs]]),
+        hasMore: true,
+        lastAccess: Date.now(),
+      });
+
       setToMemoryCache(cacheKey, videoData, 30 * 60 * 1000);
       res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
       return res.json(videoData);
@@ -2387,6 +2397,22 @@ async function startServer() {
     lastAccess: number;
   }
   const relatedVideosSessions = new Map<string, RelatedVideosSession>();
+
+  // フィードやアイテムリストから動画オブジェクトを網羅的に抽出
+  function extractVideosFromFeed(feedObj: any, currentVideoId?: string): any[] {
+    if (!feedObj) return [];
+    const rawList =
+      feedObj.watch_next_feed ||
+      feedObj.contents ||
+      feedObj.videos ||
+      feedObj.results ||
+      feedObj.items ||
+      (Array.isArray(feedObj) ? feedObj : []);
+    if (!Array.isArray(rawList)) return [];
+    return rawList
+      .map((item: any) => formatVideoObject(item))
+      .filter((v: any) => v && v.videoId && v.videoId !== currentVideoId && !isUnwantedVideo(v));
+  }
 
   // コメントフォーマットヘルパー関数
   function parseCommentsList(contents: any[]): any[] {
@@ -2557,81 +2583,156 @@ async function startServer() {
       let videos: any[] = [];
       let hasMore = true;
 
-      // 1ページ目: 動画情報から watch_next_feed を取得
-      if (!session || page === 1) {
+      // セッションが存在しない場合は videoInfo を初期化
+      if (!session) {
         let info = await youtube.getInfo(videoId).catch(() => null);
         if (!info) {
           info = await youtube.getBasicInfo(videoId).catch(() => null);
         }
 
-        if (info && info.watch_next_feed) {
-          const recs = (info.watch_next_feed || [])
-            .map((item: any) => formatVideoObject(item))
-            .filter((v: any) => v && v.videoId && v.videoId !== videoId && !isUnwantedVideo(v));
+        const page1Recs = extractVideosFromFeed(info, videoId);
+        session = {
+          videoId,
+          currentPage: 1,
+          feed: info,
+          pages: new Map([[1, page1Recs]]),
+          hasMore: true,
+          lastAccess: now,
+        };
+        relatedVideosSessions.set(sessionKey, session);
 
-          session = {
-            videoId,
-            currentPage: 1,
-            feed: info,
-            pages: new Map([[1, recs]]),
-            hasMore: Boolean(info.watch_next_feed.length > 0),
-            lastAccess: now,
-          };
-          relatedVideosSessions.set(sessionKey, session);
-          videos = recs;
+        if (page === 1) {
+          videos = page1Recs;
         }
       }
 
-      // 2ページ目以降: 継続取得 または 関連キーワード検索フォールバック
+      // 2ページ目以降の読み込み
       if (page > 1) {
-        let nextVideos: any[] = [];
-        let advanced = false;
+        let collectedVideos: any[] = [];
 
-        // Continuation を試みる
-        if (session && session.feed && typeof session.feed.getWatchNextContinuation === "function") {
+        // 既出の動画ID一覧（重複排除用）
+        const seenIds = new Set<string>();
+        seenIds.add(videoId);
+        if (session) {
+          for (const [, vList] of session.pages.entries()) {
+            for (const v of vList) {
+              if (v.videoId) seenIds.add(v.videoId);
+            }
+          }
+        }
+
+        // 1. YouTube.js の Continuation メソッドによる取得
+        if (session && session.feed) {
           try {
-            const nextFeed = await session.feed.getWatchNextContinuation();
-            if (nextFeed && nextFeed.watch_next_feed) {
-              nextVideos = (nextFeed.watch_next_feed || [])
-                .map((item: any) => formatVideoObject(item))
-                .filter((v: any) => v && v.videoId && v.videoId !== videoId && !isUnwantedVideo(v));
+            let nextFeed: any = null;
+            if (typeof session.feed.getWatchNextContinuation === "function") {
+              nextFeed = await session.feed.getWatchNextContinuation();
+            } else if (typeof session.feed.getContinuation === "function") {
+              nextFeed = await session.feed.getContinuation();
+            }
+
+            if (nextFeed) {
+              const contVideos = extractVideosFromFeed(nextFeed, videoId);
+              for (const v of contVideos) {
+                if (!seenIds.has(v.videoId)) {
+                  seenIds.add(v.videoId);
+                  collectedVideos.push(v);
+                }
+              }
               session.feed = nextFeed;
-              advanced = true;
+            }
+          } catch (contErr) {
+            console.warn("[Related] Continuation error:", contErr);
+          }
+        }
+
+        // 2. 件数が足りない場合: チャンネル動画 & 関連キーワードスマート検索で確実に補完
+        if (collectedVideos.length < 8) {
+          try {
+            let basic = session?.feed?.basic_info || (await youtube.getBasicInfo(videoId).catch(() => null))?.basic_info;
+            const author = basic?.author || "";
+            const rawTitle = basic?.title || "";
+            const cleanTitle = rawTitle.replace(/【.*?】|\[.*?\]|\(.*?\)|#\S+/g, "").trim();
+            const tags = basic?.tags || [];
+
+            // 検索クエリの決定 (ページ数に応じて異なる切り口で多様な関連動画を取得)
+            const searchQueries: string[] = [];
+            if (page === 2) {
+              if (author) searchQueries.push(author);
+              if (cleanTitle) searchQueries.push(cleanTitle);
+              if (tags.length > 0) searchQueries.push(tags[0]);
+            } else if (page === 3) {
+              if (tags.length > 1) searchQueries.push(tags.slice(0, 2).join(" "));
+              if (cleanTitle) searchQueries.push(`${cleanTitle} 関連`);
+            } else {
+              if (tags.length > 2) searchQueries.push(tags[page % tags.length]);
+              searchQueries.push(`${author || cleanTitle} おすすめ`);
+            }
+
+            for (const q of searchQueries) {
+              if (collectedVideos.length >= 15) break;
+              if (!q) continue;
+
+              try {
+                const searchRes = await youtube.search(q, { type: "video" });
+                if (searchRes && searchRes.videos) {
+                  const sVideos = (searchRes.videos || [])
+                    .map((v: any) => formatVideoObject(v))
+                    .filter((v: any) => v && v.videoId && !seenIds.has(v.videoId) && !isUnwantedVideo(v));
+
+                  for (const v of sVideos) {
+                    if (!seenIds.has(v.videoId)) {
+                      seenIds.add(v.videoId);
+                      collectedVideos.push(v);
+                    }
+                  }
+                }
+              } catch {}
+            }
+          } catch (searchFallbackErr) {
+            console.warn("[Related] Search fallback error:", searchFallbackErr);
+          }
+        }
+
+        // 3. 外部 Invidious フォールバック
+        if (collectedVideos.length < 5) {
+          try {
+            const invUrl = `https://inv.tux.pizza/api/v1/videos/${videoId}`;
+            const invRes = await fetch(invUrl, { headers: { "User-Agent": "Mozilla/5.0" }, signal: AbortSignal.timeout(3000) }).catch(() => null);
+            if (invRes && invRes.ok) {
+              const invJson: any = await invRes.json().catch(() => null);
+              if (invJson && Array.isArray(invJson.recommendedVideos)) {
+                for (const v of invJson.recommendedVideos) {
+                  if (v && v.videoId && !seenIds.has(v.videoId)) {
+                    seenIds.add(v.videoId);
+                    collectedVideos.push({
+                      videoId: v.videoId,
+                      title: v.title,
+                      author: v.author,
+                      authorId: v.authorId,
+                      authorAvatar: v.authorThumbnails?.[0]?.url || "",
+                      viewCount: v.viewCount || 0,
+                      lengthSeconds: v.lengthSeconds || 0,
+                      videoThumbnails: v.videoThumbnails || [{ url: `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg` }],
+                      publishedText: v.publishedText || "",
+                      type: "video",
+                    });
+                  }
+                }
+              }
             }
           } catch {}
         }
 
-        // Continuation で取得できない場合は、動画のタイトルや著者をキーにしてスマート検索
-        if (!advanced || nextVideos.length === 0) {
-          try {
-            let info = session?.feed?.basic_info ? session.feed : await youtube.getBasicInfo(videoId).catch(() => null);
-            const searchTerms = [
-              info?.basic_info?.author,
-              info?.basic_info?.title?.split(/[\s|/\\-]+/)[0],
-              ...(info?.basic_info?.tags || []).slice(0, 2),
-            ].filter(Boolean);
-
-            const query = searchTerms.length > 0 ? searchTerms.join(" ") : "人気動画";
-            const searchResults = await youtube.search(query, { type: "video" });
-            if (searchResults && searchResults.videos) {
-              nextVideos = (searchResults.videos || [])
-                .map((v: any) => formatVideoObject(v))
-                .filter((v: any) => v && v.videoId && v.videoId !== videoId && !isUnwantedVideo(v));
-            }
-          } catch (searchErr) {
-            console.warn("Related videos fallback search error:", searchErr);
-          }
-        }
-
         if (session) {
           session.currentPage = page;
-          session.pages.set(page, nextVideos);
-          session.hasMore = nextVideos.length > 0;
+          session.pages.set(page, collectedVideos);
+          session.hasMore = collectedVideos.length > 0;
           session.lastAccess = now;
         }
 
-        videos = nextVideos;
-        hasMore = nextVideos.length > 0;
+        videos = collectedVideos;
+        hasMore = collectedVideos.length > 0 || page < 10;
       }
 
       const result = {
