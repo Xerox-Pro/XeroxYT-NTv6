@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
@@ -252,8 +252,20 @@ export default function VideoPlayer({
 
   // Comments state
   const [comments, setComments] = useState<Comment[]>([]);
+  const [commentSort, setCommentSort] = useState<'top' | 'newest'>('top');
   const [newComment, setNewComment] = useState('');
   const [loadingComments, setLoadingComments] = useState(false);
+  const [commentsPage, setCommentsPage] = useState(1);
+  const [loadingMoreComments, setLoadingMoreComments] = useState(false);
+  const [hasMoreComments, setHasMoreComments] = useState(true);
+  const commentsBottomRef = useRef<HTMLDivElement>(null);
+
+  // Related Videos pagination state
+  const [extraRelatedVideos, setExtraRelatedVideos] = useState<Video[]>([]);
+  const [relatedPage, setRelatedPage] = useState(1);
+  const [loadingMoreRelated, setLoadingMoreRelated] = useState(false);
+  const [hasMoreRelated, setHasMoreRelated] = useState(true);
+  const relatedBottomRef = useRef<HTMLDivElement>(null);
 
   // Live Chat state
   const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
@@ -305,8 +317,37 @@ export default function VideoPlayer({
     };
   }, [videoId]);
 
-  // Fetch video metadata
+  const fetchComments = useCallback(async (sortType = commentSort) => {
+    setLoadingComments(true);
+    try {
+      const data = await fetchJSON(`/api/video/${videoId}/comments?page=1&sort=${sortType}`);
+      const commentsList: Comment[] = Array.isArray(data) ? data : (data.comments || []);
+      setComments(commentsList);
+      setCommentsPage(1);
+      if (!Array.isArray(data) && data.hasMore !== undefined) {
+        setHasMoreComments(data.hasMore);
+      } else {
+        setHasMoreComments(commentsList.length >= 10);
+      }
+      
+      if (videoData && videoData.recommendedVideos) {
+        localAI.processMetadataAnalysis(videoId, commentsList, videoData.recommendedVideos);
+      }
+    } catch (err) {
+      console.error("Failed to load comments", err);
+    } finally {
+      setLoadingComments(false);
+    }
+  }, [videoId, commentSort, videoData]);
+
+  // Fetch video metadata & reset states
   useEffect(() => {
+    setExtraRelatedVideos([]);
+    setRelatedPage(1);
+    setHasMoreRelated(true);
+    setCommentsPage(1);
+    setHasMoreComments(true);
+
     const fetchVideo = async () => {
       setLoading(true);
       setError('');
@@ -340,26 +381,141 @@ export default function VideoPlayer({
       }
     };
 
-    const fetchComments = async () => {
-      setLoadingComments(true);
-      try {
-        const data = await fetchJSON(`/api/video/${videoId}/comments`);
-        setComments(data);
-        
-        if (videoData && videoData.recommendedVideos) {
-          localAI.processMetadataAnalysis(videoId, data, videoData.recommendedVideos);
-        }
-      } catch (err) {
-        console.error("Failed to load comments", err);
-      } finally {
-        setLoadingComments(false);
-      }
-    };
-
     fetchVideo();
-    fetchComments();
+    fetchComments(commentSort);
     setIsDescExpanded(false);
   }, [videoId]);
+
+  // コメント並び順の切り替え
+  const handleSortComments = (newSort: 'top' | 'newest') => {
+    if (newSort === commentSort || loadingComments) return;
+    setCommentSort(newSort);
+    setCommentsPage(1);
+    setHasMoreComments(true);
+    fetchComments(newSort);
+  };
+
+  // 関連動画の2ページ目以降の自動読み込み
+  const loadMoreRelated = useCallback(async () => {
+    if (loadingMoreRelated || !hasMoreRelated || !videoId) return;
+    setLoadingMoreRelated(true);
+    try {
+      const nextPage = relatedPage + 1;
+      const res = await fetchJSON(`/api/video/${videoId}/related?page=${nextPage}`);
+      if (res.videos && res.videos.length > 0) {
+        setExtraRelatedVideos((prev) => {
+          const existingIds = new Set([
+            ...(videoData?.recommendedVideos || []).map((v: any) => v.videoId),
+            ...prev.map((v: any) => v.videoId)
+          ]);
+          const uniqueNew = res.videos.filter((v: any) => v && v.videoId && !existingIds.has(v.videoId));
+          return [...prev, ...uniqueNew];
+        });
+        setRelatedPage(nextPage);
+        if (res.hasMore !== undefined) {
+          setHasMoreRelated(res.hasMore);
+        }
+      } else {
+        setHasMoreRelated(false);
+      }
+    } catch (e) {
+      console.error('Failed to load more related videos', e);
+      setHasMoreRelated(false);
+    } finally {
+      setLoadingMoreRelated(false);
+    }
+  }, [loadingMoreRelated, hasMoreRelated, videoId, relatedPage, videoData?.recommendedVideos]);
+
+  // コメントの2ページ目以降の自動読み込み
+  const loadMoreComments = useCallback(async () => {
+    if (loadingMoreComments || !hasMoreComments || !videoId || loadingComments) return;
+    setLoadingMoreComments(true);
+    try {
+      const nextPage = commentsPage + 1;
+      const res = await fetchJSON(`/api/video/${videoId}/comments?page=${nextPage}&sort=${commentSort}`);
+      const newComments: Comment[] = Array.isArray(res) ? res : (res.comments || []);
+      if (newComments.length > 0) {
+        setComments((prev) => {
+          const existingIds = new Set(prev.map(c => c.id));
+          const uniqueNew = newComments.filter(c => !existingIds.has(c.id));
+          return [...prev, ...uniqueNew];
+        });
+        setCommentsPage(nextPage);
+        if (!Array.isArray(res) && res.hasMore !== undefined) {
+          setHasMoreComments(res.hasMore);
+        } else {
+          setHasMoreComments(newComments.length >= 10);
+        }
+      } else {
+        setHasMoreComments(false);
+      }
+    } catch (e) {
+      console.error('Failed to load more comments', e);
+      setHasMoreComments(false);
+    } finally {
+      setLoadingMoreComments(false);
+    }
+  }, [loadingMoreComments, hasMoreComments, videoId, commentsPage, commentSort, loadingComments]);
+
+  // 関連動画スクロール時の自動読み込み (IntersectionObserver + Scroll event)
+  useEffect(() => {
+    if (!isRelatedOpen || sidebarTab !== 'related' || !hasMoreRelated || loadingMoreRelated) return;
+    const target = relatedBottomRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        loadMoreRelated();
+      }
+    }, { rootMargin: '600px' });
+
+    observer.observe(target);
+
+    const handleWindowScroll = () => {
+      const scrollY = window.scrollY || window.pageYOffset;
+      const windowHeight = window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+      if (docHeight - (scrollY + windowHeight) < 700) {
+        loadMoreRelated();
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
+  }, [isRelatedOpen, sidebarTab, hasMoreRelated, loadingMoreRelated, loadMoreRelated]);
+
+  // コメントスクロール時の自動読み込み (IntersectionObserver + Scroll event)
+  useEffect(() => {
+    if (!hasMoreComments || loadingMoreComments || loadingComments) return;
+    const target = commentsBottomRef.current;
+    if (!target) return;
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        loadMoreComments();
+      }
+    }, { rootMargin: '700px' });
+
+    observer.observe(target);
+
+    const handleWindowScroll = () => {
+      const scrollY = window.scrollY || window.pageYOffset;
+      const windowHeight = window.innerHeight;
+      const docHeight = document.documentElement.scrollHeight;
+      if (docHeight - (scrollY + windowHeight) < 800) {
+        loadMoreComments();
+      }
+    };
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', handleWindowScroll);
+    };
+  }, [hasMoreComments, loadingMoreComments, loadingComments, loadMoreComments]);
 
   // Initialize live chat
   const initLiveChat = (channelName: string) => {
@@ -492,9 +648,62 @@ export default function VideoPlayer({
       type: 'video'
     }));
 
+  // 通常の関連動画リスト（初期推奨＋2ページ目以降の動画）
+  const baseRecs = useMemo(() => {
+    const initialRecs = videoData.recommendedVideos || [];
+    const existingIds = new Set(initialRecs.map((v: any) => v.videoId));
+    const newOnes = extraRelatedVideos.filter(v => v && v.videoId && !existingIds.has(v.videoId));
+    return [...initialRecs, ...newOnes];
+  }, [videoData.recommendedVideos, extraRelatedVideos]);
+
   // 通常の関連動画リストの中にしれっと過去履歴をブレンド
-  const blendedRecommendations: any[] = [];
-  const baseRecs = videoData.recommendedVideos || [];
+  const blendedRecommendations = useMemo(() => {
+    const blended: any[] = [];
+    let histIdx = 0;
+
+    if (baseRecs.length === 0) {
+      blended.push(...pastHistoryVideos);
+    } else {
+      baseRecs.forEach((item, index) => {
+        blended.push(item);
+        // 2つ目、5つ目、8つ目... の位置にしれっと履歴動画を差し込む
+        if ((index % 3 === 1) && histIdx < pastHistoryVideos.length) {
+          blended.push(pastHistoryVideos[histIdx]);
+          histIdx++;
+        }
+      });
+      while (histIdx < pastHistoryVideos.length) {
+        blended.push(pastHistoryVideos[histIdx]);
+        histIdx++;
+      }
+    }
+    return blended;
+  }, [baseRecs, pastHistoryVideos]);
+
+  // フィルターチップによる絞り込み
+  const filteredRecommendations = useMemo(() => {
+    if (relatedFilter === 'all') return blendedRecommendations;
+    if (relatedFilter === 'author') {
+      return blendedRecommendations.filter(v => 
+        (v.author && videoData.author && v.author.includes(cleanAuthorName)) || 
+        v.authorId === videoData.authorId
+      );
+    }
+    if (relatedFilter === 'recent') {
+      return blendedRecommendations.filter(v => 
+        v.publishedText && (
+          v.publishedText.includes('日前') || 
+          v.publishedText.includes('時間前') || 
+          v.publishedText.includes('分前') || 
+          v.publishedText.includes('か月前')
+        )
+      );
+    }
+    if (relatedFilter === 'related') {
+      return blendedRecommendations.filter(v => v.type === 'video');
+    }
+    return blendedRecommendations;
+  }, [blendedRecommendations, relatedFilter, videoData.author, videoData.authorId, cleanAuthorName]);
 
   const renderTextWithMentionsAndLinks = (text: string) => {
     if (!text) return '動画の概要説明はありません。';
@@ -550,25 +759,6 @@ export default function VideoPlayer({
       onSelectChannel(videoData.authorId || videoData.author);
     }
   };
-
-  let histIdx = 0;
-
-  if (baseRecs.length === 0) {
-    blendedRecommendations.push(...pastHistoryVideos);
-  } else {
-    baseRecs.forEach((item, index) => {
-      blendedRecommendations.push(item);
-      // 2つ目、5つ目、8つ目... の位置にしれっと履歴動画を差し込む
-      if ((index % 3 === 1) && histIdx < pastHistoryVideos.length) {
-        blendedRecommendations.push(pastHistoryVideos[histIdx]);
-        histIdx++;
-      }
-    });
-    while (histIdx < pastHistoryVideos.length) {
-      blendedRecommendations.push(pastHistoryVideos[histIdx]);
-      histIdx++;
-    }
-  }
 
   return (
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
@@ -778,11 +968,38 @@ export default function VideoPlayer({
 
           {/* コメントセクション */}
           <div className="mt-8 pt-6 border-t border-gray-200">
-            <div className="flex items-center gap-2 mb-6">
-              <MessageSquare size={22} className="text-gray-900" />
-              <h2 className="text-lg font-bold text-gray-900">
-                コメント {comments.length}件
-              </h2>
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={20} className="text-gray-900" />
+                <h2 className="text-base sm:text-lg font-bold text-gray-900">
+                  コメント {comments.length > 0 ? `${comments.length}件` : ''}
+                </h2>
+              </div>
+              {/* コメント並び順切り替え */}
+              <div className="flex items-center bg-gray-100 p-1 rounded-lg">
+                <button
+                  type="button"
+                  onClick={() => handleSortComments('top')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                    commentSort === 'top'
+                      ? 'bg-white text-gray-900 shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  人気順
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSortComments('newest')}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${
+                    commentSort === 'newest'
+                      ? 'bg-white text-gray-900 shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  新しい順
+                </button>
+              </div>
             </div>
 
             {/* コメントフォーム */}
@@ -819,7 +1036,7 @@ export default function VideoPlayer({
             {/* コメント一覧 */}
             {loadingComments ? (
               <div className="flex items-center gap-2 py-6 text-gray-500 justify-center">
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-5 h-5 animate-spin text-red-600" />
                 <span className="text-xs font-medium">コメントを読み込み中...</span>
               </div>
             ) : comments.length === 0 ? (
@@ -833,6 +1050,15 @@ export default function VideoPlayer({
                     onSelectChannel={onSelectChannel} 
                   />
                 ))}
+
+                {/* 次ページコメント自動読み込み中インジケーター */}
+                {loadingMoreComments && (
+                  <div className="flex items-center gap-2 py-4 text-gray-500 justify-center">
+                    <Loader2 className="w-5 h-5 animate-spin text-red-600" />
+                    <span className="text-xs font-medium">コメントをさらに読み込んでいます...</span>
+                  </div>
+                )}
+                <div ref={commentsBottomRef} className="h-4" />
               </div>
             )}
           </div>
@@ -969,7 +1195,7 @@ export default function VideoPlayer({
             </div>
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
-            {blendedRecommendations.map((recVideo, idx) => (
+            {filteredRecommendations.map((recVideo, idx) => (
               <div 
                 key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
                 className="flex gap-2.5 group cursor-pointer"
@@ -1014,6 +1240,15 @@ export default function VideoPlayer({
                 </div>
               </div>
             ))}
+
+            {/* スクロール時の2ページ目以降の関連動画自動読み込みインジケーター */}
+            {loadingMoreRelated && (
+              <div className="flex items-center justify-center py-4 gap-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                <span className="text-xs font-medium">関連動画を読み込んでいます...</span>
+              </div>
+            )}
+            <div ref={relatedBottomRef} className="h-6" />
           </div>
         )}
       </div>

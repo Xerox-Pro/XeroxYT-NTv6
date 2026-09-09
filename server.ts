@@ -2313,60 +2313,368 @@ async function startServer() {
     }
   });
 
-  app.get("/api/video/:id/comments", async (req, res) => {
+  function parseRelatedItem(item: any): any {
+    if (!item) return null;
+    const formatted = formatVideoObject(item);
+    if (formatted) return formatted;
+
+    if (item.type === "CompactVideo") {
+      return {
+        videoId: item.id,
+        title: item.title?.text || item.title?.toString() || "",
+        author: item.author?.name || item.short_byline?.text || "Unknown",
+        authorId: item.author?.id,
+        authorAvatar: item.author?.thumbnails?.[0]?.url,
+        viewCount: extractViewCount(item),
+        lengthSeconds: item.duration?.seconds || 0,
+        videoThumbnails: item.thumbnails || [],
+        type: "video",
+        publishedText: item.published?.text || item.relative_date?.text || "",
+      };
+    } else if (
+      item.type === "CompactPlaylist" ||
+      item.type === "Playlist" ||
+      item.type === "Mix"
+    ) {
+      return {
+        videoId:
+          item.first_video_id ||
+          (item.id && !item.id.startsWith("RD") ? item.id : undefined),
+        playlistId: item.id,
+        title: item.title?.text || item.title || "",
+        author: item.author?.name || item.short_byline?.text || "YouTube Mix",
+        videoThumbnails: item.thumbnails || [],
+        viewCount: 0,
+        lengthSeconds: 0,
+        type: item.type === "Mix" ? "mix" : "playlist",
+        publishedText:
+          item.video_count_short?.text || item.video_count?.text || "",
+      };
+    } else if (item.type === "LockupView") {
+      return {
+        videoId: item.content_id,
+        title: item.metadata?.title?.text || "",
+        author: item.metadata?.metadata?.text || "Unknown",
+        videoThumbnails: item.content_image?.image || [],
+        viewCount: extractViewCount(item),
+        lengthSeconds: 0,
+        type: "video",
+      };
+    }
+    return null;
+  }
+
+  interface RelatedVideosSession {
+    videoId: string;
+    info: any;
+    currentPage: number;
+    pages: Map<number, any[]>;
+    hasMore: boolean;
+    lastAccess: number;
+  }
+  const relatedVideosSessions = new Map<string, RelatedVideosSession>();
+
+  // 関連動画の2ページ目以降取得 API
+  app.get("/api/video/:id/related", async (req, res) => {
     const videoId = req.params.id;
-    const cacheKey = `comments:${videoId}`;
-    const cached = getFromMemoryCache<any[]>(cacheKey);
+    const page = parseInt((req.query.page as string) || "2", 10);
+    const cacheKey = `related:${videoId}:${page}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       return res.json(cached);
     }
 
+    const now = Date.now();
+    for (const [k, v] of relatedVideosSessions.entries()) {
+      if (now - v.lastAccess > 15 * 60 * 1000) {
+        relatedVideosSessions.delete(k);
+      }
+    }
+
     try {
+      let session = relatedVideosSessions.get(videoId);
+      if (session && session.pages.has(page)) {
+        session.lastAccess = now;
+        const pageVideos = session.pages.get(page) || [];
+        const result = {
+          page,
+          videos: pageVideos,
+          hasMore: session.hasMore || pageVideos.length > 0,
+        };
+        setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json(result);
+      }
+
       const youtube = await getYt();
-      const commentsData = await youtube.getComments(videoId);
-      const comments: any[] = [];
-      if (commentsData && commentsData.contents) {
-        for (const thread of commentsData.contents) {
-          const c = thread.comment;
-          if (c) {
-            let authorAvatar =
-              c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
-              c.author?.thumbnails?.[0]?.url ||
-              c.author?.avatar_thumbnail_url ||
-              (c as any)?.creator_thumbnail_url ||
-              (c as any)?.author_thumbnail?.thumbnails?.[0]?.url ||
-              (c as any)?.author_thumbnails?.[0]?.url ||
-              "";
-            if (authorAvatar && authorAvatar.startsWith("//")) {
-              authorAvatar = "https:" + authorAvatar;
-            }
-            comments.push({
-              id: c.comment_id || Math.random().toString(),
-              author: c.author?.name || "匿名ユーザー",
-              authorId:
-                c.author?.id ||
-                (c.author as any)?.channel_id ||
-                c.author?.endpoint?.payload?.browseId ||
-                "",
-              authorAvatar: authorAvatar,
-              text: c.content?.text || "",
-              publishedTime: c.published_time || "最近",
-              likeCount: c.like_count || "0",
-            });
+      if (!session) {
+        const info = await youtube.getInfo(videoId);
+        const secondary_results = info.watch_next_feed || [];
+        const p1Videos = (secondary_results || [])
+          .map(parseRelatedItem)
+          .filter((v: any) => v && (v.videoId || v.playlistId) && !isUnwantedVideo(v));
+
+        session = {
+          videoId,
+          info,
+          currentPage: 1,
+          pages: new Map([[1, p1Videos]]),
+          hasMore: Boolean(info.getWatchNextContinuation),
+          lastAccess: now,
+        };
+        relatedVideosSessions.set(videoId, session);
+      }
+
+      while (session.currentPage < page && session.hasMore) {
+        try {
+          if (typeof session.info.getWatchNextContinuation === "function") {
+            session.info = await session.info.getWatchNextContinuation();
+            session.currentPage++;
+            const nextItems = (session.info.watch_next_feed || [])
+              .map(parseRelatedItem)
+              .filter((v: any) => v && (v.videoId || v.playlistId) && !isUnwantedVideo(v));
+            session.pages.set(session.currentPage, nextItems);
+            session.hasMore = Boolean(session.info.watch_next_feed && session.info.watch_next_feed.length > 0);
+          } else {
+            session.hasMore = false;
           }
+        } catch (contErr) {
+          console.warn("[Related continuation error]:", contErr);
+          session.hasMore = false;
         }
       }
-      if (comments.length > 0) {
-        setToMemoryCache(cacheKey, comments, 15 * 60 * 1000);
-        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-        return res.json(comments);
+
+      session.lastAccess = now;
+      let pageVideos = session.pages.get(page) || [];
+
+      // フォールバック: 継続が途切れた場合はタグやチャンネル名から関連動画を補完
+      if (pageVideos.length === 0) {
+        try {
+          const info = session.info;
+          const queryTerm = info.basic_info?.author || info.basic_info?.title || "";
+          if (queryTerm) {
+            const searchRes = await youtube.search(queryTerm, { type: "video" });
+            const searchVideos = (searchRes.videos || [])
+              .map((v: any) => formatVideoObject(v))
+              .filter((v: any) => v && v.videoId && v.videoId !== videoId && !isUnwantedVideo(v));
+            if (searchVideos.length > 0) {
+              pageVideos = searchVideos.slice(0, 15);
+              session.pages.set(page, pageVideos);
+              session.hasMore = true;
+            }
+          }
+        } catch {}
       }
-      res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
-      res.json([]);
-    } catch (err) {
+
+      const result = {
+        page,
+        videos: pageVideos,
+        hasMore: session.hasMore && pageVideos.length > 0,
+      };
+      setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(result);
+    } catch (err: any) {
+      console.error("[Related API Error]:", err);
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({ page, videos: [], hasMore: false });
+    }
+  });
+
+  interface CommentsSession {
+    videoId: string;
+    sort: string;
+    commentsObj: any;
+    currentPage: number;
+    pages: Map<number, any[]>;
+    hasMore: boolean;
+    lastAccess: number;
+  }
+  const commentsSessions = new Map<string, CommentsSession>();
+
+  function formatComment(thread: any) {
+    const c = thread.comment;
+    if (!c) return null;
+    let authorAvatar =
+      c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
+      c.author?.thumbnails?.[0]?.url ||
+      c.author?.avatar_thumbnail_url ||
+      (c as any)?.creator_thumbnail_url ||
+      (c as any)?.author_thumbnail?.thumbnails?.[0]?.url ||
+      (c as any)?.author_thumbnails?.[0]?.url ||
+      "";
+    if (authorAvatar && authorAvatar.startsWith("//")) {
+      authorAvatar = "https:" + authorAvatar;
+    }
+    return {
+      id: c.comment_id || Math.random().toString(),
+      author: c.author?.name || "匿名ユーザー",
+      authorId:
+        c.author?.id ||
+        (c.author as any)?.channel_id ||
+        c.author?.endpoint?.payload?.browseId ||
+        "",
+      authorAvatar: authorAvatar,
+      text: c.content?.text || "",
+      publishedTime: c.published_time || "最近",
+      likeCount: c.like_count || "0",
+    };
+  }
+
+  // コメント取得 API (1ページ目および2ページ目以降のページネーション & 並び順: 人気順 / 新しい順)
+  app.get("/api/video/:id/comments", async (req, res) => {
+    const videoId = req.params.id;
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const rawSort = (req.query.sort as string) || "top";
+    const sortType = (rawSort === "newest" || rawSort === "latest") ? "newest" : "top";
+    const cacheKey = `comments:${videoId}:${sortType}:${page}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
+    const sessionKey = `${videoId}:${sortType}`;
+    const now = Date.now();
+    for (const [k, v] of commentsSessions.entries()) {
+      if (now - v.lastAccess > 15 * 60 * 1000) {
+        commentsSessions.delete(k);
+      }
+    }
+
+    try {
+      const youtube = await getYt();
+      let session = commentsSessions.get(sessionKey);
+
+      if (page === 1) {
+        let commentsData = await youtube.getComments(videoId);
+        if (sortType === "newest" && typeof commentsData.applySort === "function") {
+          try {
+            commentsData = await commentsData.applySort("NEWEST_FIRST");
+          } catch (sortErr: any) {
+            console.warn("[Comments applySort NEWEST_FIRST warn]:", sortErr?.message || sortErr);
+          }
+        } else if (sortType === "top" && typeof commentsData.applySort === "function") {
+          try {
+            commentsData = await commentsData.applySort("TOP_COMMENTS");
+          } catch (sortErr: any) {
+            console.warn("[Comments applySort TOP_COMMENTS warn]:", sortErr?.message || sortErr);
+          }
+        }
+
+        const comments: any[] = [];
+        if (commentsData && commentsData.contents) {
+          for (const thread of commentsData.contents) {
+            const item = formatComment(thread);
+            if (item) comments.push(item);
+          }
+        }
+        const hasMore = Boolean(commentsData.has_continuation);
+        session = {
+          videoId,
+          sort: sortType,
+          commentsObj: commentsData,
+          currentPage: 1,
+          pages: new Map([[1, comments]]),
+          hasMore,
+          lastAccess: now,
+        };
+        commentsSessions.set(sessionKey, session);
+
+        const result = {
+          page: 1,
+          comments,
+          hasMore,
+        };
+        setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json(result);
+      }
+
+      // page > 1
+      if (session && session.pages.has(page)) {
+        session.lastAccess = now;
+        const result = {
+          page,
+          comments: session.pages.get(page) || [],
+          hasMore: session.hasMore,
+        };
+        setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json(result);
+      }
+
+      if (!session) {
+        let commentsData = await youtube.getComments(videoId);
+        if (sortType === "newest" && typeof commentsData.applySort === "function") {
+          try {
+            commentsData = await commentsData.applySort("NEWEST_FIRST");
+          } catch (sortErr: any) {
+            console.warn("[Comments applySort NEWEST_FIRST warn]:", sortErr?.message || sortErr);
+          }
+        } else if (sortType === "top" && typeof commentsData.applySort === "function") {
+          try {
+            commentsData = await commentsData.applySort("TOP_COMMENTS");
+          } catch (sortErr: any) {
+            console.warn("[Comments applySort TOP_COMMENTS warn]:", sortErr?.message || sortErr);
+          }
+        }
+
+        const comments: any[] = [];
+        if (commentsData && commentsData.contents) {
+          for (const thread of commentsData.contents) {
+            const item = formatComment(thread);
+            if (item) comments.push(item);
+          }
+        }
+        session = {
+          videoId,
+          sort: sortType,
+          commentsObj: commentsData,
+          currentPage: 1,
+          pages: new Map([[1, comments]]),
+          hasMore: Boolean(commentsData.has_continuation),
+          lastAccess: now,
+        };
+        commentsSessions.set(sessionKey, session);
+      }
+
+      while (session.currentPage < page && session.hasMore) {
+        if (
+          typeof session.commentsObj.getContinuation === "function" &&
+          session.commentsObj.has_continuation
+        ) {
+          session.commentsObj = await session.commentsObj.getContinuation();
+          session.currentPage++;
+          const nextComments: any[] = [];
+          if (session.commentsObj && session.commentsObj.contents) {
+            for (const thread of session.commentsObj.contents) {
+              const item = formatComment(thread);
+              if (item) nextComments.push(item);
+            }
+          }
+          session.pages.set(session.currentPage, nextComments);
+          session.hasMore = Boolean(session.commentsObj.has_continuation);
+        } else {
+          session.hasMore = false;
+        }
+      }
+
+      session.lastAccess = now;
+      const pageComments = session.pages.get(page) || [];
+      const result = {
+        page,
+        comments: pageComments,
+        hasMore: session.hasMore,
+      };
+      setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(result);
+    } catch (err: any) {
       console.error("Comments fetch error:", err);
-      res.json([]);
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({ page, comments: [], hasMore: false });
     }
   });
 
@@ -3009,6 +3317,7 @@ async function startServer() {
   interface ChannelTabSession {
     targetChannelId: string;
     tabName: string;
+    sort?: string;
     channelTitle: string;
     currentPage: number;
     feed: any;
@@ -3018,13 +3327,14 @@ async function startServer() {
   }
   const channelTabSessions = new Map<string, ChannelTabSession>();
 
-  // チャンネル動画のページネーション（2ページ目以降の動画・ショート・ライブ読み込み）
+  // チャンネル動画のページネーション（動画・ショート・ライブ読み込み & 並び順: 人気順、古い順、新しい順）
   app.get("/api/channel/:id/tab/:tabName", async (req, res) => {
     const { id, tabName } = req.params;
-    const page = parseInt((req.query.page as string) || "2", 10);
+    const page = parseInt((req.query.page as string) || "1", 10);
+    const sort = (req.query.sort as string) || "latest";
     const rawId = decodeURIComponent(id || "");
 
-    const cacheKey = `chtab:${rawId}:${tabName}:${page}`;
+    const cacheKey = `chtab:${rawId}:${tabName}:${sort}:${page}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
@@ -3054,7 +3364,7 @@ async function startServer() {
         } catch {}
       }
 
-      const sessionKey = `${targetChannelId}:${tabName}`;
+      const sessionKey = `${targetChannelId}:${tabName}:${sort}`;
       const now = Date.now();
 
       // セッション掃除（10分以上前のものを削除）
@@ -3095,6 +3405,35 @@ async function startServer() {
             feed = await channel.getLiveStreams();
           } else if (typeof channel.getVideos === "function") {
             feed = await channel.getVideos();
+            
+            // 並び順フィルターの適用 (人気順 / 古い順 / 新しい順)
+            if (feed && sort !== "latest") {
+              const availableFilters: string[] = [
+                ...(feed.filters || []),
+                ...(channel.filters || []),
+                ...(feed.sort_filters || []),
+                ...(channel.sort_filters || []),
+              ];
+
+              let filterName: string | undefined;
+              if (sort === "popular") {
+                filterName = availableFilters.find((f: string) => /popular|人気/i.test(f)) || "Popular";
+              } else if (sort === "oldest") {
+                filterName = availableFilters.find((f: string) => /oldest|古い/i.test(f)) || "Oldest";
+              }
+
+              if (filterName) {
+                try {
+                  if (typeof feed.applyFilter === "function") {
+                    feed = await feed.applyFilter(filterName);
+                  } else if (typeof feed.applySort === "function") {
+                    feed = await feed.applySort(filterName);
+                  }
+                } catch (applyErr: any) {
+                  console.warn("[Filter apply warn]:", applyErr?.message || applyErr);
+                }
+              }
+            }
           }
 
           if (feed && feed.videos) {
@@ -3107,6 +3446,7 @@ async function startServer() {
             session = {
               targetChannelId,
               tabName,
+              sort,
               channelTitle,
               currentPage: 1,
               feed: feed,
