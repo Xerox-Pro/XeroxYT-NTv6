@@ -807,15 +807,30 @@ async function startServer() {
         youtube.session.oauth.client_id = await youtube.session.oauth.getClientID();
       }
 
-      // Fetch the device and user code directly without starting any unstable background poll
-      const code_obj = await youtube.session.oauth.getDeviceAndUserCode();
-      console.log("[Auth] Direct device code generated:", code_obj.user_code);
+      const clientId = youtube.session.oauth.client_id?.client_id || "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com";
+      const clientSecret = youtube.session.oauth.client_id?.client_secret || "SboVhoG9s0rNafixCSGGKXAT";
+
+      // Fetch the device and user code directly from Google's unblocked oauth2.googleapis.com API
+      const payload = {
+        client_id: clientId,
+        scope: "http://gdata.youtube.com https://www.googleapis.com/auth/youtube-paid-content"
+      };
+
+      console.log("[Auth] Fetching device code from unblocked Google APIs...");
+      const response = await axios.post("https://oauth2.googleapis.com/device/code", payload, {
+        headers: { "Content-Type": "application/json" }
+      });
+      const code_obj = response.data;
+      console.log("[Auth] Direct device code generated via Google APIs:", code_obj.user_code);
 
       currentAuthFlow = {
         device_code: code_obj.device_code,
         user_code: code_obj.user_code,
         verification_url: code_obj.verification_url,
-        client: youtube.session.oauth.client_id
+        client: {
+          client_id: clientId,
+          client_secret: clientSecret
+        }
       };
       authFlowExpiry = Date.now() + (code_obj.expires_in || 1800) * 1000;
 
@@ -849,8 +864,7 @@ async function startServer() {
     }
 
     try {
-      // Manually request Google's OAuth2 token endpoint on demand (during the active HTTP request)
-      // This completely solves the Cloud Run CPU throttling suspension issue!
+      // Manually request Google's unblocked oauth2.googleapis.com token endpoint on demand
       const payload = {
         client_id: currentAuthFlow.client.client_id,
         client_secret: currentAuthFlow.client.client_secret,
@@ -860,7 +874,7 @@ async function startServer() {
 
       let response;
       try {
-        response = await axios.post("https://www.youtube.com/o/oauth2/token", payload, {
+        response = await axios.post("https://oauth2.googleapis.com/token", payload, {
           headers: {
             "Content-Type": "application/json"
           }
