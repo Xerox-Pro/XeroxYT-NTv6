@@ -1034,7 +1034,7 @@ export default function VideoPlayer({
                 {loadingMoreComments && (
                   <div className="flex items-center gap-2 py-4 text-gray-500 justify-center">
                     <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-                    <span className="text-xs font-medium">次のコメントを自動読み込み中...</span>
+                    <span className="text-xs font-medium">次のコメントを読み込み中...</span>
                   </div>
                 )}
               </div>
@@ -1224,7 +1224,7 @@ export default function VideoPlayer({
             {loadingMoreRelated && (
               <div className="flex items-center gap-2 py-4 text-gray-500 justify-center">
                 <Loader2 className="w-5 h-5 animate-spin text-red-600" />
-                <span className="text-xs font-medium">次の関連動画を自動読み込み中...</span>
+                <span className="text-xs font-medium">次の関連動画を読み込み中...</span>
               </div>
             )}
           </div>
