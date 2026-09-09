@@ -890,7 +890,23 @@ async function startServer() {
         }
         // Other authenticaton error (e.g., code expired or access denied)
         console.error("[Auth] Manual token fetch failed with oauth error:", errorData || err.message);
-        return res.status(400).json({ error: "認証中にエラーが発生しました。再度お試しください。" });
+        
+        let errorMessage = "認証中にエラーが発生しました。再度お試しください。";
+        if (errorData) {
+          if (errorData.error === "access_denied") {
+            errorMessage = "Googleへのアクセスが拒否されました（ユーザーによるキャンセル）。";
+          } else if (errorData.error === "expired_token") {
+            errorMessage = "認証コードの有効期限が切れました。最初からやり直してください。";
+          } else if (errorData.error) {
+            errorMessage = `Google認証エラー: ${errorData.error} (${errorData.error_description || ''})`;
+          }
+        }
+        
+        // Clear flow state to stop polling
+        currentAuthFlow = null;
+        
+        res.setHeader("Cache-Control", "no-store");
+        return res.json({ success: false, status: "error", error: errorMessage });
       }
 
       const tokenData = response.data;
