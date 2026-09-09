@@ -9,6 +9,7 @@ import {
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell
 } from 'lucide-react';
 import Avatar from './Avatar';
+import DownloadModal from './DownloadModal';
 
 interface CommentItemProps {
   comment: Comment;
@@ -123,7 +124,6 @@ export default function VideoPlayer({
   const [eduKey, setEduKey] = useState<string>('');
   const [refreshingEduKey, setRefreshingEduKey] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
-  const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
   const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
@@ -201,23 +201,12 @@ export default function VideoPlayer({
     }
   }, [videoData]);
 
-  // ダウンロード処理 (https://min-plum.vercel.app/360/G5fbV3KefbQ プロキシ経由)
-  const handleDownload = async () => {
-    if (downloading || !videoId) return;
-    setDownloading(true);
-    try {
-      const res = await fetchJSON(`/api/download-link?videoId=${encodeURIComponent(videoId)}`);
-      if (res && res.url) {
-        window.open(res.url, '_blank');
-      } else {
-        alert('ダウンロードリンクを取得できませんでした。');
-      }
-    } catch (err) {
-      console.error('Download error:', err);
-      alert('ダウンロードリンクの取得に失敗しました。');
-    } finally {
-      setDownloading(false);
-    }
+  const [isDownloadModalOpen, setIsDownloadModalOpen] = useState(false);
+
+  // ダウンロード処理 (モーダルを開く)
+  const handleDownload = () => {
+    if (!videoId) return;
+    setIsDownloadModalOpen(true);
   };
 
   // Watch duration tracker
@@ -683,15 +672,10 @@ export default function VideoPlayer({
               <motion.button 
                 onClick={handleDownload}
                 whileTap={{ scale: 0.92 }}
-                disabled={downloading}
                 title="動画をダウンロード"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
-                {downloading ? (
-                  <Loader2 size={15} className="animate-spin text-red-600" />
-                ) : (
-                  <Download size={15} />
-                )}
+                <Download size={15} />
                 <span>ダウンロード</span>
               </motion.button>
 
@@ -1161,6 +1145,14 @@ export default function VideoPlayer({
           <span>リンクをクリップボードにコピーしました</span>
         </div>
       )}
+
+      {/* ダウンロードモーダル */}
+      <DownloadModal
+        videoId={videoId}
+        isOpen={isDownloadModalOpen}
+        onClose={() => setIsDownloadModalOpen(false)}
+        videoTitle={videoData?.title || '動画'}
+      />
     </div>
   );
 }
