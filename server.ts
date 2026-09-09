@@ -418,39 +418,34 @@ const handleStreamRequest = async (req: express.Request, res: express.Response) 
 
 app.get(["/stream/:videoId", "/360/:videoId", "/api/stream/:videoId", "/api/360/:videoId"], handleStreamRequest);
 
-const eduConfigCache = { params: "", expires: 0 };
+let lastKnownEduParams = "?rel=0&autoplay=1";
 
 const handleEduRequest = async (req: express.Request, res: express.Response) => {
   try {
     const id = req.params.id || req.params.videoId;
     if (!id) return res.status(400).send("ID is required");
 
-    let params = "?rel=0&autoplay=1";
-    const now = Date.now();
+    let params = lastKnownEduParams;
 
-    if (eduConfigCache.expires > now) {
-      params = eduConfigCache.params;
-    } else {
-      try {
-        const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json");
-        if (confRes.ok) {
-          const config = await confRes.json();
-          if (config && typeof config.params === "string") {
-            params = config.params;
-            eduConfigCache.params = params;
-            eduConfigCache.expires = now + 5 * 60 * 1000;
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to fetch edu config, using fallback/cache:", e);
-        if (eduConfigCache.params) {
-           params = eduConfigCache.params;
+    try {
+      // 毎回最新の config を取得 (キャッシュ無効化)
+      const confRes = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
+        headers: { "Cache-Control": "no-cache" }
+      });
+      if (confRes.ok) {
+        const config = await confRes.json();
+        if (config && typeof config.params === "string") {
+          params = config.params.replace(/&amp;/g, '&');
+          lastKnownEduParams = params;
         }
       }
+    } catch (e) {
+      console.warn("Failed to fetch fresh edu config, using fallback:", e);
     }
 
     const eduUrl = `https://www.youtubeeducation.com/embed/${id}${params}`;
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     return res.send(eduUrl);
   } catch (err) {
     console.error("Edu API Error:", err);
@@ -573,6 +568,89 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       timestamp: new Date().toISOString(),
       node_version: process.version,
     });
+  });
+
+  // Download Stream Info API via RapidAPI (fallback/alternative)
+  app.get("/api/download-info/:id", async (req, res) => {
+    const videoId = req.params.id;
+    const RAPID_API_HOST = 'ytstream-download-youtube-videos.p.rapidapi.com';
+    const keys = [
+      process.env.RAPIDAPI_KEY_1 || '69e2995a79mshcb657184ba6731cp16f684jsn32054a070ba5',
+      process.env.RAPIDAPI_KEY_2 || 'ece95806fdmshe322f47bce30060p1c3411jsn41a3d4820039',
+      process.env.RAPIDAPI_KEY_3 || '41c9265bc6msha0fa7dfc1a63eabp18bf7cjsne6ef10b79b38'
+    ];
+    const selectedKey = keys[Math.floor(Math.random() * keys.length)];
+
+    const url = `https://${RAPID_API_HOST}/dl?id=${videoId}`;
+    const options = {
+      method: 'GET',
+      headers: {
+        'x-rapidapi-key': selectedKey,
+        'x-rapidapi-host': RAPID_API_HOST,
+        'Content-Type': 'application/json'
+      }
+    };
+
+    try {
+      const response = await fetch(url, options);
+      const data = await response.json();
+
+      if (data.status !== "OK") {
+        return res.status(400).json({ error: "Failed to fetch video data" });
+      }
+
+      res.json(data);
+    } catch (error) {
+      console.error("RapidAPI Error:", error);
+      res.status(500).json({ error: "Internal Server Error" });
+    }
+  });
+
+  // GetLate Live Downloader Proxy (プロキシ経由で取得して別タブで直接再生・ダウンロード)
+  app.get(["/api/download-proxy", "/api/download-proxy/:videoId"], async (req, res) => {
+    const videoId = (req.params.videoId || req.query.videoId || req.query.id) as string;
+    const formatId = (req.query.formatId as string) || "2";
+
+    if (!videoId) {
+      return res.status(400).send("videoId is required");
+    }
+
+    try {
+      const targetUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(videoId)}&formatId=${encodeURIComponent(formatId)}`;
+
+      const response = await fetch(targetUrl, {
+        method: "GET",
+        redirect: "manual",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "*/*"
+        }
+      });
+
+      const location = response.headers.get("location");
+      if (location) {
+        return res.redirect(location);
+      }
+
+      // リダイレクト追従で取得
+      const followRes = await fetch(targetUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+          "Accept": "*/*"
+        }
+      });
+
+      if (followRes.url && followRes.url !== targetUrl) {
+        return res.redirect(followRes.url);
+      }
+
+      const text = await followRes.text();
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.status(followRes.status).send(text);
+    } catch (err: any) {
+      console.error("Download proxy error:", err);
+      res.status(500).send("Failed to proxy download request: " + (err.message || String(err)));
+    }
   });
 
   // Debug API: Raw Search

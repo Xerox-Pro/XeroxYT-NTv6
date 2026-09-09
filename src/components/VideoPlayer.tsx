@@ -120,10 +120,9 @@ export default function VideoPlayer({
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
-  const [eduKey, setEduKey] = useState<string>('');
-  const [refreshingEduKey, setRefreshingEduKey] = useState(false);
+  const [iframeUrl, setIframeUrl] = useState<string>('');
+  const [refreshingIframe, setRefreshingIframe] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
-  const [downloading, setDownloading] = useState(false);
   const [relatedFilter, setRelatedFilter] = useState('all');
   const [isLiked, setIsLiked] = useState(false);
   const [isDisliked, setIsDisliked] = useState(false);
@@ -153,20 +152,60 @@ export default function VideoPlayer({
     }
   };
 
-  // EduKey 取得
-  useEffect(() => {
-    const fetchEduKey = async () => {
-      try {
-        const res = await fetchJSON('/api/edukey');
-        if (res && res.key) {
-          setEduKey(res.key);
+  // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
+  const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
+    let params = '?rel=0&autoplay=1';
+    try {
+      // 毎回最新の config を取得 (キャッシュ無効化)
+      const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
+        cache: 'no-store'
+      });
+      if (res.ok) {
+        const config = await res.json();
+        if (config && typeof config.params === 'string') {
+          params = config.params.replace(/&amp;/g, '&');
         }
-      } catch (e) {
-        console.error('Failed to load edukey:', e);
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      console.warn('Direct video_config.json fetch failed, using backend fallback:', err);
+      try {
+        const fallbackRes = await fetch(`/api/edu/${id}`);
+        if (fallbackRes.ok) {
+          const fallbackUrl = await fallbackRes.text();
+          if (playlist) {
+            return `${fallbackUrl}&list=${playlist}`;
+          }
+          return fallbackUrl;
+        }
+      } catch (fallbackErr) {
+        console.error('Fallback fetch failed:', fallbackErr);
+      }
+    }
+
+    let url = `https://www.youtubeeducation.com/embed/${id}${params}`;
+    if (playlist) {
+      url += `&list=${playlist}`;
+    }
+    return url;
+  };
+
+  // 動画を開いた時に毎回 key(params) を取得してプレイヤーを埋め込む
+  useEffect(() => {
+    let isCurrent = true;
+    const loadPlayer = async () => {
+      const id = videoId || 'videoseries';
+      const url = await getEduPlayerUrl(id, playlistId);
+      if (isCurrent) {
+        setIframeUrl(url);
       }
     };
-    fetchEduKey();
-  }, []);
+    loadPlayer();
+    return () => {
+      isCurrent = false;
+    };
+  }, [videoId, playlistId]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -177,20 +216,19 @@ export default function VideoPlayer({
     return () => clearInterval(timer);
   }, [cooldownSec]);
 
-  // EduKey 再取得・プレイヤー再読み込み
-  const handleReloadEduKey = async () => {
-    if (refreshingEduKey || cooldownSec > 0) return;
-    setRefreshingEduKey(true);
+  // プレイヤー再読み込み
+  const handleReloadPlayer = async () => {
+    if (refreshingIframe || cooldownSec > 0) return;
+    setRefreshingIframe(true);
     setCooldownSec(15); // 15秒のクールダウンをセット
     try {
-      const res = await fetchJSON('/api/edukey?refresh=true');
-      if (res && res.key) {
-        setEduKey(res.key);
-      }
+      const id = videoId || 'videoseries';
+      const url = await getEduPlayerUrl(id, playlistId);
+      setIframeUrl(url);
     } catch (e) {
-      console.error('Failed to reload edukey:', e);
+      console.error('Failed to reload iframe:', e);
     } finally {
-      setRefreshingEduKey(false);
+      setRefreshingIframe(false);
     }
   };
 
@@ -201,23 +239,11 @@ export default function VideoPlayer({
     }
   }, [videoData]);
 
-  // ダウンロード処理 (https://min-plum.vercel.app/360/G5fbV3KefbQ プロキシ経由)
-  const handleDownload = async () => {
-    if (downloading || !videoId) return;
-    setDownloading(true);
-    try {
-      const res = await fetchJSON(`/api/download-link?videoId=${encodeURIComponent(videoId)}`);
-      if (res && res.url) {
-        window.open(res.url, '_blank');
-      } else {
-        alert('ダウンロードリンクを取得できませんでした。');
-      }
-    } catch (err) {
-      console.error('Download error:', err);
-      alert('ダウンロードリンクの取得に失敗しました。');
-    } finally {
-      setDownloading(false);
-    }
+  // ダウンロード処理 (getlate.devのURLを直接別タブで開く)
+  const handleDownload = () => {
+    if (!videoId) return;
+    const directUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&formatId=2`;
+    window.open(directUrl, '_blank');
   };
 
   // Watch duration tracker
@@ -549,15 +575,15 @@ export default function VideoPlayer({
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
-          <iframe
-            src={playlistId && !videoId 
-              ? `https://www.youtubeeducation.com/embed/videoseries?list=${playlistId}&autoplay=1${eduKey}`
-              : `https://www.youtubeeducation.com/embed/${videoId}${eduKey ? eduKey : '?autoplay=1'}${playlistId ? `&list=${playlistId}` : ''}`}
-            className="w-full h-full border-0"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            title={videoData.title}
-          ></iframe>
+          {iframeUrl && (
+            <iframe
+              src={iframeUrl}
+              className="w-full h-full border-0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={videoData.title}
+            ></iframe>
+          )}
         </div>
         
         <div className="mt-4 flex flex-col">
@@ -683,26 +709,21 @@ export default function VideoPlayer({
               <motion.button 
                 onClick={handleDownload}
                 whileTap={{ scale: 0.92 }}
-                disabled={downloading}
                 title="動画をダウンロード"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
-                {downloading ? (
-                  <Loader2 size={15} className="animate-spin text-red-600" />
-                ) : (
-                  <Download size={15} />
-                )}
+                <Download size={15} />
                 <span>ダウンロード</span>
               </motion.button>
 
               <motion.button 
-                onClick={handleReloadEduKey}
+                onClick={handleReloadPlayer}
                 whileTap={{ scale: 0.92 }}
-                disabled={refreshingEduKey || cooldownSec > 0}
-                title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのEduKeyを再取得してプレイヤーを再読み込み"}
+                disabled={refreshingIframe || cooldownSec > 0}
+                title={cooldownSec > 0 ? `再読み込みは${cooldownSec}秒後に可能になります` : "プレイヤーのURLを再取得してプレイヤーを再読み込み"}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-2xs"
               >
-                {refreshingEduKey ? (
+                {refreshingIframe ? (
                   <Loader2 size={15} className="animate-spin text-blue-600" />
                 ) : (
                   <RotateCw size={15} className={cooldownSec > 0 ? "opacity-50" : ""} />
