@@ -85,9 +85,12 @@ async function getYt() {
 
 const ytInstancesCache = new Map<string, Innertube>();
 
-async function getInnertubeInstance(req: express.Request) {
+async function getInnertubeInstance(req: express.Request, requireAuth: boolean = false) {
   const credentialsHeader = req.headers["x-youtube-credentials"] as string;
   if (!credentialsHeader) {
+    if (requireAuth) {
+      throw new Error("You must be signed in to perform this operation.");
+    }
     return getYt();
   }
 
@@ -95,10 +98,16 @@ async function getInnertubeInstance(req: express.Request) {
   try {
     credentialsObj = JSON.parse(credentialsHeader);
   } catch (e) {
+    if (requireAuth) {
+      throw new Error("You must be signed in to perform this operation.");
+    }
     return getYt();
   }
 
   if (!credentialsObj) {
+    if (requireAuth) {
+      throw new Error("You must be signed in to perform this operation.");
+    }
     return getYt();
   }
 
@@ -126,6 +135,9 @@ async function getInnertubeInstance(req: express.Request) {
     console.log(`[YT] Authenticated successfully with credentials`);
   } catch (err) {
     console.error(`[YT] Failed to sign in with provided credentials:`, err);
+    if (requireAuth) {
+      throw new Error("You must be signed in to perform this operation.");
+    }
     return getYt();
   }
 
@@ -1003,7 +1015,7 @@ async function startServer() {
   // User's Liked Videos using YouTubei.js
   app.get("/api/user/liked-videos", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       // LL is the playlist ID for Liked Videos
       const likedVideosPlaylist = await youtube.getPlaylist("LL");
 
@@ -1012,8 +1024,11 @@ async function startServer() {
         .filter((v) => v !== null);
 
       res.json(videos);
-    } catch (err) {
+    } catch (err: any) {
       console.error("User liked videos fetch error:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       res.status(500).json({ error: "Failed to fetch liked videos" });
     }
   });
@@ -1021,7 +1036,7 @@ async function startServer() {
   // User's Subscriptions using YouTubei.js
   app.get("/api/user/subscriptions", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       
       // Try to get actual subscribed channels from getChannelsFeed
       let channels: any[] = [];
@@ -1081,6 +1096,9 @@ async function startServer() {
       return res.json(formatted);
     } catch (err: any) {
       console.error("[API] Error fetching user subscriptions:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });
@@ -1088,12 +1106,15 @@ async function startServer() {
   // User's Watch History using YouTubei.js
   app.get("/api/user/history", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const historyFeed = await youtube.getHistory();
       const videos = extractVideosFromFeed(historyFeed);
       return res.json(videos);
     } catch (err: any) {
       console.error("[API] Error fetching user history:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });
@@ -1101,7 +1122,7 @@ async function startServer() {
   // User's Playlists using YouTubei.js
   app.get("/api/user/playlists", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const playlistFeed = await youtube.getPlaylists();
       const playlists = playlistFeed.playlists || [];
       
@@ -1116,6 +1137,9 @@ async function startServer() {
       return res.json(formatted);
     } catch (err: any) {
       console.error("[API] Error fetching user playlists:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });
@@ -1123,7 +1147,7 @@ async function startServer() {
   // User's Watch Later using YouTubei.js
   app.get("/api/user/watch-later", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const watchLaterPlaylist = await youtube.getPlaylist("WL");
       const videos = (watchLaterPlaylist.videos || [])
         .map((v: any) => formatVideoObject(v))
@@ -1131,6 +1155,9 @@ async function startServer() {
       return res.json(videos);
     } catch (err: any) {
       console.error("User watch later fetch error:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: "Failed to fetch watch later videos" });
     }
   });
@@ -1138,7 +1165,7 @@ async function startServer() {
   // User's Own Channel Info using YouTubei.js
   app.get("/api/user/channel-info", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const accounts = await youtube.account.getInfo(true) as any[];
       const activeAccount = accounts.find((a: any) => a.is_selected) || accounts[0];
       
@@ -1175,6 +1202,9 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("[API] Error fetching user channel info:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });
@@ -1182,11 +1212,14 @@ async function startServer() {
   // User's Notifications count using YouTubei.js
   app.get("/api/user/notifications/unread-count", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const count = await youtube.getUnseenNotificationsCount();
       return res.json({ count });
     } catch (err: any) {
       console.error("[API] Error fetching unseen notifications count:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });
@@ -1194,7 +1227,7 @@ async function startServer() {
   // User's Notifications using YouTubei.js
   app.get("/api/user/notifications", async (req, res) => {
     try {
-      const youtube = await getInnertubeInstance(req);
+      const youtube = await getInnertubeInstance(req, true);
       const notificationsMenu = await youtube.getNotifications();
       const contents = notificationsMenu.contents || [];
       
@@ -1212,6 +1245,9 @@ async function startServer() {
       return res.json(formatted);
     } catch (err: any) {
       console.error("[API] Error fetching notifications:", err);
+      if (err.message?.includes("signed in")) {
+        return res.status(401).json({ error: err.message });
+      }
       return res.status(500).json({ error: err.message });
     }
   });

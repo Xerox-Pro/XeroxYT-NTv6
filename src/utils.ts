@@ -88,6 +88,13 @@ export async function fetchJSON(url: string, options?: RequestInit) {
           errorMessage += `\n詳細: ${text.substring(0, 100)}`;
         }
       }
+
+      if (res.status === 401 && url.startsWith('/api/user/')) {
+        console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
+        localStorage.removeItem('xerox_youtube_credentials');
+        localStorage.removeItem('xerox_user_info');
+      }
+
       throw new Error(errorMessage);
     }
 
