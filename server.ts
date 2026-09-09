@@ -363,97 +363,142 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-// --- /stream/:videoId (/360/:videoId) & /edu/:id (/scratch-edu/:id) Endpoints ---
-const streamCache = new Map<string, { url: string; expires: number }>();
+  // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
+  app.use((req, res, next) => {
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isBot = /gptbot|chatgpt|ccbot|bytespider|claudebot|anthropic|amazonbot|facebookbot|semrush|ahrefs|dotbot|yandexbot|petalbot|dataforseo/i.test(userAgent);
+    
+    if (isBot && (req.path.startsWith("/api/") || req.path.startsWith("/stream") || req.path.startsWith("/edu") || req.path.startsWith("/360"))) {
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      return res.status(403).json({ error: "Automated API access is not allowed." });
+    }
+    next();
+  });
 
-// メモリキャッシュの肥大化を防ぐ定期クリーンアップ (5分毎)
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of streamCache.entries()) {
-    if (v.expires <= now) streamCache.delete(k);
+  // --- In-Memory API Response Cache Helper ---
+  interface CacheEntry {
+    data: any;
+    expires: number;
   }
-}, 5 * 60 * 1000);
+  const memoryCache = new Map<string, CacheEntry>();
 
-const handleStreamRequest = async (req: express.Request, res: express.Response) => {
-  try {
-    const videoId = req.params.videoId || req.params.id;
-    if (!videoId) return res.status(400).send("Video ID is required");
-
-    const now = Date.now();
-    const cached = streamCache.get(videoId);
-    if (cached && cached.expires > now) {
-      res.setHeader("Content-Type", "text/plain");
-      return res.send(cached.url);
+  function getFromMemoryCache<T>(key: string): T | null {
+    const item = memoryCache.get(key);
+    if (item && item.expires > Date.now()) {
+      return item.data as T;
     }
+    return null;
+  }
 
-    const apiUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv=${videoId}&formatId=2`;
-    
-    const response = await fetch(apiUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-      },
-      redirect: "follow"
-    });
-
-    if (!response.ok) {
-      return res.status(500).send("Error fetching stream URL");
-    }
-
-    const finalUrl = response.url;
-    streamCache.set(videoId, { url: finalUrl, expires: now + 60000 });
-    
-    if (streamCache.size > 1000) {
-      for (const [k, v] of streamCache.entries()) {
-        if (v.expires <= now) streamCache.delete(k);
+  function setToMemoryCache(key: string, data: any, ttlMs: number = 15 * 60 * 1000) {
+    memoryCache.set(key, { data, expires: Date.now() + ttlMs });
+    if (memoryCache.size > 2000) {
+      const now = Date.now();
+      for (const [k, v] of memoryCache.entries()) {
+        if (v.expires <= now) memoryCache.delete(k);
       }
     }
-
-    res.setHeader("Content-Type", "text/plain");
-    return res.send(finalUrl);
-  } catch (err) {
-    console.error("Stream API Error:", err);
-    res.status(500).send("Internal Server Error");
   }
-};
 
-app.get(["/stream/:videoId", "/360/:videoId", "/api/stream/:videoId", "/api/360/:videoId"], handleStreamRequest);
+  // --- /stream/:videoId (/360/:videoId) & /edu/:id (/scratch-edu/:id) Endpoints ---
+  const streamCache = new Map<string, { url: string; expires: number }>();
 
-let lastKnownEduParams = "?rel=0&autoplay=1";
+  // メモリキャッシュの定期クリーンアップ (5分毎)
+  setInterval(() => {
+    const now = Date.now();
+    for (const [k, v] of streamCache.entries()) {
+      if (v.expires <= now) streamCache.delete(k);
+    }
+    for (const [k, v] of memoryCache.entries()) {
+      if (v.expires <= now) memoryCache.delete(k);
+    }
+  }, 5 * 60 * 1000);
 
-const handleEduRequest = async (req: express.Request, res: express.Response) => {
-  try {
-    const id = req.params.id || req.params.videoId;
-    if (!id) return res.status(400).send("ID is required");
-
-    let params = lastKnownEduParams;
-
+  const handleStreamRequest = async (req: express.Request, res: express.Response) => {
     try {
-      // 毎回最新の config を取得 (キャッシュ無効化)
-      const confRes = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
-        headers: { "Cache-Control": "no-cache" }
+      const videoId = req.params.videoId || req.params.id;
+      if (!videoId) return res.status(400).send("Video ID is required");
+
+      const now = Date.now();
+      const cached = streamCache.get(videoId);
+      if (cached && cached.expires > now) {
+        res.setHeader("Content-Type", "text/plain");
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.send(cached.url);
+      }
+
+      const apiUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv=${videoId}&formatId=2`;
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        },
+        redirect: "follow"
       });
-      if (confRes.ok) {
-        const config = await confRes.json();
-        if (config && typeof config.params === "string") {
-          params = config.params.replace(/&amp;/g, '&');
-          lastKnownEduParams = params;
+
+      if (!response.ok) {
+        return res.status(500).send("Error fetching stream URL");
+      }
+
+      const finalUrl = response.url;
+      streamCache.set(videoId, { url: finalUrl, expires: now + 60000 });
+
+      res.setHeader("Content-Type", "text/plain");
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.send(finalUrl);
+    } catch (err) {
+      console.error("Stream API Error:", err);
+      res.status(500).send("Internal Server Error");
+    }
+  };
+
+  app.get(["/stream/:videoId", "/360/:videoId", "/api/stream/:videoId", "/api/360/:videoId"], handleStreamRequest);
+
+  let cachedEduConfig: { params: string; expires: number } = {
+    params: "?rel=0&autoplay=1",
+    expires: 0,
+  };
+
+  const handleEduRequest = async (req: express.Request, res: express.Response) => {
+    try {
+      const id = req.params.id || req.params.videoId;
+      if (!id) return res.status(400).send("ID is required");
+
+      const now = Date.now();
+      let params = cachedEduConfig.params;
+
+      // 15分間メモリキャッシュしてGitHubへの無駄な毎アクセスを防止
+      if (now > cachedEduConfig.expires) {
+        try {
+          const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json", {
+            headers: { "Accept": "application/json" }
+          });
+          if (confRes.ok) {
+            const config = await confRes.json();
+            if (config && typeof config.params === "string") {
+              params = config.params.replace(/&amp;/g, '&');
+              cachedEduConfig = {
+                params,
+                expires: now + 15 * 60 * 1000,
+              };
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to fetch fresh edu config, using fallback:", e);
         }
       }
-    } catch (e) {
-      console.warn("Failed to fetch fresh edu config, using fallback:", e);
+
+      const eduUrl = `https://www.youtubeeducation.com/embed/${id}${params}`;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.send(eduUrl);
+    } catch (err) {
+      console.error("Edu API Error:", err);
+      res.status(500).send("Internal Server Error");
     }
+  };
 
-    const eduUrl = `https://www.youtubeeducation.com/embed/${id}${params}`;
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-    return res.send(eduUrl);
-  } catch (err) {
-    console.error("Edu API Error:", err);
-    res.status(500).send("Internal Server Error");
-  }
-};
-
-app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"], handleEduRequest);
+  app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"], handleEduRequest);
 
 
   const PORT = 3000;
@@ -505,8 +550,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         { headers: getGithubHeaders() },
       );
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ success: true });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.json({ success: true });
     } catch (err: any) {
       console.error("Save error:", err.response?.data || err.message);
       res.status(500).json({ error: "Failed to save to GitHub" });
@@ -541,12 +586,12 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       );
 
       const data = decryptData(encryptedPayload);
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ success: true, data });
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.json({ success: true, data });
     } catch (err: any) {
       if (err.response?.status === 404) {
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ success: true, data: null }); // No existing data
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+        return res.json({ success: true, data: null }); // No existing data
       }
       console.error("Load error:", err.response?.data || err.message);
       res.status(500).json({ error: "Failed to load from GitHub" });
@@ -561,7 +606,7 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
 
   // Health Check
   app.get("/api/health", (req, res) => {
-    res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    res.setHeader("Cache-Control", "public, s-maxage=60, max-age=60");
     return res.json({
       status: "ok",
       yt_initialized: !!yt,
@@ -573,6 +618,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
   // Download Stream Info API via RapidAPI (fallback/alternative)
   app.get("/api/download-info/:id", async (req, res) => {
     const videoId = req.params.id;
+    const cacheKey = `dl-info:${videoId}`;
+    const cached = getFromMemoryCache(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     const RAPID_API_HOST = 'ytstream-download-youtube-videos.p.rapidapi.com';
     const keys = [
       process.env.RAPIDAPI_KEY_1 || '69e2995a79mshcb657184ba6731cp16f684jsn32054a070ba5',
@@ -599,6 +651,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         return res.status(400).json({ error: "Failed to fetch video data" });
       }
 
+      setToMemoryCache(cacheKey, data, 30 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       res.json(data);
     } catch (error) {
       console.error("RapidAPI Error:", error);
@@ -799,6 +853,12 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
   // トレンド動画取得
   app.get("/api/trending", async (req, res) => {
     try {
+      const cached = getFromMemoryCache<any[]>("trending:jp");
+      if (cached && cached.length > 0) {
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.json(cached);
+      }
+
       const youtube = await getYt();
       // 日本の人気動画を検索
       const search = await youtube.search("日本 トレンド 人気動画 2026", {
@@ -811,8 +871,11 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         .map((v: any) => formatVideoObject(v));
 
       if (videos.length > 0) {
+        setToMemoryCache("trending:jp", videos, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
         return res.json(videos);
       }
+      res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
       res.json([]);
     } catch (err) {
       console.error("Trending API error:", err);
@@ -1797,8 +1860,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
           [finalVideos[i], finalVideos[j]] = [finalVideos[j], finalVideos[i]];
         }
 
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json({
           videos: finalVideos,
           aiKeywords: geminiKeywords,
           seed: seed,
@@ -1813,16 +1876,16 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         .map((v: any) => formatVideoObject(v))
         .filter((v: any) => v && v.videoId);
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json({
         videos: fallbackVideos,
         aiKeywords: [],
         seed: seed,
       });
     } catch (err) {
       console.error("[Recs] Recommendations API error:", err);
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ videos: [], aiKeywords: [], seed: seed });
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({ videos: [], aiKeywords: [], seed: seed });
     }
   });
 
@@ -1831,6 +1894,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     const q = (req.query.q as string) || "";
     if (!q.trim()) {
       return res.json([]);
+    }
+
+    const cacheKey = `sug:${q.trim().toLowerCase()}`;
+    const cached = getFromMemoryCache<string[]>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
+      return res.json(cached);
     }
 
     try {
@@ -1846,7 +1916,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       }
       const data = await response.json();
       const suggestions = Array.isArray(data) && Array.isArray(data[1]) ? data[1] : [];
-      res.setHeader("Cache-Control", "public, max-age=300");
+      setToMemoryCache(cacheKey, suggestions, 60 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
       return res.json(suggestions);
     } catch (err) {
       console.error("[Suggestions] Error fetching suggestions:", err);
@@ -1862,9 +1933,16 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       return res.json([]);
     }
 
+    const searchQuery = page > 1 ? `${q} ${page}` : q;
+    const cacheKey = `search:${searchQuery.toLowerCase().trim()}`;
+    const cached = getFromMemoryCache<any[]>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
       const youtube = await getYt();
-      const searchQuery = page > 1 ? `${q} ${page}` : q;
 
       console.log(`[Search] Query: ${searchQuery}, Page: ${page}`);
 
@@ -1899,9 +1977,12 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       console.log(`[Search] Formatted results: ${videos.length}`);
 
       if (videos.length > 0) {
+        setToMemoryCache(cacheKey, videos, 15 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
         return res.json(videos);
       }
 
+      res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
       res.json([]);
     } catch (err) {
       console.error("Search API error:", err);
@@ -1921,6 +2002,14 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       .filter(Boolean);
     const selectedChannel = (req.query.selectedChannel as string) || "all";
     const page = parseInt((req.query.page as string) || "1", 10);
+    
+    const cacheKey = `subfeed:${selectedChannel}:${page}:${channelTitles.sort().join(",")}`;
+    const cached = getFromMemoryCache<any[]>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
       const youtube = await getYt();
       let allVideos: any[] = [];
@@ -1956,6 +2045,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       const uniqueFeed = Array.from(
         new Map(allVideos.map((item) => [item.videoId, item])).values(),
       );
+      setToMemoryCache(cacheKey, uniqueFeed, 15 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       res.json(uniqueFeed);
     } catch (err) {
       console.error("Subscriptions feed API error:", err);
@@ -1981,13 +2072,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         now - lastForceRefreshTime < REFRESH_COOLDOWN_MS &&
         cachedEduKey
       ) {
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ key: cachedEduKey, rateLimited: true });
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.json({ key: cachedEduKey, rateLimited: true });
       }
 
       if (!forceRefresh && cachedEduKey && now - eduKeyFetchTime < ONE_DAY_MS) {
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ key: cachedEduKey });
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.json({ key: cachedEduKey });
       }
 
       if (forceRefresh) {
@@ -2013,8 +2104,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
           queryPart = queryPart.replaceAll("&amp;", "&");
           cachedEduKey = queryPart;
           eduKeyFetchTime = now;
-          res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ key: queryPart });
+          res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+          return res.json({ key: queryPart });
         }
       }
       throw new Error("Invalid scratch-edu key response format");
@@ -2026,8 +2117,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         cachedEduKey = fallbackKey;
         eduKeyFetchTime = Date.now();
       }
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ key: cachedEduKey });
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json({ key: cachedEduKey });
     }
   });
 
@@ -2037,6 +2128,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     if (!videoId) {
       return res.status(400).json({ error: "videoId is required" });
     }
+    const cacheKey = `dl-link:${videoId}`;
+    const cached = getFromMemoryCache<{ url: string }>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
       const resp = await axios.get(
         `https://min-plum.vercel.app/360/${encodeURIComponent(videoId)}`,
@@ -2049,8 +2147,9 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         typeof resp.data === "string" ? resp.data : String(resp.data)
       ).trim();
       if (downloadUrl.startsWith("http")) {
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ url: downloadUrl });
+        setToMemoryCache(cacheKey, { url: downloadUrl }, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json({ url: downloadUrl });
       }
       throw new Error("Invalid download URL response");
     } catch (err: any) {
@@ -2062,24 +2161,32 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
   });
 
   app.get("/api/video/:id", async (req, res) => {
+    const videoId = req.params.id;
+    const cacheKey = `video:${videoId}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
       const youtube = await getYt();
       let info;
       try {
-        info = await youtube.getInfo(req.params.id);
+        info = await youtube.getInfo(videoId);
       } catch (getInfoErr: any) {
         console.warn(
-          `[YT] getInfo error for ${req.params.id}, trying getBasicInfo fallback:`,
+          `[YT] getInfo error for ${videoId}, trying getBasicInfo fallback:`,
           getInfoErr.message || getInfoErr,
         );
         try {
-          info = await youtube.getBasicInfo(req.params.id);
+          info = await youtube.getBasicInfo(videoId);
         } catch (basicErr: any) {
           console.warn(
-            `[YT] getBasicInfo error for ${req.params.id}, trying IOS client fallback:`,
+            `[YT] getBasicInfo error for ${videoId}, trying IOS client fallback:`,
             basicErr.message || basicErr,
           );
-          info = await youtube.getInfo(req.params.id, { client: "IOS" });
+          info = await youtube.getInfo(videoId, { client: "IOS" });
         }
       }
 
@@ -2175,9 +2282,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         .filter((k: string) => k.length > 0);
       const combinedTags = Array.from(new Set([...hashMatches, ...keywords]));
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
-        videoId: req.params.id,
+      const videoData = {
+        videoId: videoId,
         title: basic?.title || primary?.title?.text,
         author: owner?.author?.name || basic?.author || "Unknown",
         authorId: owner?.author?.id || basic?.channel_id,
@@ -2196,7 +2302,11 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         subCount: parseCount(owner?.subscriber_count?.text),
         videoThumbnails: basic?.thumbnail || [],
         recommendedVideos: recs,
-      });
+      };
+
+      setToMemoryCache(cacheKey, videoData, 30 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
+      return res.json(videoData);
     } catch (err) {
       console.error("Video API error:", err);
       res.status(404).json({ error: "Video not found" });
@@ -2204,9 +2314,17 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
   });
 
   app.get("/api/video/:id/comments", async (req, res) => {
+    const videoId = req.params.id;
+    const cacheKey = `comments:${videoId}`;
+    const cached = getFromMemoryCache<any[]>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
       const youtube = await getYt();
-      const commentsData = await youtube.getComments(req.params.id);
+      const commentsData = await youtube.getComments(videoId);
       const comments: any[] = [];
       if (commentsData && commentsData.contents) {
         for (const thread of commentsData.contents) {
@@ -2240,8 +2358,11 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         }
       }
       if (comments.length > 0) {
+        setToMemoryCache(cacheKey, comments, 15 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
         return res.json(comments);
       }
+      res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
       res.json([]);
     } catch (err) {
       console.error("Comments fetch error:", err);
@@ -2251,8 +2372,15 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
 
   // YouTube プレイリスト取得 API
   app.get("/api/playlist/:id", async (req, res) => {
+    const playlistId = req.params.id;
+    const cacheKey = `playlist:${playlistId}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
     try {
-      const playlistId = req.params.id;
       const youtube = await getYt();
       const playlist = await youtube.getPlaylist(playlistId);
 
@@ -2298,15 +2426,18 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         }
       }
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      const result = {
         id: playlistId,
         title,
         description,
         author,
         videoCount: items.length,
         videos: items,
-      });
+      };
+
+      setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json(result);
     } catch (err: any) {
       console.error("Playlist API error:", err);
       res.status(400).json({ error: "プレイリストを取得できませんでした" });
@@ -2316,6 +2447,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
   app.get("/api/channel/:id", async (req, res) => {
     const rawId = decodeURIComponent(req.params.id || "");
     let channelId = rawId;
+
+    const cacheKey = `channel:${rawId}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
 
     try {
       const youtube = await getYt();
@@ -2596,8 +2734,7 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
           }
         }
 
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+        const channelData = {
           id: channelId,
           title: channelTitle,
           description:
@@ -2633,7 +2770,10 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
           releases: releasesList,
           communityPosts: communityPostsList,
           playlists: playlistsList,
-        });
+        };
+        setToMemoryCache(cacheKey, channelData, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.json(channelData);
       }
 
       // 2. 非公式 Invidious API フォールバック
@@ -2642,6 +2782,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       );
       const invidiousData = await fetchInvidiousChannel(rawId);
       if (invidiousData && invidiousData.title) {
+        setToMemoryCache(cacheKey, invidiousData, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
         return res.json(invidiousData);
       }
 
@@ -2651,6 +2793,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       );
       const rssData = await fetchYouTubeRssChannel(rawId);
       if (rssData && rssData.videos.length > 0) {
+        setToMemoryCache(cacheKey, rssData, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
         return res.json(rssData);
       }
 
@@ -2669,8 +2813,7 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         ? firstVideo.authorAvatar
         : `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random`;
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      const searchChannelData = {
         id: channelId,
         title: authorName,
         description: "",
@@ -2687,11 +2830,14 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         releases: [],
         communityPosts: [],
         playlists: [],
-      });
+      };
+      setToMemoryCache(cacheKey, searchChannelData, 15 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json(searchChannelData);
     } catch (err: any) {
       console.error("[Channel] Final channel handler error:", err);
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({
         id: req.params.id,
         title: req.params.id,
         description: "",
@@ -2851,8 +2997,8 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
         }),
       );
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ results });
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json({ results });
     } catch (e: any) {
       console.error("[Batch Endpoint Error]:", e);
       res.status(500).json({ error: e.message });
@@ -2877,6 +3023,13 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
     const { id, tabName } = req.params;
     const page = parseInt((req.query.page as string) || "2", 10);
     const rawId = decodeURIComponent(id || "");
+
+    const cacheKey = `chtab:${rawId}:${tabName}:${page}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
 
     try {
       const youtube = await getYt();
@@ -2917,12 +3070,14 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
       if (session && session.pages.has(page)) {
         session.lastAccess = now;
         const pageVideos = session.pages.get(page) || [];
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+        const result = {
           page: page,
           videos: pageVideos,
           hasMore: session.hasMore || pageVideos.length > 0,
-        });
+        };
+        setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+        return res.json(result);
       }
 
       // 1. YouTube.js Channel オブジェクトによる正規フィード取得と継続（Continuation）
@@ -2983,12 +3138,14 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
           const pageVideos = session.pages.get(page) || [];
 
           if (pageVideos.length > 0) {
-            res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+            const result = {
               page: page,
               videos: pageVideos,
               hasMore: session.hasMore,
-            });
+            };
+            setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+            res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+            return res.json(result);
           }
         }
       } catch (channelErr) {
@@ -3034,29 +3191,31 @@ app.get(["/edu/:id", "/scratch-edu/:id", "/api/edu/:id", "/api/scratch-edu/:id"]
               });
             }
 
-            res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+            const result = {
               page: page,
               videos: pageVideos,
               hasMore:
                 Boolean(plFeed.has_continuation) && pageVideos.length > 0,
-            });
+            };
+            setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
+            res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+            return res.json(result);
           }
         } catch (plErr) {
           console.warn("[Channel Tab Uploads fallback Error]:", plErr);
         }
       }
 
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({
+      res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
+      return res.json({
         page: page,
         videos: [],
         hasMore: false,
       });
     } catch (e: any) {
       console.error("[Channel Tab API Error]:", e);
-      res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ page, videos: [], hasMore: false });
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({ page, videos: [], hasMore: false });
     }
   });
 

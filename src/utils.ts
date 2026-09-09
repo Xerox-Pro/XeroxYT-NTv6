@@ -23,7 +23,16 @@ export function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_TTL_DEFAULT = 30 * 60 * 1000; // 30 minutes
+
+// エンドポイント別のキャッシュ保持時間 (ms)
+function getCacheTTL(url: string): number {
+  if (url.includes('/api/recommendations')) return 5 * 60 * 1000; // 5 minutes
+  if (url.includes('/api/trending')) return 15 * 60 * 1000; // 15 minutes
+  if (url.includes('/api/search') || url.includes('/api/suggestions')) return 10 * 60 * 1000; // 10 minutes
+  if (url.includes('/api/video/') || url.includes('/api/channel/')) return 30 * 60 * 1000; // 30 minutes
+  return CACHE_TTL_DEFAULT;
+}
 
 function hasValidContent(data: any): boolean {
   if (!data) return false;
@@ -39,16 +48,15 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const isTimeSensitive = 
       url.includes('/sync/') || 
       url.includes('/auth/') || 
-      url.includes('/recommendations') || 
       url.includes('/stream') || 
-      url.includes('/edu') ||
-      url.includes('refreshNonce=');
+      url.includes('/download-proxy');
     
     // Check IndexedDB cache for GET requests
     if (isGet && isApiCall && !isTimeSensitive) {
       try {
         const cached = await get(url);
-        if (cached && cached.timestamp && (Date.now() - cached.timestamp < CACHE_TTL_MS) && hasValidContent(cached.data)) {
+        const ttl = getCacheTTL(url);
+        if (cached && cached.timestamp && (Date.now() - cached.timestamp < ttl) && hasValidContent(cached.data)) {
           return cached.data;
         }
       } catch (e) {

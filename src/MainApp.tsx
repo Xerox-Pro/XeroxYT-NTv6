@@ -500,7 +500,6 @@ export default function MainApp() {
       const keywords = getHistoryKeywords();
       const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).join(',');
       const userHashtags = JSON.stringify(localAI.getHashtagsMap());
-      const refreshNonce = Date.now() + Math.floor(Math.random() * 1000000);
       let data = [];
       
       // If logged in, prioritize liked content for the first page
@@ -513,8 +512,14 @@ export default function MainApp() {
         }
       }
 
-      // Fetch recommendations from API
-      const result = await fetchJSON(`/api/recommendations?keywords=${encodeURIComponent(keywords)}&historyIds=${encodeURIComponent(historyIds)}&userHashtags=${encodeURIComponent(userHashtags)}&page=${pageNum}&refreshNonce=${refreshNonce}`);
+      // Fetch recommendations from API (deterministic parameters allow Vercel Edge CDN cache)
+      const queryParams = new URLSearchParams({
+        keywords,
+        historyIds,
+        userHashtags,
+        page: pageNum.toString(),
+      });
+      const result = await fetchJSON(`/api/recommendations?${queryParams.toString()}`);
 
       if (currentReqId !== recommendationRequestIdRef.current) return;
 
