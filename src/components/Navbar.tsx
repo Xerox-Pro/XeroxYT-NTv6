@@ -5,7 +5,7 @@ import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCh
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
-import { parseYouTubeUrl, YouTubeUrlParseResult } from '../utils';
+import { parseYouTubeUrl, YouTubeUrlParseResult, fetchJSON, formatDuration } from '../utils';
 
 interface NavbarProps {
   onSearch: (q: string) => void;
@@ -28,6 +28,25 @@ export default function Navbar({
     type: 'video' | 'short' | 'channel';
   } | null>(null);
 
+  // 検出された動画のプレビュー情報
+  const [videoPreview, setVideoPreview] = useState<{
+    id: string;
+    title: string;
+    author?: string;
+    authorAvatar?: string;
+    duration?: string;
+    loading: boolean;
+  } | null>(null);
+
+  // 検出されたチャンネルのプレビュー情報
+  const [channelPreview, setChannelPreview] = useState<{
+    id: string;
+    title: string;
+    avatar?: string;
+    subscribers?: string;
+    loading: boolean;
+  } | null>(null);
+
   // 検索履歴 & 候補
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
     try {
@@ -48,6 +67,88 @@ export default function Navbar({
     return parseYouTubeUrl(query);
   }, [query]);
 
+  // 動画IDまたはチャンネルIDが検知されたらサムネ・タイトル等のメタデータを取得
+  useEffect(() => {
+    if (!detectedLink) {
+      setVideoPreview(null);
+      setChannelPreview(null);
+      return;
+    }
+
+    if (detectedLink.type === 'video' || detectedLink.type === 'short') {
+      const vId = detectedLink.id;
+      setChannelPreview(null);
+      setVideoPreview({
+        id: vId,
+        title: '動画情報を取得中...',
+        loading: true
+      });
+
+      let isCancelled = false;
+      fetchJSON(`/api/video/${encodeURIComponent(vId)}`)
+        .then((data) => {
+          if (!isCancelled && data) {
+            setVideoPreview({
+              id: vId,
+              title: data.title || `YouTube動画 (${vId})`,
+              author: data.author,
+              authorAvatar: data.authorAvatar,
+              duration: data.lengthSeconds ? formatDuration(data.lengthSeconds) : undefined,
+              loading: false
+            });
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setVideoPreview({
+              id: vId,
+              title: `YouTube動画 (${vId})`,
+              loading: false
+            });
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+      };
+    } else if (detectedLink.type === 'channel') {
+      const cId = detectedLink.id;
+      setVideoPreview(null);
+      setChannelPreview({
+        id: cId,
+        title: `チャンネル (${cId})`,
+        loading: true
+      });
+
+      let isCancelled = false;
+      fetchJSON(`/api/channel/${encodeURIComponent(cId)}`)
+        .then((data) => {
+          if (!isCancelled && data) {
+            setChannelPreview({
+              id: cId,
+              title: data.title || `チャンネル (${cId})`,
+              avatar: data.avatar,
+              subscribers: data.subscriberCount,
+              loading: false
+            });
+          }
+        })
+        .catch(() => {
+          if (!isCancelled) {
+            setChannelPreview({
+              id: cId,
+              title: `チャンネル (${cId})`,
+              loading: false
+            });
+          }
+        });
+
+      return () => {
+        isCancelled = true;
+      };
+    }
+  }, [detectedLink?.id, detectedLink?.type]);
+
   // 検知トーストの自動消去タイマー
   useEffect(() => {
     if (!detectedNotice) return;
@@ -64,7 +165,7 @@ export default function Navbar({
   // 検出されたリンク先の動画プレイヤーまたはチャンネルページを開く
   const handleOpenDetected = (detected: YouTubeUrlParseResult) => {
     setDetectedNotice({
-      label: detected.label,
+      label: videoPreview?.title || detected.label,
       description: detected.description,
       type: detected.type
     });
@@ -80,14 +181,15 @@ export default function Navbar({
     }
   };
 
-  // 貼り付け (Paste) イベントでの自動検知 & 即時オープン
+  // 貼り付け (Paste) イベント: URLをセットし、検索一覧のところにサムネとタイトルを表示
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     const pastedText = e.clipboardData.getData('text');
     const detected = parseYouTubeUrl(pastedText);
     if (detected) {
       e.preventDefault();
       setQuery(pastedText.trim());
-      handleOpenDetected(detected);
+      setIsSearchFocused(true);
+      setSelectedIndex(-1);
     }
   };
 
@@ -216,10 +318,8 @@ export default function Navbar({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // リンクが検知されている場合のEnterキーはhandleSubmitが処理
     if (!isSearchFocused) return;
 
-    // 検出リンクバナーがある場合は矢印キーのインデックスも考慮
     const maxIndex = displayItems.length - 1;
 
     if (e.key === 'ArrowDown') {
@@ -257,7 +357,7 @@ export default function Navbar({
             transition={{ duration: 0.2 }}
             className="fixed top-16 left-1/2 -translate-x-1/2 z-[110] bg-gray-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-3 border border-gray-700 text-sm max-w-[92vw]"
           >
-            <div className="w-7 h-7 rounded-full bg-blue-600 flex items-center justify-center shrink-0">
+            <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shrink-0">
               {detectedNotice.type === 'video' ? (
                 <Play size={14} className="fill-white text-white ml-0.5" />
               ) : detectedNotice.type === 'short' ? (
@@ -267,9 +367,9 @@ export default function Navbar({
               )}
             </div>
             <div className="flex flex-col min-w-0 pr-1">
-              <span className="font-semibold text-xs text-blue-300 flex items-center gap-1">
+              <span className="font-semibold text-xs text-red-300 flex items-center gap-1">
                 <CheckCircle2 size={12} className="text-emerald-400" />
-                {detectedNotice.label} を検出
+                {detectedNotice.label}
               </span>
               <span className="text-xs text-gray-200 truncate">{detectedNotice.description}</span>
             </div>
@@ -314,7 +414,7 @@ export default function Navbar({
         <form onSubmit={handleSubmit} className="w-full flex items-center">
           <div className={`flex w-full bg-white rounded-full border shadow-xs transition-all duration-200 ${
             detectedLink 
-              ? 'border-blue-500 ring-2 ring-blue-500/20' 
+              ? 'border-red-500 ring-2 ring-red-500/20' 
               : 'border-gray-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-500/20'
           }`}>
             <div className="flex-1 flex items-center pl-4 pr-1">
@@ -330,7 +430,7 @@ export default function Navbar({
                 onPaste={handlePaste}
                 onFocus={() => setIsSearchFocused(true)}
                 onKeyDown={handleKeyDown}
-                placeholder="検索、またはYouTubeの動画/ショート/チャンネルリンクを貼り付け"
+                placeholder="リンクを貼り付け"
                 className="w-full bg-transparent py-2 outline-none text-gray-900 text-sm placeholder-gray-500 font-normal"
               />
               {query && (
@@ -340,6 +440,8 @@ export default function Navbar({
                     setQuery('');
                     setSuggestions([]);
                     setSelectedIndex(-1);
+                    setVideoPreview(null);
+                    setChannelPreview(null);
                     inputRef.current?.focus();
                   }}
                   className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors shrink-0"
@@ -354,13 +456,13 @@ export default function Navbar({
               whileTap={{ scale: 0.92 }}
               className={`px-6 border-l border-gray-300 flex items-center justify-center transition-colors shrink-0 rounded-r-full ${
                 detectedLink 
-                  ? 'bg-blue-600 hover:bg-blue-700 text-white font-medium' 
+                  ? 'bg-red-600 hover:bg-red-700 text-white font-medium' 
                   : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700'
               }`}
-              title={detectedLink ? `${detectedLink.label} を開く` : '検索'}
+              title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
               {detectedLink ? (
-                <ArrowRight size={19} strokeWidth={2.5} />
+                <Play size={17} className="fill-white" />
               ) : (
                 <Search size={19} strokeWidth={2} />
               )}
@@ -368,42 +470,128 @@ export default function Navbar({
           </div>
         </form>
 
-        {/* 検索ドロップダウン (URL検知バナー + 履歴 & 候補) */}
+        {/* 検索ドロップダウン (動画サムネ＆タイトルプレビューカード + 履歴 & 候補) */}
         {isSearchFocused && (detectedLink || displayItems.length > 0) && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-200 py-2 z-[100] max-h-[380px] overflow-y-auto">
-            {/* YouTube URL が検知されている時の最上位ハイライト項目 */}
-            {detectedLink && (
+          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2.5 z-[100] max-h-[440px] overflow-y-auto">
+            {/* 動画ID検知時: 動画のサムネイルとタイトルを表示し、クリックで再生 */}
+            {detectedLink && (detectedLink.type === 'video' || detectedLink.type === 'short') && (
               <div 
                 onClick={() => handleOpenDetected(detectedLink)}
-                className="mx-2 mb-2 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl cursor-pointer hover:from-blue-100 hover:to-indigo-100 transition-all flex items-center justify-between group"
+                className="mx-2.5 mb-2.5 p-2.5 bg-gradient-to-r from-red-50/70 via-gray-50 to-white hover:from-red-100/90 hover:via-red-50/40 hover:to-white border border-red-200/90 hover:border-red-400 rounded-xl cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
               >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-9 h-9 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                    {detectedLink.type === 'video' ? (
-                      <Play size={16} className="fill-white text-white ml-0.5" />
-                    ) : detectedLink.type === 'short' ? (
-                      <Zap size={16} className="fill-amber-300 text-amber-300" />
-                    ) : (
-                      <User size={16} className="text-white" />
-                    )}
+                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100/80">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-red-600">
+                    <Sparkles size={13} className="text-red-500 animate-pulse" />
+                    <span>{detectedLink.type === 'short' ? 'YouTubeショートを検出' : 'YouTube動画を検出'}</span>
                   </div>
-                  <div className="flex flex-col min-w-0">
-                    <span className="text-xs font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1">
-                      <Sparkles size={12} className="text-amber-500" />
-                      YouTubeリンクを検出
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900 truncate">
-                      {detectedLink.label} を開く
-                    </span>
-                    <span className="text-[11px] text-gray-500 truncate">
-                      ID: {detectedLink.id}
-                    </span>
+                  <span className="text-[11px] text-gray-500 font-mono">ID: {detectedLink.id}</span>
+                </div>
+
+                <div className="flex gap-3 items-center">
+                  {/* 動画サムネイル */}
+                  <div className="relative w-28 sm:w-36 aspect-video bg-gray-900 rounded-lg overflow-hidden shrink-0 shadow-xs group-hover:scale-[1.02] transition-transform">
+                    <img
+                      src={`https://i.ytimg.com/vi/${detectedLink.id}/hqdefault.jpg`}
+                      alt="サムネイル"
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = `https://i.ytimg.com/vi/${detectedLink.id}/mqdefault.jpg`;
+                      }}
+                    />
+                    {/* 再生オーバーレイ */}
+                    <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-85 group-hover:opacity-100 group-hover:bg-black/35 transition-all">
+                      <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
+                        <Play size={13} className="fill-white ml-0.5" />
+                      </div>
+                    </div>
+                    {/* ショートバッジまたは再生時間 */}
+                    {detectedLink.type === 'short' ? (
+                      <span className="absolute bottom-1 right-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xs flex items-center gap-0.5">
+                        <Zap size={10} className="fill-white" />
+                        Shorts
+                      </span>
+                    ) : videoPreview?.duration ? (
+                      <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
+                        {videoPreview.duration}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  {/* 動画タイトル ＆ メタデータ */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <h4 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors">
+                      {videoPreview?.title || (videoPreview?.loading ? 'タイトルを取得中...' : `YouTube動画 (${detectedLink.id})`)}
+                    </h4>
+
+                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-600">
+                      {videoPreview?.authorAvatar && (
+                        <img 
+                          src={videoPreview.authorAvatar} 
+                          alt={videoPreview.author || ''} 
+                          className="w-4 h-4 rounded-full object-cover shrink-0" 
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <span className="truncate">{videoPreview?.author || 'YouTube'}</span>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-600 text-white text-xs font-bold shadow-xs group-hover:bg-red-700 transition-all">
+                        <Play size={11} className="fill-white" />
+                        押して再生
+                      </span>
+                    </div>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 bg-blue-600 group-hover:bg-blue-700 text-white text-xs font-semibold rounded-full shrink-0 flex items-center gap-1 transition-colors">
-                  開く
-                  <ArrowRight size={13} />
-                </span>
+              </div>
+            )}
+
+            {/* チャンネルID/ハンドル検知時: チャンネルアイコンとタイトルを表示 */}
+            {detectedLink && detectedLink.type === 'channel' && (
+              <div 
+                onClick={() => handleOpenDetected(detectedLink)}
+                className="mx-2.5 mb-2.5 p-2.5 bg-gradient-to-r from-blue-50/70 via-gray-50 to-white hover:from-blue-100/90 hover:via-indigo-50/40 hover:to-white border border-blue-200/90 hover:border-blue-400 rounded-xl cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
+              >
+                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100/80">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
+                    <Sparkles size={13} className="text-blue-500 animate-pulse" />
+                    <span>YouTubeチャンネルを検出</span>
+                  </div>
+                  <span className="text-[11px] text-gray-500 font-mono">{detectedLink.id}</span>
+                </div>
+
+                <div className="flex gap-3 items-center">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
+                    {channelPreview?.avatar ? (
+                      <img
+                        src={channelPreview.avatar}
+                        alt="アバター"
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <User size={22} className="text-gray-400" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                      {channelPreview?.title || (channelPreview?.loading ? 'チャンネル情報を取得中...' : detectedLink.label)}
+                    </h4>
+                    {channelPreview?.subscribers && (
+                      <p className="text-xs text-gray-500 truncate mt-0.5">
+                        チャンネル登録者数: {channelPreview.subscribers}
+                      </p>
+                    )}
+                    <div className="mt-1.5 flex items-center">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-xs font-bold shadow-xs group-hover:bg-blue-700 transition-all">
+                        <ArrowRight size={11} />
+                        チャンネルを開く
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 

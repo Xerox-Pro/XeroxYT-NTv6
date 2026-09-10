@@ -18,6 +18,7 @@ import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
+import DetectedSearchHeader from './components/DetectedSearchHeader';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo } from './types';
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
@@ -100,17 +101,6 @@ export default function MainApp() {
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
-        const detected = parseYouTubeUrl(q);
-        if (detected) {
-          if (detected.type === 'video' || detected.type === 'short') {
-            const playlistParam = detected.playlistId ? `&list=${encodeURIComponent(detected.playlistId)}` : '';
-            navigate(`/watch?v=${encodeURIComponent(detected.id)}${playlistParam}`, { replace: true });
-            return;
-          } else if (detected.type === 'channel') {
-            navigate(`/channel/${encodeURIComponent(detected.id)}`, { replace: true });
-            return;
-          }
-        }
         setSearchQuery(q);
         setView('search');
         fetchSearch(q, 1, false);
@@ -842,17 +832,6 @@ export default function MainApp() {
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
-    const detected = parseYouTubeUrl(q);
-    if (detected) {
-      if (detected.type === 'video' || detected.type === 'short') {
-        const playlistParam = detected.playlistId ? `&list=${encodeURIComponent(detected.playlistId)}` : '';
-        navigate(`/watch?v=${encodeURIComponent(detected.id)}${playlistParam}`);
-        return;
-      } else if (detected.type === 'channel') {
-        navigate(`/channel/${encodeURIComponent(detected.id)}`);
-        return;
-      }
-    }
     navigate(`/results?search_query=${encodeURIComponent(q)}`);
   };
 
@@ -1116,9 +1095,16 @@ export default function MainApp() {
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
             <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
               {view === 'search' && (
-                <h2 className="text-lg font-bold text-gray-900 tracking-tight mb-6 border-b border-gray-200 pb-3">
-                  "{searchQuery}" の検索結果
-                </h2>
+                <>
+                  <DetectedSearchHeader
+                    searchQuery={searchQuery}
+                    onVideoSelect={(id) => handleVideoSelect(id)}
+                    onSelectChannel={(id) => handleSelectChannel(id)}
+                  />
+                  <h2 className="text-lg font-bold text-gray-900 tracking-tight mb-6 border-b border-gray-200 pb-3">
+                    "{searchQuery}" の検索結果
+                  </h2>
+                </>
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
