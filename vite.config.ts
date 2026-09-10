@@ -23,8 +23,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'XeroxYT-NTv6',
-          short_name: 'XeroxYT',
+          name: 'XeroxYT-NT-Liteβ',
+          short_name: 'XeroxYT-Lite',
           description: 'A refined, modern video sharing platform frontend.',
           theme_color: '#ffffff',
           background_color: '#ffffff',
