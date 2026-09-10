@@ -198,7 +198,7 @@ export default function Navbar({
             className="h-6 sm:h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
-          <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT-NTv6</span>
+          <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT-NT-Liteβ</span>
         </Link>
       </div>
       

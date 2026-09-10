@@ -128,15 +128,15 @@ export default function MainApp() {
 
   useEffect(() => {
     if (view === 'search' && searchQuery) {
-      document.title = `${searchQuery} - XeroxYT-NTv6`;
+      document.title = `${searchQuery} - XeroxYT-NT-Liteβ`;
     } else if (view === 'home') {
-      document.title = 'XeroxYT-NTv6';
+      document.title = 'XeroxYT-NT-Liteβ';
     } else if (view === 'subscriptions') {
-      document.title = '登録チャンネル - XeroxYT-NTv6';
+      document.title = '登録チャンネル - XeroxYT-NT-Liteβ';
     } else if (view === 'library') {
-      document.title = 'ライブラリ - XeroxYT-NTv6';
+      document.title = 'ライブラリ - XeroxYT-NT-Liteβ';
     } else if (view === 'history') {
-      document.title = '履歴 - XeroxYT-NTv6';
+      document.title = '履歴 - XeroxYT-NT-Liteβ';
     }
   }, [view, searchQuery]);
 

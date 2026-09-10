@@ -232,10 +232,10 @@ export default function VideoPlayer({
     }
   };
 
-  // ドキュメントタイトルの更新 (動画表示時: タイトル - XeroxYT-NTv6)
+  // ドキュメントタイトルの更新 (動画表示時: タイトル - XeroxYT-NT-Liteβ)
   useEffect(() => {
     if (videoData && videoData.title) {
-      document.title = `${videoData.title} - XeroxYT-NTv6`;
+      document.title = `${videoData.title} - XeroxYT-NT-Liteβ`;
     }
   }, [videoData]);
 
