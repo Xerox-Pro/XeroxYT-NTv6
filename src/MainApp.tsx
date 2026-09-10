@@ -22,7 +22,7 @@ import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo,
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON } from './utils';
+import { fetchJSON, parseYouTubeUrl } from './utils';
 
 declare global {
   interface Window {
@@ -91,9 +91,26 @@ export default function MainApp() {
     if (path === '/') {
       setView('home');
       fetchRecommendations(1, false);
+    } else if (path.startsWith('/shorts/')) {
+      const parts = path.split('/');
+      const shortId = parts[2]?.split('?')[0];
+      if (shortId) {
+        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
+      }
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
+        const detected = parseYouTubeUrl(q);
+        if (detected) {
+          if (detected.type === 'video' || detected.type === 'short') {
+            const playlistParam = detected.playlistId ? `&list=${encodeURIComponent(detected.playlistId)}` : '';
+            navigate(`/watch?v=${encodeURIComponent(detected.id)}${playlistParam}`, { replace: true });
+            return;
+          } else if (detected.type === 'channel') {
+            navigate(`/channel/${encodeURIComponent(detected.id)}`, { replace: true });
+            return;
+          }
+        }
         setSearchQuery(q);
         setView('search');
         fetchSearch(q, 1, false);
@@ -825,6 +842,17 @@ export default function MainApp() {
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
+    const detected = parseYouTubeUrl(q);
+    if (detected) {
+      if (detected.type === 'video' || detected.type === 'short') {
+        const playlistParam = detected.playlistId ? `&list=${encodeURIComponent(detected.playlistId)}` : '';
+        navigate(`/watch?v=${encodeURIComponent(detected.id)}${playlistParam}`);
+        return;
+      } else if (detected.type === 'channel') {
+        navigate(`/channel/${encodeURIComponent(detected.id)}`);
+        return;
+      }
+    }
     navigate(`/results?search_query=${encodeURIComponent(q)}`);
   };
 
