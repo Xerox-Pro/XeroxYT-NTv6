@@ -37,22 +37,9 @@ function getCacheTTL(url: string): number {
 function hasValidContent(data: any): boolean {
   if (!data) return false;
   if (Array.isArray(data)) return data.length > 0;
-  if (data.items && Array.isArray(data.items)) return data.items.length > 0;
   if (Array.isArray(data.videos)) return data.videos.length > 0;
   return true;
 }
-
-function parseDurationStr(timeStr: string): number {
-  if (!timeStr) return 0;
-  const parts = timeStr.split(":").map(Number);
-  let sec = 0;
-  for (let i = 0; i < parts.length; i++) {
-    sec = sec * 60 + (parts[i] || 0);
-  }
-  return sec;
-}
-
-const GAS_URL = "https://script.google.com/macros/s/AKfycbyU8LGjU4o-DC-iA5VLlxotO3NLD9QYI8xjP8TcS46Sroe-1YYC59N5TIvcdY8-3uOnDQ/exec";
 
 export async function fetchJSON(url: string, options?: RequestInit) {
   try {
@@ -63,22 +50,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       url.includes('/auth/') || 
       url.includes('/stream') || 
       url.includes('/download-proxy');
-      
-    let targetUrl = url;
     
-    // API処理の宛先変更 (GAS or siatube.com)
-    if (isApiCall) {
-      if (url.startsWith('/api/channel/')) {
-        const channelId = url.split('/')[3]?.split('?')[0];
-        if (channelId) {
-          targetUrl = `${GAS_URL}?action=channel&id=${channelId}`;
-        }
-      } else if (!url.startsWith('/api/user/') && !url.startsWith('/api/auth/') && !url.startsWith('/api/aistudio/')) {
-        // siatube.comへ直接アクセス (端末から直接)
-        targetUrl = `https://siatube.com${url}`;
-      }
-    }
-
     // Check IndexedDB cache for GET requests
     if (isGet && isApiCall && !isTimeSensitive) {
       try {
@@ -100,7 +72,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     }
     reqOptions.headers = finalHeaders;
 
-    const res = await fetch(targetUrl, reqOptions);
+    const res = await fetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
     
     if (!res.ok) {
@@ -130,37 +102,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       throw new Error('サーバーから不正なレスポンスが返されました（JSONではありません）');
     }
 
-    let data = await res.json();
+    const data = await res.json();
     
-    // siatube.comの独自フォーマット(items)をフロントエンドの配列フォーマットに変換
-    if (targetUrl.startsWith('https://siatube.com') && data && typeof data === 'object') {
-      if (data.items && Array.isArray(data.items)) {
-        data = data.items.map((item: any) => ({
-          videoId: item.videoId || item.id,
-          type: item.type || 'video',
-          title: item.title || '',
-          author: item.author || '',
-          authorId: item.channelId || item.authorId || '',
-          viewCount: parseInt(item.viewCounts?.raw || item.viewCount || '0', 10),
-          publishedText: item.publishedTime || item.publishedText || '',
-          lengthSeconds: typeof item.duration === 'string' ? parseDurationStr(item.duration) : (item.lengthSeconds || 0),
-          videoThumbnails: item.thumbnails || item.videoThumbnails || []
-        }));
-      }
-    }
-    
-    // GASのチャンネル一括取得データを、タブごとのレスポンスに適合させる
-    if (targetUrl.startsWith(GAS_URL) && url.includes('/tab/')) {
-      const tab = url.split('/tab/')[1]?.split('?')[0];
-      if (tab === 'videos') {
-         data = { videos: data.videos || [], hasMore: false };
-      } else if (tab === 'shorts') {
-         data = { videos: data.shortVideos || [], hasMore: false };
-      } else {
-         data = { videos: [], hasMore: false };
-      }
-    }
-
     // Save to IndexedDB cache (only if valid content)
     if (isGet && isApiCall && !isTimeSensitive && hasValidContent(data)) {
       try {
