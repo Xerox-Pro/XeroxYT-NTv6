@@ -59,7 +59,7 @@ export default function ChannelPage({
         const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}`);
         setChannelData(data);
         if (data && data.title) {
-          document.title = `${data.title} - XeroxYT-NT-Liteβ`;
+          document.title = `${data.title} - XeroxYT-NTv6`;
         }
         setVideoList(data.videos || []);
         setShortList(data.shortVideos || []);
