@@ -1,25 +1,6 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
-body.privacy-screen-active::after {
-  content: "";
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  pointer-events: none;
-  z-index: 999999;
-  background-color: rgba(0, 0, 0, 0.65); /* 画面全体をさらに暗くするベースレイヤー */
-  background-image: repeating-linear-gradient(
-    90deg,
-    transparent 0,
-    transparent 0.5px,
-    rgba(0, 0, 0, 0.98) 0.5px,
-    rgba(0, 0, 0, 0.98) 1px
-  );
-}
-
 @keyframes shimmer {
   0% {
     background-position: -1200px 0;

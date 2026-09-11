@@ -69,11 +69,7 @@ export default function Navbar({
 
   useEffect(() => {
     localStorage.setItem('xerox_yt_privacy_mode', isPrivacyMode.toString());
-    if (isPrivacyMode) {
-      document.body.classList.add('privacy-screen-active');
-    } else {
-      document.body.classList.remove('privacy-screen-active');
-    }
+    window.dispatchEvent(new Event('privacy-mode-changed'));
   }, [isPrivacyMode]);
 
   // 入力値からのURL自動検知
