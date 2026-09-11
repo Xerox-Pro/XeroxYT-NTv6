@@ -10,12 +10,13 @@ body.privacy-screen-active::after {
   height: 100vh;
   pointer-events: none;
   z-index: 999999;
+  background-color: rgba(0, 0, 0, 0.65); /* 画面全体をさらに暗くするベースレイヤー */
   background-image: repeating-linear-gradient(
     90deg,
     transparent 0,
-    transparent 1px,
-    rgba(0, 0, 0, 0.75) 1px,
-    rgba(0, 0, 0, 0.75) 2px
+    transparent 0.5px,
+    rgba(0, 0, 0, 0.98) 0.5px,
+    rgba(0, 0, 0, 0.98) 1px
   );
 }
 
