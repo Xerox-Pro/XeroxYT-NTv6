@@ -347,37 +347,25 @@ export default function Navbar({
 
   return (
     <header className="w-full min-h-[3.5rem] bg-white text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
-      {/* リンク検知通知バナー (トースト) */}
+      {/* リンク検知通知バナー (トースト: クリーンなミニマルスタイル) */}
       <AnimatePresence>
         {detectedNotice && (
           <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            initial={{ opacity: 0, y: -16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-            className="fixed top-16 left-1/2 -translate-x-1/2 z-[110] bg-gray-900 text-white px-4 py-2.5 rounded-full shadow-2xl flex items-center gap-3 border border-gray-700 text-sm max-w-[92vw]"
+            exit={{ opacity: 0, y: -16, scale: 0.96 }}
+            transition={{ duration: 0.15 }}
+            className="fixed top-16 left-1/2 -translate-x-1/2 z-[110] bg-gray-900 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2.5 text-xs max-w-[92vw]"
           >
-            <div className="w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shrink-0">
-              {detectedNotice.type === 'video' ? (
-                <Play size={14} className="fill-white text-white ml-0.5" />
-              ) : detectedNotice.type === 'short' ? (
-                <Zap size={14} className="fill-amber-400 text-amber-400" />
-              ) : (
-                <User size={14} className="text-white" />
-              )}
-            </div>
-            <div className="flex flex-col min-w-0 pr-1">
-              <span className="font-semibold text-xs text-red-300 flex items-center gap-1">
-                <CheckCircle2 size={12} className="text-emerald-400" />
-                {detectedNotice.label}
-              </span>
-              <span className="text-xs text-gray-200 truncate">{detectedNotice.description}</span>
-            </div>
+            <CheckCircle2 size={14} className="text-gray-300 shrink-0" />
+            <span className="text-gray-200 truncate font-medium">
+              {detectedNotice.label}
+            </span>
             <button
               onClick={() => setDetectedNotice(null)}
-              className="p-1 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors ml-1 shrink-0"
+              className="p-0.5 hover:bg-gray-800 rounded-full text-gray-400 hover:text-white transition-colors ml-1 shrink-0"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           </motion.div>
         )}
@@ -412,11 +400,7 @@ export default function Navbar({
       {/* 中央: 検索バー + マイク */}
       <div className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
-          <div className={`flex w-full bg-white rounded-full border shadow-xs transition-all duration-200 ${
-            detectedLink 
-              ? 'border-red-500 ring-2 ring-red-500/20' 
-              : 'border-gray-300 focus-within:border-blue-600 focus-within:ring-2 focus-within:ring-blue-500/20'
-          }`}>
+          <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
             <div className="flex-1 flex items-center pl-4 pr-1">
               <input
                 ref={inputRef}
@@ -430,7 +414,7 @@ export default function Navbar({
                 onPaste={handlePaste}
                 onFocus={() => setIsSearchFocused(true)}
                 onKeyDown={handleKeyDown}
-                placeholder="リンクを貼り付け"
+                placeholder="検索・リンクを貼り付け"
                 className="w-full bg-transparent py-2 outline-none text-gray-900 text-sm placeholder-gray-500 font-normal"
               />
               {query && (
@@ -453,43 +437,34 @@ export default function Navbar({
             </div>
             <motion.button 
               type="submit" 
-              whileTap={{ scale: 0.92 }}
-              className={`px-6 border-l border-gray-300 flex items-center justify-center transition-colors shrink-0 rounded-r-full ${
-                detectedLink 
-                  ? 'bg-red-600 hover:bg-red-700 text-white font-medium' 
-                  : 'bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700'
-              }`}
+              whileTap={{ scale: 0.94 }}
+              className="px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
               title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
-              {detectedLink ? (
-                <Play size={17} className="fill-white" />
-              ) : (
-                <Search size={19} strokeWidth={2} />
-              )}
+              <Search size={19} strokeWidth={2} />
             </motion.button>
           </div>
         </form>
 
-        {/* 検索ドロップダウン (動画サムネ＆タイトルプレビューカード + 履歴 & 候補) */}
+        {/* 検索ドロップダウン (ホワイトテーマに調和した自然な動画プレビュー + 履歴 & 候補) */}
         {isSearchFocused && (detectedLink || displayItems.length > 0) && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-2xl border border-gray-200 py-2.5 z-[100] max-h-[440px] overflow-y-auto">
-            {/* 動画ID検知時: 動画のサムネイルとタイトルを表示し、クリックで再生 */}
+          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-200 py-2 z-[100] max-h-[440px] overflow-y-auto">
+            {/* 動画ID検知時: ホワイトテーマに合わせた自然な動画カード */}
             {detectedLink && (detectedLink.type === 'video' || detectedLink.type === 'short') && (
               <div 
                 onClick={() => handleOpenDetected(detectedLink)}
-                className="mx-2.5 mb-2.5 p-2.5 bg-gradient-to-r from-red-50/70 via-gray-50 to-white hover:from-red-100/90 hover:via-red-50/40 hover:to-white border border-red-200/90 hover:border-red-400 rounded-xl cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
+                className="mx-2 mb-2 p-2.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl cursor-pointer transition-colors duration-150 group"
               >
-                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100/80">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-red-600">
-                    <Sparkles size={13} className="text-red-500 animate-pulse" />
-                    <span>{detectedLink.type === 'short' ? 'YouTubeショートを検出' : 'YouTube動画を検出'}</span>
-                  </div>
-                  <span className="text-[11px] text-gray-500 font-mono">ID: {detectedLink.id}</span>
+                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100 text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">
+                    {detectedLink.type === 'short' ? 'リンク先: YouTubeショート' : 'リンク先: YouTube動画'}
+                  </span>
+                  <span className="font-mono text-[11px] text-gray-400">ID: {detectedLink.id}</span>
                 </div>
 
                 <div className="flex gap-3 items-center">
                   {/* 動画サムネイル */}
-                  <div className="relative w-28 sm:w-36 aspect-video bg-gray-900 rounded-lg overflow-hidden shrink-0 shadow-xs group-hover:scale-[1.02] transition-transform">
+                  <div className="relative w-28 sm:w-36 aspect-video bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
                     <img
                       src={`https://i.ytimg.com/vi/${detectedLink.id}/hqdefault.jpg`}
                       alt="サムネイル"
@@ -499,32 +474,27 @@ export default function Navbar({
                         (e.target as HTMLImageElement).src = `https://i.ytimg.com/vi/${detectedLink.id}/mqdefault.jpg`;
                       }}
                     />
-                    {/* 再生オーバーレイ */}
-                    <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-85 group-hover:opacity-100 group-hover:bg-black/35 transition-all">
-                      <div className="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center shadow-md group-hover:scale-110 transition-transform">
-                        <Play size={13} className="fill-white ml-0.5" />
+                    {/* 再生アイコン（ホバー時） */}
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="w-8 h-8 rounded-full bg-white/90 text-gray-900 flex items-center justify-center shadow-sm">
+                        <Play size={13} className="fill-gray-900 ml-0.5" />
                       </div>
                     </div>
-                    {/* ショートバッジまたは再生時間 */}
-                    {detectedLink.type === 'short' ? (
-                      <span className="absolute bottom-1 right-1 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-xs flex items-center gap-0.5">
-                        <Zap size={10} className="fill-white" />
-                        Shorts
-                      </span>
-                    ) : videoPreview?.duration ? (
+                    {/* 再生時間 */}
+                    {videoPreview?.duration && (
                       <span className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] font-medium px-1.5 py-0.5 rounded">
                         {videoPreview.duration}
                       </span>
-                    ) : null}
+                    )}
                   </div>
 
                   {/* 動画タイトル ＆ メタデータ */}
                   <div className="flex-1 min-w-0 flex flex-col justify-center">
-                    <h4 className="text-sm font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors">
-                      {videoPreview?.title || (videoPreview?.loading ? 'タイトルを取得中...' : `YouTube動画 (${detectedLink.id})`)}
+                    <h4 className="text-sm font-medium text-gray-900 line-clamp-2 leading-snug group-hover:text-blue-600 transition-colors">
+                      {videoPreview?.title || (videoPreview?.loading ? 'タイトルを読み込み中...' : `YouTube動画 (${detectedLink.id})`)}
                     </h4>
 
-                    <div className="flex items-center gap-1.5 mt-1.5 text-xs text-gray-600">
+                    <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
                       {videoPreview?.authorAvatar && (
                         <img 
                           src={videoPreview.authorAvatar} 
@@ -536,10 +506,10 @@ export default function Navbar({
                       <span className="truncate">{videoPreview?.author || 'YouTube'}</span>
                     </div>
 
-                    <div className="mt-2 flex items-center gap-1.5">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-600 text-white text-xs font-bold shadow-xs group-hover:bg-red-700 transition-all">
-                        <Play size={11} className="fill-white" />
-                        押して再生
+                    <div className="mt-2 flex items-center">
+                      <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium group-hover:underline">
+                        <Play size={11} className="fill-blue-600" />
+                        この動画を再生
                       </span>
                     </div>
                   </div>
@@ -547,22 +517,19 @@ export default function Navbar({
               </div>
             )}
 
-            {/* チャンネルID/ハンドル検知時: チャンネルアイコンとタイトルを表示 */}
+            {/* チャンネルID/ハンドル検知時: ホワイトテーマに合わせた自然なチャンネルカード */}
             {detectedLink && detectedLink.type === 'channel' && (
               <div 
                 onClick={() => handleOpenDetected(detectedLink)}
-                className="mx-2.5 mb-2.5 p-2.5 bg-gradient-to-r from-blue-50/70 via-gray-50 to-white hover:from-blue-100/90 hover:via-indigo-50/40 hover:to-white border border-blue-200/90 hover:border-blue-400 rounded-xl cursor-pointer transition-all duration-200 group shadow-xs hover:shadow-md"
+                className="mx-2 mb-2 p-2.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl cursor-pointer transition-colors duration-150 group"
               >
-                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100/80">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-600">
-                    <Sparkles size={13} className="text-blue-500 animate-pulse" />
-                    <span>YouTubeチャンネルを検出</span>
-                  </div>
-                  <span className="text-[11px] text-gray-500 font-mono">{detectedLink.id}</span>
+                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100 text-xs text-gray-500">
+                  <span className="font-medium text-gray-700">リンク先: YouTubeチャンネル</span>
+                  <span className="font-mono text-[11px] text-gray-400">{detectedLink.id}</span>
                 </div>
 
                 <div className="flex gap-3 items-center">
-                  <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
+                  <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
                     {channelPreview?.avatar ? (
                       <img
                         src={channelPreview.avatar}
@@ -576,8 +543,8 @@ export default function Navbar({
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
-                      {channelPreview?.title || (channelPreview?.loading ? 'チャンネル情報を取得中...' : detectedLink.label)}
+                    <h4 className="text-sm font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+                      {channelPreview?.title || (channelPreview?.loading ? 'チャンネル情報を読み込み中...' : detectedLink.label)}
                     </h4>
                     {channelPreview?.subscribers && (
                       <p className="text-xs text-gray-500 truncate mt-0.5">
@@ -585,9 +552,9 @@ export default function Navbar({
                       </p>
                     )}
                     <div className="mt-1.5 flex items-center">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-xs font-bold shadow-xs group-hover:bg-blue-700 transition-all">
+                      <span className="inline-flex items-center gap-1 text-xs text-blue-600 font-medium group-hover:underline">
                         <ArrowRight size={11} />
-                        チャンネルを開く
+                        チャンネルページを開く
                       </span>
                     </div>
                   </div>

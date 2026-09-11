@@ -97,19 +97,16 @@ export default function DetectedSearchHeader({
   };
 
   return (
-    <div className="mb-6 p-4 sm:p-5 bg-gradient-to-r from-red-50/90 via-gray-50/50 to-white border border-red-200/90 rounded-2xl shadow-xs hover:shadow-md transition-all">
-      <div className="flex items-center justify-between pb-2 mb-3 border-b border-gray-200/60">
-        <div className="flex items-center gap-1.5 text-xs font-bold text-red-600">
-          <Sparkles size={14} className="text-red-500 animate-pulse" />
-          <span>
-            {detected.type === 'short'
-              ? 'YouTubeショートを検出'
-              : detected.type === 'channel'
-              ? 'YouTubeチャンネルを検出'
-              : 'YouTube動画を検出'}
-          </span>
-        </div>
-        <span className="text-xs text-gray-500 font-mono">
+    <div className="mb-6 p-4 sm:p-5 bg-white border border-gray-200 rounded-2xl shadow-xs">
+      <div className="flex items-center justify-between pb-2 mb-3 border-b border-gray-100 text-xs text-gray-500">
+        <span className="font-medium text-gray-700">
+          {detected.type === 'short'
+            ? 'リンク先: YouTubeショート'
+            : detected.type === 'channel'
+            ? 'リンク先: YouTubeチャンネル'
+            : 'リンク先: YouTube動画'}
+        </span>
+        <span className="font-mono text-gray-400 text-[11px]">
           ID: {detected.id}
         </span>
       </div>
@@ -117,44 +114,39 @@ export default function DetectedSearchHeader({
       {isVideoOrShort ? (
         <div
           onClick={handleClick}
-          className="flex flex-col sm:flex-row gap-4 p-3 bg-white hover:bg-red-50/30 rounded-xl border border-gray-200 hover:border-red-300 transition-all cursor-pointer group"
+          className="flex flex-col sm:flex-row gap-4 p-3 bg-gray-50/50 hover:bg-gray-50 rounded-xl border border-gray-200/80 hover:border-gray-300 transition-colors cursor-pointer group"
         >
           {/* サムネイル */}
-          <div className="relative w-full sm:w-64 aspect-video bg-gray-900 rounded-xl overflow-hidden shrink-0 shadow-xs">
+          <div className="relative w-full sm:w-60 aspect-video bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
             <img
               src={`https://i.ytimg.com/vi/${detected.id}/hqdefault.jpg`}
               alt="動画サムネイル"
-              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              className="w-full h-full object-cover"
               referrerPolicy="no-referrer"
               onError={(e) => {
                 (e.target as HTMLImageElement).src = `https://i.ytimg.com/vi/${detected.id}/mqdefault.jpg`;
               }}
             />
             {/* 再生オーバーレイ */}
-            <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-85 group-hover:opacity-100 group-hover:bg-black/35 transition-all">
-              <div className="w-11 h-11 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                <Play size={18} className="fill-white ml-0.5" />
+            <div className="absolute inset-0 bg-black/25 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="w-10 h-10 rounded-full bg-white/95 text-gray-900 flex items-center justify-center shadow-md">
+                <Play size={16} className="fill-gray-900 ml-0.5" />
               </div>
             </div>
-            {detected.type === 'short' ? (
-              <span className="absolute bottom-2 right-2 bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded shadow-xs flex items-center gap-1">
-                <Zap size={12} className="fill-white" />
-                Shorts
-              </span>
-            ) : metadata.duration ? (
+            {metadata.duration && (
               <span className="absolute bottom-2 right-2 bg-black/80 text-white text-xs font-medium px-2 py-0.5 rounded">
                 {metadata.duration}
               </span>
-            ) : null}
+            )}
           </div>
 
           {/* タイトルとメタデータ */}
           <div className="flex-1 min-w-0 flex flex-col justify-center">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900 line-clamp-2 leading-snug group-hover:text-red-600 transition-colors">
+            <h3 className="text-base sm:text-lg font-medium text-gray-900 line-clamp-2 leading-snug group-hover:text-blue-600 transition-colors">
               {metadata.title || (metadata.loading ? '動画情報を読み込み中...' : `YouTube動画 (${detected.id})`)}
             </h3>
 
-            <div className="flex items-center gap-2 mt-2 text-sm text-gray-600">
+            <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
               {metadata.authorAvatar && (
                 <img
                   src={metadata.authorAvatar}
@@ -163,16 +155,16 @@ export default function DetectedSearchHeader({
                   referrerPolicy="no-referrer"
                 />
               )}
-              <span className="font-medium truncate">{metadata.author || 'YouTube'}</span>
+              <span className="truncate">{metadata.author || 'YouTube'}</span>
             </div>
 
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-red-600 hover:bg-red-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-900 hover:bg-black text-white text-xs sm:text-sm font-medium transition-colors shadow-xs"
               >
-                <Play size={14} className="fill-white" />
-                押して再生
+                <Play size={13} className="fill-white" />
+                動画を再生
               </button>
             </div>
           </div>
@@ -180,9 +172,9 @@ export default function DetectedSearchHeader({
       ) : (
         <div
           onClick={handleClick}
-          className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 bg-white hover:bg-blue-50/30 rounded-xl border border-gray-200 hover:border-blue-300 transition-all cursor-pointer group"
+          className="flex flex-col sm:flex-row items-start sm:items-center gap-4 p-3 bg-gray-50/50 hover:bg-gray-50 rounded-xl border border-gray-200/80 hover:border-gray-300 transition-colors cursor-pointer group"
         >
-          <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center shadow-xs">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
             {metadata.avatar ? (
               <img
                 src={metadata.avatar}
@@ -196,7 +188,7 @@ export default function DetectedSearchHeader({
           </div>
 
           <div className="flex-1 min-w-0">
-            <h3 className="text-base sm:text-lg font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors">
+            <h3 className="text-base sm:text-lg font-medium text-gray-900 truncate group-hover:text-blue-600 transition-colors">
               {metadata.title || (metadata.loading ? 'チャンネル情報を読み込み中...' : detected.label)}
             </h3>
             {metadata.subscribers && (
@@ -207,9 +199,9 @@ export default function DetectedSearchHeader({
             <div className="mt-3 flex items-center gap-2">
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold shadow-xs transition-colors"
+                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gray-900 hover:bg-black text-white text-xs sm:text-sm font-medium transition-colors shadow-xs"
               >
-                <ArrowRight size={14} />
+                <ArrowRight size={13} />
                 チャンネルページを開く
               </button>
             </div>
