@@ -139,3 +139,14 @@ export interface UserInfo {
   videoCount?: string;
   bannerUrl?: string;
 }
+
+export interface SearchChannel {
+  id: string;
+  title: string;
+  handle?: string;
+  avatar?: string;
+  subscribers?: string;
+  videoCount?: string;
+  description?: string;
+  isVerified?: boolean;
+}

@@ -1896,6 +1896,63 @@ async function startServer() {
     };
   }
 
+  // チャンネルオブジェクトの安全な正規化関数
+  function formatSearchChannel(ch: any) {
+    if (!ch) return null;
+    const id = ch.id || ch.author?.id || ch.endpoint?.payload?.browseId;
+    const title = ch.author?.name || ch.title?.text || (typeof ch.title === "string" ? ch.title : "") || ch.name || "";
+    if (!id || !title) return null;
+
+    let avatar = "";
+    const thumbs = ch.author?.thumbnails || ch.thumbnails;
+    if (Array.isArray(thumbs) && thumbs.length > 0) {
+      avatar = thumbs[thumbs.length - 1]?.url || thumbs[0]?.url || "";
+    }
+    if (!avatar && ch.avatar?.url) avatar = ch.avatar.url;
+    if (avatar && avatar.startsWith("//")) {
+      avatar = "https:" + avatar;
+    }
+    if (!avatar) {
+      avatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(title)}&background=random&color=fff&size=128`;
+    }
+
+    let subscribers = ch.video_count?.text || ch.subscriber_count?.text || ch.subscribers?.text || "";
+    let handle = "";
+    if (typeof ch.subscriber_count?.text === "string" && ch.subscriber_count.text.startsWith("@")) {
+      handle = ch.subscriber_count.text;
+    } else if (typeof ch.author?.endpoint?.payload?.canonicalBaseUrl === "string") {
+      handle = ch.author.endpoint.payload.canonicalBaseUrl.replace("/", "");
+    }
+
+    let videoCount = "";
+    if (typeof ch.video_count?.text === "string" && !ch.video_count.text.includes("チャンネル登録者数")) {
+      videoCount = ch.video_count.text;
+    }
+
+    const description =
+      ch.description_snippet?.text ||
+      ch.description?.text ||
+      (typeof ch.description === "string" ? ch.description : "") ||
+      "";
+    const isVerified = Boolean(
+      ch.author?.is_verified ||
+      ch.badges?.some((b: any) =>
+        (b.tooltip || b.label || b.text || "").includes("確認済み")
+      )
+    );
+
+    return {
+      id,
+      title,
+      handle,
+      avatar,
+      subscribers,
+      videoCount,
+      description,
+      isVerified,
+    };
+  }
+
   // トレンド ＆ パーソナライズドおすすめAPI
   app.get("/api/recommendations", async (req, res) => {
     const keywords = (req.query.keywords as string) || "";
@@ -2401,14 +2458,15 @@ async function startServer() {
   app.get("/api/search", async (req, res) => {
     const q = (req.query.q as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
+    const filterType = (req.query.type as string) || "all"; // 'all' | 'channel' | 'video'
 
     if (!q.trim()) {
-      return res.json([]);
+      return res.json({ videos: [], channels: [] });
     }
 
     const searchQuery = page > 1 ? `${q} ${page}` : q;
-    const cacheKey = `search:${searchQuery.toLowerCase().trim()}`;
-    const cached = getFromMemoryCache<any[]>(cacheKey);
+    const cacheKey = `search:${searchQuery.toLowerCase().trim()}:${filterType}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       return res.json(cached);
@@ -2417,46 +2475,93 @@ async function startServer() {
     try {
       const youtube = await getYt();
 
-      console.log(`[Search] Query: ${searchQuery}, Page: ${page}`);
+      console.log(`[Search] Query: ${searchQuery}, Page: ${page}, Type: ${filterType}`);
 
-      const search = await youtube.search(searchQuery, {
-        type: "video",
-      });
+      const searchPromises: Promise<any>[] = [];
 
-      let rawResults: any[] = [];
-      if (search.videos && search.videos.length > 0) {
-        rawResults = search.videos;
-      } else if (search.results && search.results.length > 0) {
-        rawResults = search.results.filter(
-          (r: any) =>
-            r.type === "Video" ||
-            r.type === "Playlist" ||
-            r.type === "Mix" ||
-            r.id,
+      // 動画検索（filterType !== 'channel' の場合）
+      if (filterType !== "channel") {
+        searchPromises.push(
+          youtube.search(searchQuery, { type: "video" }).catch((err) => {
+            console.warn("[Search] Video search error:", err?.message || err);
+            return null;
+          })
         );
+      } else {
+        searchPromises.push(Promise.resolve(null));
       }
 
-      // プレイリストも含める
-      if (search.playlists && search.playlists.length > 0) {
-        rawResults = [...rawResults, ...search.playlists];
+      // チャンネル検索（filterType !== 'video' かつ page 1 の場合）
+      if (filterType !== "video" && page === 1) {
+        searchPromises.push(
+          youtube.search(q, { type: "channel" }).catch((err) => {
+            console.warn("[Search] Channel search error:", err?.message || err);
+            return null;
+          })
+        );
+      } else {
+        searchPromises.push(Promise.resolve(null));
       }
 
-      console.log(`[Search] Raw results found: ${rawResults.length}`);
+      const [videoSearch, channelSearch] = await Promise.all(searchPromises);
 
-      const videos = rawResults
-        .map((v: any) => formatVideoObject(v))
-        .filter((v) => v !== null);
+      // 動画のフォーマット
+      let videos: any[] = [];
+      if (videoSearch) {
+        let rawResults: any[] = [];
+        if (videoSearch.videos && videoSearch.videos.length > 0) {
+          rawResults = videoSearch.videos;
+        } else if (videoSearch.results && videoSearch.results.length > 0) {
+          rawResults = videoSearch.results.filter(
+            (r: any) =>
+              r.type === "Video" ||
+              r.type === "Playlist" ||
+              r.type === "Mix" ||
+              r.id,
+          );
+        }
 
-      console.log(`[Search] Formatted results: ${videos.length}`);
+        if (videoSearch.playlists && videoSearch.playlists.length > 0) {
+          rawResults = [...rawResults, ...videoSearch.playlists];
+        }
 
-      if (videos.length > 0) {
-        setToMemoryCache(cacheKey, videos, 15 * 60 * 1000);
+        videos = rawResults
+          .map((v: any) => formatVideoObject(v))
+          .filter((v) => v !== null);
+      }
+
+      // チャンネルのフォーマット
+      let channels: any[] = [];
+      if (channelSearch) {
+        let rawChannels: any[] = [];
+        if (channelSearch.channels && channelSearch.channels.length > 0) {
+          rawChannels = channelSearch.channels;
+        } else if (channelSearch.results && channelSearch.results.length > 0) {
+          rawChannels = channelSearch.results.filter(
+            (r: any) => r.type === "Channel" || r.type === "ChannelView"
+          );
+        }
+
+        channels = rawChannels
+          .map((ch: any) => formatSearchChannel(ch))
+          .filter((ch) => ch !== null);
+      }
+
+      console.log(`[Search] Formatted: ${videos.length} videos, ${channels.length} channels`);
+
+      const result = {
+        videos,
+        channels,
+      };
+
+      if (videos.length > 0 || channels.length > 0) {
+        setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
         res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-        return res.json(videos);
+        return res.json(result);
       }
 
       res.setHeader("Cache-Control", "public, s-maxage=600, stale-while-revalidate=86400");
-      res.json([]);
+      res.json({ videos: [], channels: [] });
     } catch (err) {
       console.error("Search API error:", err);
       res
@@ -2464,7 +2569,51 @@ async function startServer() {
         .json({
           error:
             "検索結果の取得に失敗しました。時間をおいて再度お試しください。",
+          videos: [],
+          channels: [],
         });
+    }
+  });
+
+  // チャンネル個別検索専用API
+  app.get("/api/search/channels", async (req, res) => {
+    const q = (req.query.q as string) || "";
+    if (!q.trim()) {
+      return res.json([]);
+    }
+
+    const cacheKey = `search-channels:${q.toLowerCase().trim()}`;
+    const cached = getFromMemoryCache<any[]>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
+    try {
+      const youtube = await getYt();
+      const channelSearch = await youtube.search(q, { type: "channel" });
+      let rawChannels: any[] = [];
+      if (channelSearch.channels && channelSearch.channels.length > 0) {
+        rawChannels = channelSearch.channels;
+      } else if (channelSearch.results && channelSearch.results.length > 0) {
+        rawChannels = channelSearch.results.filter(
+          (r: any) => r.type === "Channel" || r.type === "ChannelView"
+        );
+      }
+
+      const channels = rawChannels
+        .map((ch: any) => formatSearchChannel(ch))
+        .filter((ch) => ch !== null);
+
+      if (channels.length > 0) {
+        setToMemoryCache(cacheKey, channels, 15 * 60 * 1000);
+      }
+
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(channels);
+    } catch (err) {
+      console.error("Channels search API error:", err);
+      res.json([]);
     }
   });
 
