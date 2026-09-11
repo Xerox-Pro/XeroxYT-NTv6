@@ -40,7 +40,6 @@ export default function MainApp() {
   const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
-  const [searchFilter, setSearchFilter] = useState<'all' | 'channel' | 'video'>('all');
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
@@ -106,9 +105,7 @@ export default function MainApp() {
       if (q) {
         setSearchQuery(q);
         setView('search');
-        const filter = (searchParams.get('type') as any) || 'all';
-        setSearchFilter(filter);
-        fetchSearch(q, 1, false, filter);
+        fetchSearch(q, 1, false);
       }
     } else if (path === '/watch') {
       const v = searchParams.get('v');
@@ -773,12 +770,11 @@ export default function MainApp() {
     }
   };
 
-  // 検索動画・チャンネルデータ読み込み (ページ別 & フィルター別)
+  // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得)
   const fetchSearch = async (
     q: string,
     pageNum: number = 1,
-    append: boolean = false,
-    filter: 'all' | 'video' | 'channel' = searchFilter
+    append: boolean = false
   ) => {
     if (append) {
       setLoadingMore(true);
@@ -793,7 +789,7 @@ export default function MainApp() {
     setError('');
 
     try {
-      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}&type=${filter}`);
+      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
       const newVideos: Video[] = Array.isArray(data) ? data : (data.videos || []);
       const newChannels: SearchChannel[] = Array.isArray(data) ? [] : (data.channels || []);
 
@@ -823,12 +819,6 @@ export default function MainApp() {
     }
   };
 
-  const handleSearchFilterChange = (filter: 'all' | 'video' | 'channel') => {
-    setSearchFilter(filter);
-    setPage(1);
-    fetchSearch(searchQuery, 1, false, filter);
-  };
-
   // 無限スクロール検知
   const handleScroll = useCallback(() => {
     if (view !== 'home' && view !== 'search') return;
@@ -846,11 +836,11 @@ export default function MainApp() {
 
       if (view === 'home') {
         fetchRecommendations(nextPage, true);
-      } else if (view === 'search' && searchFilter !== 'channel') {
-        fetchSearch(searchQuery, nextPage, true, searchFilter);
+      } else if (view === 'search') {
+        fetchSearch(searchQuery, nextPage, true);
       }
     }
-  }, [view, loading, loadingMore, hasMore, page, searchQuery, searchFilter]);
+  }, [view, loading, loadingMore, hasMore, page, searchQuery]);
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
@@ -1128,148 +1118,60 @@ export default function MainApp() {
                     onSelectChannel={(id) => handleSelectChannel(id)}
                   />
 
-                  {/* 検索ヘッダー & フィルタータブ */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 border-b border-gray-200 pb-4">
-                    <div>
-                      <h2 className="text-lg font-bold text-gray-900 tracking-tight">
-                        "{searchQuery}" の検索結果
-                      </h2>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {searchChannels.length > 0 && `${searchChannels.length}件のチャンネル • `}
-                        {videos.length > 0 ? `${videos.length}件以上の動画` : ''}
-                      </p>
-                    </div>
-
-                    {/* フィルタータブ（すべて / チャンネル / 動画） */}
-                    <div className="flex items-center gap-1.5 p-1 bg-gray-100 rounded-xl border border-gray-200 self-start sm:self-auto">
-                      <button
-                        onClick={() => handleSearchFilterChange('all')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          searchFilter === 'all'
-                            ? 'bg-white text-gray-900 shadow-2xs font-semibold'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        すべて
-                      </button>
-                      <button
-                        onClick={() => handleSearchFilterChange('channel')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                          searchFilter === 'channel'
-                            ? 'bg-white text-gray-900 shadow-2xs font-semibold'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        <User size={13} />
-                        チャンネル
-                        {searchChannels.length > 0 && (
-                          <span className="text-[10px] px-1.5 py-0.2 bg-gray-200 text-gray-700 rounded-full font-bold">
-                            {searchChannels.length}
-                          </span>
-                        )}
-                      </button>
-                      <button
-                        onClick={() => handleSearchFilterChange('video')}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                          searchFilter === 'video'
-                            ? 'bg-white text-gray-900 shadow-2xs font-semibold'
-                            : 'text-gray-600 hover:text-gray-900'
-                        }`}
-                      >
-                        動画
-                      </button>
-                    </div>
+                  {/* 検索ヘッダー */}
+                  <div className="mb-6 border-b border-gray-200 pb-3">
+                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                      "{searchQuery}" の検索結果
+                    </h2>
                   </div>
-
-                  {/* チャンネルタブ選択時 */}
-                  {searchFilter === 'channel' && (
-                    <div className="mb-10">
-                      {searchChannels.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {searchChannels.map((channel) => (
-                            <SearchChannelCard
-                              key={channel.id}
-                              channel={channel}
-                              onSelectChannel={handleSelectChannel}
-                            />
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="py-16 text-center text-sm text-gray-500">
-                          一致するチャンネルが見つかりませんでした。
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* 「すべて」タブで関連チャンネルがある場合の上部表示 */}
-                  {searchFilter === 'all' && searchChannels.length > 0 && (
-                    <div className="mb-8 p-4 sm:p-5 bg-gray-50/70 border border-gray-200 rounded-2xl">
-                      <div className="flex items-center justify-between mb-3 text-xs text-gray-500 font-medium">
-                        <span className="flex items-center gap-1.5 text-gray-800 font-semibold">
-                          <User size={14} className="text-gray-600" />
-                          関連チャンネル
-                        </span>
-                        {searchChannels.length > 1 && (
-                          <button
-                            onClick={() => handleSearchFilterChange('channel')}
-                            className="text-gray-600 hover:text-black hover:underline text-xs"
-                          >
-                            すべてのチャンネルを見る ({searchChannels.length}) →
-                          </button>
-                        )}
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {searchChannels.slice(0, 2).map((channel) => (
-                          <SearchChannelCard
-                            key={channel.id}
-                            channel={channel}
-                            onSelectChannel={handleSelectChannel}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </>
               )}
 
-              {/* 動画リスト表示（チャンネルフィルター単体選択時は非表示） */}
-              {searchFilter !== 'channel' && (
-                <>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-                    {videos.map((video, idx) => (
-                      <div key={`${video.videoId}-${idx}`} className="relative group">
-                        <VideoCard
-                          video={video}
-                          onClick={() => handleVideoSelect(video.videoId, video)}
-                          onSelectChannel={handleSelectChannel}
-                        />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setPlaylistModalVideo(video);
-                          }}
-                          className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
-                          title="再生リストに保存"
-                        >
-                          + 保存
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+              {/* チャンネル結果（YouTube同様に動画と同じ一覧の先頭に統合表示） */}
+              {view === 'search' && searchChannels.length > 0 && (
+                <div className="flex flex-col divide-y divide-gray-100 border-b border-gray-200 pb-6 mb-8">
+                  {searchChannels.slice(0, 3).map((channel) => (
+                    <SearchChannelCard
+                      key={channel.id}
+                      channel={channel}
+                      onSelectChannel={handleSelectChannel}
+                    />
+                  ))}
+                </div>
+              )}
 
-                  {videos.length === 0 && !loading && (
-                    <div className="py-16 text-center text-sm text-gray-500">
-                      {searchChannels.length > 0
-                        ? '該当する動画はありませんでしたが、関連チャンネルが見つかりました。'
-                        : '検索結果が見つかりませんでした。別のキーワードをお試しください。'}
-                    </div>
-                  )}
-                </>
+              {/* 動画リスト */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+                {videos.map((video, idx) => (
+                  <div key={`${video.videoId}-${idx}`} className="relative group">
+                    <VideoCard
+                      video={video}
+                      onClick={() => handleVideoSelect(video.videoId, video)}
+                      onSelectChannel={handleSelectChannel}
+                    />
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPlaylistModalVideo(video);
+                      }}
+                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
+                      title="再生リストに保存"
+                    >
+                      + 保存
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* 検索結果が動画もチャンネルもない場合 */}
+              {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (
+                <div className="py-20 text-center text-sm text-gray-500">
+                  検索結果が見つかりませんでした。別のキーワードをお試しください。
+                </div>
               )}
 
               {/* 無限スクロールローディングスピナー */}
-              {loadingMore && searchFilter !== 'channel' && (
+              {loadingMore && (
                 <div className="flex items-center justify-center py-10 gap-3 text-gray-600">
                   <Loader2 className="w-6 h-6 animate-spin text-gray-700" />
                   <span className="text-xs font-bold">次の動画を読み込んでいます...</span>
