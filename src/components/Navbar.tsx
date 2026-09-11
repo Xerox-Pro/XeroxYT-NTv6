@@ -62,6 +62,20 @@ export default function Navbar({
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // 覗き見防止機能 (Privacy Screen)
+  const [isPrivacyMode, setIsPrivacyMode] = useState(() => {
+    return localStorage.getItem('xerox_yt_privacy_mode') === 'true';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('xerox_yt_privacy_mode', isPrivacyMode.toString());
+    if (isPrivacyMode) {
+      document.body.classList.add('privacy-screen-active');
+    } else {
+      document.body.classList.remove('privacy-screen-active');
+    }
+  }, [isPrivacyMode]);
+
   // 入力値からのURL自動検知
   const detectedLink = useMemo(() => {
     return parseYouTubeUrl(query);
@@ -654,6 +668,17 @@ export default function Navbar({
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <PWAInstallButton />
+        <button
+          onClick={() => setIsPrivacyMode(!isPrivacyMode)}
+          className={`px-3 sm:px-3.5 py-2 rounded-full transition-colors text-xs sm:text-sm font-medium shadow-xs ${
+            isPrivacyMode 
+              ? 'bg-gray-800 text-white hover:bg-gray-700' 
+              : 'bg-gray-100 hover:bg-gray-200 text-gray-800'
+          }`}
+          title="覗き見防止機能 (Anti-Display)"
+        >
+          覗き見防止 {isPrivacyMode ? 'オン' : 'オフ'}
+        </button>
         <Link
           to="/aistudio"
           className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"

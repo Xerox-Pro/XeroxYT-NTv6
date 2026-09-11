@@ -1,6 +1,24 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+body.privacy-screen-active::after {
+  content: "";
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 999999;
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0,
+    transparent 1px,
+    rgba(0, 0, 0, 0.75) 1px,
+    rgba(0, 0, 0, 0.75) 2px
+  );
+}
+
 @keyframes shimmer {
   0% {
     background-position: -1200px 0;
