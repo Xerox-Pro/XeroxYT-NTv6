@@ -176,6 +176,17 @@ export function parseYouTubeUrl(input: string): YouTubeUrlParseResult | null {
     };
   }
 
+  // 3. 直接の 11桁 動画ID (例: dQw4w9WgXcQ)
+  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed)) {
+    return {
+      type: 'video',
+      id: trimmed,
+      originalUrl: trimmed,
+      label: `YouTube動画 (${trimmed})`,
+      description: `動画プレイヤーを開きます`
+    };
+  }
+
   // URL形式に整える（プロトコルなしの補完）
   let urlString = trimmed;
   if (!urlString.startsWith('http://') && !urlString.startsWith('https://')) {
