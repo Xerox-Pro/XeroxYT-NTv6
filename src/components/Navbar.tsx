@@ -5,6 +5,7 @@ import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCh
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { LiquidGlassButton } from './LiquidGlassButton';
 import { parseYouTubeUrl, YouTubeUrlParseResult, fetchJSON, formatDuration } from '../utils';
 
 interface NavbarProps {
@@ -655,13 +656,11 @@ export default function Navbar({
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <PWAInstallButton />
-        <Link
-          to="/aistudio"
-          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
-          title="Xrayを開く"
-        >
-          Xray
-        </Link>
+        <LiquidGlassButton 
+          to="/aistudio" 
+          text="Xray" 
+          className="hidden sm:inline-block"
+        />
       </div>
     </header>
   );
