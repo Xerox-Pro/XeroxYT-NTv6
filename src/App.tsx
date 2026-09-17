@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { LiquidGlass } from '@ybouane/liquidglass';
+import { LiquidGlass } from './lib/liquidglass';
 import { Sparkles, Moon, Sun, ArrowRight, Play, Maximize } from 'lucide-react';
 
 export default function App() {
@@ -15,7 +15,7 @@ export default function App() {
     const init = async () => {
       if (!rootRef.current) return;
       
-      const glassEls = rootRef.current.querySelectorAll('.liquid-glass-el');
+      const glassEls = rootRef.current.querySelectorAll<HTMLElement>('.liquid-glass-el');
       
       try {
         const lg = await LiquidGlass.init({
@@ -78,7 +78,7 @@ export default function App() {
       <nav 
         className={getClasses("md:col-span-12 h-20 rounded-[2rem] flex items-center justify-between px-8")}
         data-config={JSON.stringify({
-          blurAmount: 0.15, 
+          blurAmount: 0.1, 
           refraction: 1.5, 
           chromAberration: 0.4,
           edgeHighlight: 0.15, 
@@ -107,7 +107,7 @@ export default function App() {
       <main 
         className={getClasses("md:col-span-8 md:row-span-3 min-h-[450px] rounded-[2rem] p-10 flex flex-col justify-end relative")}
         data-config={JSON.stringify({
-          blurAmount: 0.2, 
+          blurAmount: 0.1, 
           refraction: 1.3, 
           chromAberration: 0.3,
           edgeHighlight: 0.05, 
@@ -145,7 +145,7 @@ export default function App() {
       <button 
         className={getClasses("md:col-span-4 min-h-[140px] rounded-[2rem] p-8 flex items-center justify-between group text-left transition-transform hover:scale-[1.02] active:scale-[0.98]")}
         data-config={JSON.stringify({
-          blurAmount: 0.05, 
+          blurAmount: 0.1, 
           refraction: 2.2, 
           chromAberration: 0.6,
           edgeHighlight: 0.3, 
@@ -185,7 +185,7 @@ export default function App() {
       <div 
         className={getClasses("md:col-span-4 min-h-[140px] rounded-[3rem] p-8 flex flex-col items-center justify-center cursor-move")}
         data-config={JSON.stringify({
-          blurAmount: 0, 
+          blurAmount: 0.1, 
           refraction: 1.8, 
           chromAberration: 0.5,
           bevelMode: 1, 
