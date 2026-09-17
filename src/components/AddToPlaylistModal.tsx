@@ -52,7 +52,7 @@ export default function AddToPlaylistModal({
 
         {/* 対象動画の簡単なプレビュー */}
         <div className="flex items-center gap-3 p-2 bg-gray-50 rounded-xl border border-gray-200/80">
-          <img crossOrigin="anonymous"
+          <img
             src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
             alt={video.title}
             className="w-16 aspect-video object-cover rounded-lg shrink-0"

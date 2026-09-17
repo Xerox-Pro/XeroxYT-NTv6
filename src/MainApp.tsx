@@ -41,21 +41,38 @@ export default function MainApp() {
 
   const { theme } = useTheme();
   const rootRef = useRef<HTMLDivElement>(null);
+  const navbarRef = useRef<HTMLDivElement>(null);
   const lgInstanceRef = useRef<any>(null);
 
   useEffect(() => {
-    if (theme === 'liquid' && rootRef.current) {
-      LiquidGlass.init({
-        root: rootRef.current,
-        glassElements: rootRef.current.querySelectorAll('.global-glass')
-      }).then(inst => {
-        lgInstanceRef.current = inst;
-      });
+    let active = true;
+    if (theme === 'liquid' && navbarRef.current) {
+      try {
+        LiquidGlass.init({
+          root: navbarRef.current,
+          glassElements: navbarRef.current.querySelectorAll('.global-glass')
+        }).then(inst => {
+          if (active) {
+            lgInstanceRef.current = inst;
+          } else {
+            inst?.destroy();
+          }
+        }).catch(err => {
+          console.warn('LiquidGlass WebGL fallback enabled:', err);
+        });
+      } catch (err) {
+        console.warn('LiquidGlass init failed, falling back to CSS Liquid Glass:', err);
+      }
     }
 
     return () => {
+      active = false;
       if (lgInstanceRef.current) {
-        lgInstanceRef.current.destroy();
+        try {
+          lgInstanceRef.current.destroy();
+        } catch {
+          // ignore cleanup errors
+        }
         lgInstanceRef.current = null;
       }
     };
@@ -1005,7 +1022,8 @@ export default function MainApp() {
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div 
-        className={`w-full shrink-0 sticky top-0 z-50 ${theme === 'liquid' ? 'global-glass border-b border-white/20' : 'bg-white'}`}
+        ref={navbarRef}
+        className={`w-full shrink-0 sticky top-0 z-50 transition-colors duration-300 ${theme === 'liquid' ? 'liquid-glass-panel global-glass border-b border-white/20' : 'bg-white'}`}
         data-config={JSON.stringify({ blurAmount: 0, refraction: 1.65, chromAberration: 0.95, specular: 0.25, cornerRadius: 0, zRadius: 30 })}
       >
         <Navbar
@@ -1016,7 +1034,7 @@ export default function MainApp() {
         />
       </div>
 
-      <div className="flex flex-1 relative items-start h-full" data-dynamic>
+      <div className="flex flex-1 relative items-start h-full">
         {/* サイドバー: Desktopではsticky、モバイルではfixed overlay */}
         <Sidebar
           isOpen={isSidebarOpen}

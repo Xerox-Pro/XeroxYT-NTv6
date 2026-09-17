@@ -388,7 +388,7 @@ export default function Navbar({
             onHome();
           }
         }}>
-          <img crossOrigin="anonymous" 
+          <img 
             src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvrN3FNoHzYnXNfVvvvuP-mBKnl4JUP7tyzaJzIaA-5S21wei4MmKP4L08YGfUOnOU2Jug18mVZ4mzGgAtgKmj9AgYD-u9AAShb_PwiI_rFBWFTlO7Vmds1lDHcJPqpI_Xs-vYnNnNxzt8n0TLG8IJ-2O4BjADNtFZeIcbd1KU-PjCIFFpcUB6rWfz6_y6/s1600/YouTubePro.png"
             alt="YouTube Logo" 
             className="h-6 sm:h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
@@ -466,7 +466,7 @@ export default function Navbar({
                 <div className="flex gap-3 items-center">
                   {/* 動画サムネイル */}
                   <div className="relative w-28 sm:w-36 aspect-video bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-                    <img crossOrigin="anonymous"
+                    <img
                       src={`https://i.ytimg.com/vi/${detectedLink.id}/hqdefault.jpg`}
                       alt="サムネイル"
                       className="w-full h-full object-cover"
@@ -497,7 +497,7 @@ export default function Navbar({
 
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
                       {videoPreview?.authorAvatar && (
-                        <img crossOrigin="anonymous" 
+                        <img 
                           src={videoPreview.authorAvatar} 
                           alt={videoPreview.author || ''} 
                           className="w-4 h-4 rounded-full object-cover shrink-0" 
@@ -532,7 +532,7 @@ export default function Navbar({
                 <div className="flex gap-3 items-center">
                   <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
                     {channelPreview?.avatar ? (
-                      <img crossOrigin="anonymous"
+                      <img
                         src={channelPreview.avatar}
                         alt="アバター"
                         className="w-full h-full object-cover"

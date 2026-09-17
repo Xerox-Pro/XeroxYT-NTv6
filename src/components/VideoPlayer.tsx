@@ -1244,7 +1244,7 @@ export default function VideoPlayer({
                 onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
               >
                 <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                  <img crossOrigin="anonymous" 
+                  <img 
                     src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
                     alt={recVideo.title}
                     className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"

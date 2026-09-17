@@ -9,18 +9,34 @@ export default function ThemeToggle() {
   const instanceRef = useRef<any>(null);
 
   useEffect(() => {
+    let active = true;
     if (theme === 'liquid' && rootRef.current) {
-      LiquidGlass.init({
-        root: rootRef.current,
-        glassElements: rootRef.current.querySelectorAll('.glass'),
-      }).then((inst) => {
-        instanceRef.current = inst;
-      });
+      try {
+        LiquidGlass.init({
+          root: rootRef.current,
+          glassElements: rootRef.current.querySelectorAll('.glass'),
+        }).then((inst) => {
+          if (active) {
+            instanceRef.current = inst;
+          } else {
+            inst?.destroy();
+          }
+        }).catch((err) => {
+          console.warn('ThemeToggle LiquidGlass fallback:', err);
+        });
+      } catch (err) {
+        console.warn('ThemeToggle LiquidGlass init error:', err);
+      }
     }
 
     return () => {
+      active = false;
       if (instanceRef.current) {
-        instanceRef.current.destroy();
+        try {
+          instanceRef.current.destroy();
+        } catch {
+          // ignore
+        }
         instanceRef.current = null;
       }
     };
@@ -44,7 +60,7 @@ export default function ThemeToggle() {
           onClick={toggleTheme}
           className={`
             flex items-center justify-center rounded-full shadow-2xl transition-all duration-300
-            ${isLiquid ? 'glass w-full h-full absolute inset-0 text-white' : 'w-14 h-14 bg-gray-900 text-white hover:bg-black hover:scale-105 m-1'}
+            ${isLiquid ? 'liquid-glass-button glass w-full h-full absolute inset-0 text-white' : 'w-14 h-14 bg-gray-900 text-white hover:bg-black hover:scale-105 m-1'}
           `}
           data-config={JSON.stringify({
             button: true,

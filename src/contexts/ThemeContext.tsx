@@ -16,12 +16,20 @@ export const useTheme = () => useContext(ThemeContext);
 
 export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [theme, setThemeState] = useState<Theme>(() => {
-    return (localStorage.getItem('app_theme') as Theme) || 'liquid';
+    try {
+      return (localStorage.getItem('app_theme') as Theme) || 'liquid';
+    } catch {
+      return 'liquid';
+    }
   });
 
   const setTheme = (newTheme: Theme) => {
     setThemeState(newTheme);
-    localStorage.setItem('app_theme', newTheme);
+    try {
+      localStorage.setItem('app_theme', newTheme);
+    } catch {
+      // ignore in restricted environments
+    }
   };
 
   return (

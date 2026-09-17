@@ -398,7 +398,7 @@ export default function AIStudio() {
                         {msg.parts.filter(p => p.inlineData).map((p, idx) => (
                           <div key={idx} className="relative group">
                             {p.inlineData?.mimeType.startsWith('image/') ? (
-                              <img crossOrigin="anonymous" 
+                              <img 
                                 src={`data:${p.inlineData.mimeType};base64,${p.inlineData.data}`} 
                                 alt="upload" 
                                 className="w-32 h-32 object-cover rounded-xl border border-gray-200 shadow-xs"
@@ -464,7 +464,7 @@ export default function AIStudio() {
                   {attachments.map((att, i) => (
                     <div key={i} className="relative group shrink-0">
                       {att.previewUrl ? (
-                        <img crossOrigin="anonymous" src={att.previewUrl} alt="preview" className="w-16 h-16 object-cover rounded-xl border border-gray-200 shadow-xs" />
+                        <img src={att.previewUrl} alt="preview" className="w-16 h-16 object-cover rounded-xl border border-gray-200 shadow-xs" />
                       ) : (
                         <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center border border-gray-200">
                           <Paperclip className="w-6 h-6 text-gray-400" />

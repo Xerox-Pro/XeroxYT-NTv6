@@ -75,3 +75,29 @@ a, a:visited {
   text-decoration: inherit;
 }
 
+/* Liquid Glass (クリア・ぼかしほぼなし・プリズム屈折エッジ光) */
+.liquid-glass-panel {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.03) 100%);
+  backdrop-filter: blur(0.5px) saturate(140%) brightness(108%);
+  -webkit-backdrop-filter: blur(0.5px) saturate(140%) brightness(108%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.25),
+    inset 0 1px 1px 0 rgba(255, 255, 255, 0.6),
+    inset 0 -1px 2px 0 rgba(0, 255, 255, 0.2),
+    0 0 12px 1px rgba(236, 72, 153, 0.15); /* プリズム色収差の微細な光彩 */
+}
+
+.liquid-glass-button {
+  background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0.05) 75%);
+  backdrop-filter: blur(0px) saturate(150%);
+  -webkit-backdrop-filter: blur(0px) saturate(150%);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  box-shadow: 
+    0 10px 25px -5px rgba(0, 0, 0, 0.3),
+    inset 0 2px 4px rgba(255, 255, 255, 0.7),
+    inset 0 -2px 4px rgba(0, 229, 255, 0.3),
+    0 0 15px rgba(168, 85, 247, 0.25);
+}
+
+

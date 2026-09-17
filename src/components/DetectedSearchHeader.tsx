@@ -118,7 +118,7 @@ export default function DetectedSearchHeader({
         >
           {/* サムネイル */}
           <div className="relative w-full sm:w-60 aspect-video bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-            <img crossOrigin="anonymous"
+            <img
               src={`https://i.ytimg.com/vi/${detected.id}/hqdefault.jpg`}
               alt="動画サムネイル"
               className="w-full h-full object-cover"
@@ -148,7 +148,7 @@ export default function DetectedSearchHeader({
 
             <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
               {metadata.authorAvatar && (
-                <img crossOrigin="anonymous"
+                <img
                   src={metadata.authorAvatar}
                   alt={metadata.author || ''}
                   className="w-5 h-5 rounded-full object-cover shrink-0"
@@ -176,7 +176,7 @@ export default function DetectedSearchHeader({
         >
           <div className="w-16 h-16 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
             {metadata.avatar ? (
-              <img crossOrigin="anonymous"
+              <img
                 src={metadata.avatar}
                 alt="チャンネルアイコン"
                 className="w-full h-full object-cover"
