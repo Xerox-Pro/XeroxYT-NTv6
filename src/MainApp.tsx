@@ -22,6 +22,8 @@ import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
+import { useTheme } from "./lib/ThemeContext";
+import { GlobalLiquidBackground, LiquidRoot, Glass } from "./lib/Liquid";
 import { Loader2, AlertCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchJSON, parseYouTubeUrl } from './utils';
@@ -179,7 +181,9 @@ export default function MainApp() {
       }
     };
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    const { theme } = useTheme();
+
+  return () => window.removeEventListener('resize', handleResize);
   }, [view]);
 
   // 無限スクロール用ページ制御
@@ -620,7 +624,9 @@ export default function MainApp() {
     };
 
     timer = setTimeout(poll, 6000);
-    return () => {
+    const { theme } = useTheme();
+
+  return () => {
       clearTimeout(timer);
     };
   }, [isPolling, authFlow]);
@@ -844,7 +850,9 @@ export default function MainApp() {
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
-    return () => window.removeEventListener('scroll', handleScroll);
+    const { theme } = useTheme();
+
+  return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
@@ -968,18 +976,21 @@ export default function MainApp() {
     }
   };
 
+  const { theme } = useTheme();
+
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+    <div className={`min-h-screen ${theme === "white" ? "bg-white text-gray-900" : "text-white"} flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
+      <GlobalLiquidBackground />
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
-      <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
+      <LiquidRoot className={`w-full shrink-0 sticky top-0 z-50 ${theme === "white" ? "bg-white" : ""}`}>
         <Navbar
           onSearch={handleSearch}
           onHome={handleGoHome}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           initialSearchQuery={searchQuery}
         />
-      </div>
+      </LiquidRoot>
 
       <div className="flex flex-1 relative items-start">
         {/* サイドバー: Desktopではsticky、モバイルではfixed overlay */}
@@ -997,8 +1008,8 @@ export default function MainApp() {
         />
 
         {/* メインコンテンツビュー */}
-        <main
-          className="flex-1 transition-all duration-200 min-w-0"
+        <LiquidRoot as="main"
+          className={`flex-1 transition-all duration-200 min-w-0 relative ${theme === "white" ? "bg-gray-50/50" : ""}`}
         >
           <AnimatePresence mode="wait">
             <motion.div
@@ -1182,7 +1193,7 @@ export default function MainApp() {
         }
         </motion.div>
       </AnimatePresence>
-        </main>
+        </LiquidRoot>
       </div>
 
       {/* プレイリスト保存モーダル */}

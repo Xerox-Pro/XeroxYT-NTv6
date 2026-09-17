@@ -1,3 +1,5 @@
+import { Glass } from "../lib/Liquid";
+import { useTheme } from "../lib/ThemeContext";
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
@@ -40,6 +42,7 @@ export default function Sidebar({
   subscriptions = [], 
   onSelectChannel 
 }: SidebarProps) {
+  const { theme } = useTheme();
   
   const handleClick = (activeValue: string) => {
     if (activeValue === 'toggle' && onClose) {
@@ -106,11 +109,10 @@ export default function Sidebar({
       {/* レイアウトスペース確保用プレースホルダー (タブレット以下の画面幅でサイドバーがfixedになった時もmain要素がズレないようにする) */}
       <div className="hidden md:block xl:hidden shrink-0 w-[72px]" />
 
-      <aside
-        className={`bg-white text-gray-900 z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
-          isOpen 
-            ? 'w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none' 
-            : 'w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0'
+      <Glass as="aside" config={{ blurAmount: 0.15, refraction: 1.6, cornerRadius: 0 }}
+        className={`z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar shrink-0 ${theme === 'white' ? 'bg-white text-gray-900 border-r border-gray-200' : 'text-white border-r border-white/10'} ${          isOpen 
+             ? "w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none" 
+             : "w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0"
         }`}
       >
       <div className="flex flex-col gap-1">
@@ -205,7 +207,7 @@ export default function Sidebar({
           </>
         )}
       </div>
-    </aside>
+    </Glass>
     </>
   );
 }
