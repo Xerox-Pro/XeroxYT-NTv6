@@ -67,7 +67,7 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
   };
 
   return (
-    <div className="relative h-14 bg-white border-b border-gray-200 sticky top-14 z-30 select-none shadow-2xs">
+    <div className="relative h-14 bg-white/40 backdrop-blur-md border-b border-white/50 sticky top-14 z-30 select-none shadow-2xs">
       {/* 左スクロールボタン */}
       {showLeftArrow && (
         <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center bg-gradient-to-r from-white via-white/90 to-transparent pr-6 pl-2">
@@ -96,21 +96,14 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
               key={`${cat}-${idx}`}
               onClick={() => handleClick(cat)}
               whileTap={{ scale: 0.94 }}
-              className={`relative px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              className={`relative px-3.5 py-1.5 lg-chip text-xs sm:text-sm font-medium whitespace-nowrap flex items-center gap-1.5 ${
                 isActive
-                  ? 'text-white'
+                  ? 'active'
                   : isHashtag
-                  ? 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
-                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
+                  ? 'text-blue-800 border-blue-200'
+                  : 'text-gray-800'
               }`}
             >
-              {isActive && (
-                <motion.div
-                  layoutId="activeCategoryPill"
-                  transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  className="absolute inset-0 bg-gray-900 rounded-lg -z-0"
-                />
-              )}
               <span className="relative z-10">{cat}</span>
             </motion.button>
           );

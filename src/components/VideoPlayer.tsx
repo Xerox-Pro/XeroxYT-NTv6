@@ -880,7 +880,7 @@ export default function VideoPlayer({
                 className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-colors duration-200 shadow-xs ${
                   isSubscribed 
                     ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
-                    : 'bg-gray-900 hover:bg-black text-white'
+                    : 'bg-gray-900 hover:bg-black text-white border border-gray-700 shadow-md'
                 }`}
               >
                 {isSubscribed ? (
@@ -896,7 +896,7 @@ export default function VideoPlayer({
 
             {/* アクションボタン */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-              <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shadow-2xs">
+              <div className="flex items-center lg-chip p-0.5">
                 <motion.button 
                   onClick={handleLike}
                   whileTap={{ scale: 0.88 }}
@@ -930,7 +930,7 @@ export default function VideoPlayer({
                   }
                 }}
                 whileTap={{ scale: 0.92 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
+                className="flex items-center gap-1.5 px-3 py-1.5 lg-chip text-gray-800 text-xs font-semibold"
               >
                 <Share2 size={15} />
                 <span>共有</span>
@@ -965,7 +965,7 @@ export default function VideoPlayer({
                 <motion.button 
                   onClick={() => onOpenAddToPlaylist(activeVideo)}
                   whileTap={{ scale: 0.92 }}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
+                  className="flex items-center gap-1.5 px-3 py-1.5 lg-chip text-gray-800 text-xs font-semibold"
                 >
                   <Plus size={15} />
                   <span>保存</span>
@@ -985,7 +985,7 @@ export default function VideoPlayer({
           </div>
 
           {/* 概要欄 */}
-          <div className="mt-4 p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-sm border border-gray-200">
+          <div className="mt-4 p-3.5 lg-panel transition-colors text-sm">
             <div className="flex items-center gap-3 font-semibold text-gray-800 text-xs mb-2">
               <span>{formatNumberJP(activeVideo.viewCount)} 回視聴</span>
               <span>{activeVideo.publishedText}</span>

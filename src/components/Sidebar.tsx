@@ -107,7 +107,7 @@ export default function Sidebar({
       <div className="hidden md:block xl:hidden shrink-0 w-[72px]" />
 
       <aside
-        className={`bg-white text-gray-900 z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
+        className={`bg-white/40 backdrop-blur-xl text-gray-900 z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar border-r border-white/60 shadow-lg shrink-0 ${
           isOpen 
             ? 'w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none' 
             : 'w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0'
