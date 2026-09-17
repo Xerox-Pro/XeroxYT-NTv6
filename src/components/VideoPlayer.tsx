@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { useTheme } from '../contexts/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
@@ -115,8 +114,6 @@ export default function VideoPlayer({
   onCacheVideo,
   watchHistory = []
 }: VideoPlayerProps) {
-  const { theme } = useTheme();
-  const isLiquid = theme === 'liquid';
   const [videoData, setVideoData] = useState<Video | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -652,16 +649,16 @@ export default function VideoPlayer({
 
   if (loading && !iframeUrl) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] gap-3 ${isLiquid ? 'bg-transparent text-white' : 'bg-white text-gray-900'}`}>
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] gap-3 bg-white text-gray-900">
         <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
-        <span className={`text-sm font-semibold ${isLiquid ? 'text-gray-300' : 'text-gray-700'}`}>プレイヤーを準備しています...</span>
+        <span className="text-sm font-semibold text-gray-700">プレイヤーを準備しています...</span>
       </div>
     );
   }
 
   if (!videoId) {
     return (
-      <div className={`flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] gap-3 ${isLiquid ? 'bg-transparent text-white' : 'bg-white text-gray-900'}`}>
+      <div className="flex-1 flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] bg-white text-gray-900 gap-3">
         <AlertCircle className="w-12 h-12 text-red-500" />
         <p className="text-lg font-bold">動画IDが指定されていません</p>
       </div>
@@ -785,7 +782,7 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className={`flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 min-h-[calc(100vh-3.5rem)] ${isLiquid ? 'bg-transparent text-white' : 'bg-white text-gray-900'}`}>
+    <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">

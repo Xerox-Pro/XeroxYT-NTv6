@@ -6,16 +6,7 @@ import './index.css';
 import { initPWA } from './pwa';
 
 // サイト変更検知＆自動アップデートの初期化
-try {
-  initPWA();
-} catch (e) {
-  console.warn('[PWA] Init failed:', e);
-}
-
-// 予期せぬ非同期エラーで画面が停止するのを防止
-window.addEventListener('unhandledrejection', (event) => {
-  console.warn('Unhandled promise rejection caught:', event.reason);
-});
+initPWA();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

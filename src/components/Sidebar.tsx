@@ -1,5 +1,4 @@
 import React from 'react';
-import { useTheme } from '../contexts/ThemeContext';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
@@ -34,15 +33,13 @@ export default function Sidebar({
   onClose,
   currentView, 
   onHome, 
-  onSubscriptions, 
-  onLibrary, 
-  onHistory, 
-  onDebugAPI, 
+  onSubscriptions,
+  onLibrary,
+  onHistory,
+  onDebugAPI,
   subscriptions = [], 
   onSelectChannel 
 }: SidebarProps) {
-  const { theme } = useTheme();
-  const isLiquid = theme === 'liquid';
   
   const handleClick = (activeValue: string) => {
     if (activeValue === 'toggle' && onClose) {
@@ -79,8 +76,8 @@ export default function Sidebar({
             isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
           } transition-colors ${
             isActive
-              ? (isLiquid ? 'bg-white/20 text-white font-semibold' : 'bg-gray-100 text-black font-semibold')
-              : (isLiquid ? 'text-gray-200 hover:bg-white/10 font-normal' : 'text-gray-800 hover:bg-gray-100 font-normal')
+              ? 'bg-gray-100 text-black font-semibold'
+              : 'text-gray-800 hover:bg-gray-100 font-normal'
           }`}
         >
           <link.icon 
@@ -110,11 +107,7 @@ export default function Sidebar({
       <div className="hidden md:block xl:hidden shrink-0 w-[72px]" />
 
       <aside
-        className={`z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar shrink-0 ${
-          isLiquid 
-            ? 'bg-black/20 border-r border-white/10 text-white' 
-            : 'bg-white border-r border-gray-200 text-gray-900'
-        } ${
+        className={`bg-white text-gray-900 z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar border-r border-gray-200 shrink-0 ${
           isOpen 
             ? 'w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none' 
             : 'w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0'
@@ -128,11 +121,11 @@ export default function Sidebar({
 
         {isOpen ? (
           <>
-            <hr className={isLiquid ? 'border-white/10 my-2' : 'border-gray-200 my-2'} />
+            <hr className="border-gray-200 my-2" />
             
             {/* セクション 2 */}
             <div className="flex flex-col gap-0.5">
-              <h4 className={`px-3 text-xs font-bold uppercase tracking-wider mb-1 ${isLiquid ? 'text-gray-400' : 'text-gray-500'}`}>
+              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                 ライブラリ & 履歴
               </h4>
               {section2.map(renderLink)}
@@ -144,11 +137,11 @@ export default function Sidebar({
                   isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
                 } transition-colors ${
                   currentView === 'debug'
-                    ? (isLiquid ? 'bg-white/20 text-white font-semibold' : 'bg-gray-100 text-black font-semibold')
-                    : (isLiquid ? 'text-gray-200 hover:bg-white/10 font-normal' : 'text-gray-800 hover:bg-gray-100 font-normal')
+                    ? 'bg-gray-100 text-black font-semibold'
+                    : 'text-gray-800 hover:bg-gray-100 font-normal'
                 }`}
               >
-                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className={`shrink-0 ${isLiquid ? 'text-cyan-400' : 'text-blue-600'}`} />
+                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className="shrink-0 text-blue-600" />
                 <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
                   APIデバッグ
                 </span>
@@ -156,9 +149,9 @@ export default function Sidebar({
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
-            <hr className={isLiquid ? 'border-white/10 my-2' : 'border-gray-200 my-2'} />
+            <hr className="border-gray-200 my-2" />
             <div className="flex flex-col gap-0.5">
-              <h4 className={`px-3 text-xs font-bold uppercase tracking-wider mb-1 ${isLiquid ? 'text-gray-400' : 'text-gray-500'}`}>
+              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
                 登録チャンネル ({subscriptions.length})
               </h4>
               {subscriptions.length === 0 ? (
@@ -174,10 +167,10 @@ export default function Sidebar({
                           onSelectChannel(sub.id);
                         }
                       }}
-                      className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl transition-colors text-left group ${isLiquid ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                      className="w-full flex items-center gap-4 px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-left group"
                     >
                       <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-xs shrink-0" />
-                      <span className={`text-[14px] font-normal truncate ${isLiquid ? 'text-gray-200' : 'text-gray-800'}`}>
+                      <span className="text-[14px] font-normal text-gray-800 truncate">
                         {sub.title}
                       </span>
                     </Link>
