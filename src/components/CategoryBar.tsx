@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { localAI } from '../lib/intelligence';
@@ -23,6 +24,8 @@ const staticCategories = [
 ];
 
 export default function CategoryBar({ onSelectCategory, selectedCategory = 'すべて' }: CategoryBarProps) {
+  const { theme } = useTheme();
+  const isLiquid = theme === 'liquid';
   const [active, setActive] = useState(selectedCategory);
   const [dynamicCategories, setDynamicCategories] = useState<string[]>([]);
   const [sampledHashtags, setSampledHashtags] = useState<string[]>([]);
@@ -67,13 +70,13 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
   };
 
   return (
-    <div className="relative h-14 bg-white border-b border-gray-200 sticky top-14 z-30 select-none shadow-2xs">
+    <div className={`relative h-14 sticky top-14 z-30 select-none shadow-2xs ${isLiquid ? 'border-b border-white/10 bg-black/20 text-white' : 'bg-white border-b border-gray-200'}`}>
       {/* 左スクロールボタン */}
       {showLeftArrow && (
-        <div className="absolute left-0 top-0 bottom-0 z-10 flex items-center bg-gradient-to-r from-white via-white/90 to-transparent pr-6 pl-2">
+        <div className={`absolute left-0 top-0 bottom-0 z-10 flex items-center pr-6 pl-2 ${isLiquid ? 'bg-gradient-to-r from-black/80 to-transparent' : 'bg-gradient-to-r from-white via-white/90 to-transparent'}`}>
           <button
             onClick={() => scroll('left')}
-            className="p-1.5 rounded-full hover:bg-gray-100 active:scale-95 text-gray-700 bg-white border border-gray-200 shadow-xs transition-transform"
+            className={`p-1.5 rounded-full active:scale-95 transition-transform shadow-xs ${isLiquid ? 'bg-white/20 text-white hover:bg-white/30 border border-white/20' : 'hover:bg-gray-100 text-gray-700 bg-white border border-gray-200'}`}
             aria-label="前へスクロール"
           >
             <ChevronLeft size={18} />
@@ -97,18 +100,18 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
               onClick={() => handleClick(cat)}
               whileTap={{ scale: 0.94 }}
               className={`relative px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                isActive
-                  ? 'text-white'
-                  : isHashtag
-                  ? 'bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200'
-                  : 'bg-gray-100 text-gray-800 hover:bg-gray-200'
-              }`}
+    isActive 
+      ? (isLiquid ? 'text-black' : 'text-white') 
+      : isHashtag 
+        ? (isLiquid ? 'bg-cyan-900/40 text-cyan-200 border border-cyan-500/30' : 'bg-blue-50 text-blue-800 border border-blue-200') 
+        : (isLiquid ? 'bg-white/10 text-white hover:bg-white/20' : 'bg-gray-100 text-gray-800 hover:bg-gray-200')
+  }`}
             >
               {isActive && (
                 <motion.div
                   layoutId="activeCategoryPill"
                   transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-                  className="absolute inset-0 bg-gray-900 rounded-lg -z-0"
+                  className={`absolute inset-0 rounded-lg -z-0 ${isLiquid ? 'bg-white shadow-[0_0_15px_rgba(255,255,255,0.6)]' : 'bg-gray-900'}`}
                 />
               )}
               <span className="relative z-10">{cat}</span>
@@ -119,10 +122,10 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
 
       {/* 右スクロールボタン */}
       {showRightArrow && (
-        <div className="absolute right-0 top-0 bottom-0 z-10 flex items-center bg-gradient-to-l from-white via-white/90 to-transparent pl-6 pr-2">
+        <div className={`absolute right-0 top-0 bottom-0 z-10 flex items-center pl-6 pr-2 ${isLiquid ? 'bg-gradient-to-l from-black/80 to-transparent' : 'bg-gradient-to-l from-white via-white/90 to-transparent'}`}>
           <button
             onClick={() => scroll('right')}
-            className="p-1.5 rounded-full hover:bg-gray-100 active:scale-95 text-gray-700 bg-white border border-gray-200 shadow-xs transition-transform"
+            className={`p-1.5 rounded-full active:scale-95 transition-transform shadow-xs ${isLiquid ? 'bg-white/20 text-white hover:bg-white/30 border border-white/20' : 'hover:bg-gray-100 text-gray-700 bg-white border border-gray-200'}`}
             aria-label="次へスクロール"
           >
             <ChevronRight size={18} />

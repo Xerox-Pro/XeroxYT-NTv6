@@ -19,7 +19,7 @@ export default function SearchChannelCard({
       {/* チャンネルアバター (YouTubeスタイルの大きめのアバター) */}
       <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
         {channel.avatar ? (
-          <img
+          <img crossOrigin="anonymous" crossOrigin="anonymous"
             src={channel.avatar}
             alt={channel.title}
             className="w-full h-full object-cover"

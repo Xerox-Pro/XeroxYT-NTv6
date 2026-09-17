@@ -214,7 +214,7 @@ export default function ChannelPage({
       {/* 1. チャンネルバナー */}
       {channelData.banner ? (
         <div className="w-full h-32 sm:h-48 md:h-60 overflow-hidden bg-gray-100 relative">
-          <img
+          <img crossOrigin="anonymous"
             src={channelData.banner}
             alt={`${channelData.title} Banner`}
             className="w-full h-full object-cover"
@@ -317,7 +317,7 @@ export default function ChannelPage({
                   onClick={() => onVideoSelect(channelData.featuredVideo!.videoId)}
                   className="w-full md:w-[480px] aspect-video rounded-xl overflow-hidden bg-black relative group cursor-pointer shrink-0 shadow-sm"
                 >
-                  <img
+                  <img crossOrigin="anonymous"
                     src={channelData.featuredVideo.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${channelData.featuredVideo.videoId}/hqdefault.jpg`}
                     alt={channelData.featuredVideo.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -389,7 +389,7 @@ export default function ChannelPage({
                       className="group cursor-pointer flex flex-col gap-2"
                     >
                       <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
-                        <img
+                        <img crossOrigin="anonymous"
                           src={short.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
                           alt={short.title}
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -488,7 +488,7 @@ export default function ChannelPage({
                   className="group cursor-pointer flex flex-col gap-2"
                 >
                   <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
-                    <img
+                    <img crossOrigin="anonymous"
                       src={short.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
                       alt={short.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -536,7 +536,7 @@ export default function ChannelPage({
                     className="group cursor-pointer flex flex-col gap-2"
                   >
                     <div className="aspect-video rounded-xl overflow-hidden bg-black relative border border-gray-200 shadow-2xs">
-                      <img
+                      <img crossOrigin="anonymous"
                         src={live.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${live.videoId}/hqdefault.jpg`}
                         alt={live.title}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -587,7 +587,7 @@ export default function ChannelPage({
               {(channelData.releases || []).map((rel) => (
                 <div key={rel.id} className="group cursor-pointer flex flex-col gap-2.5 p-3 rounded-2xl bg-gray-50 border border-gray-200/80 hover:border-gray-300 transition-all">
                   <div className="aspect-square rounded-xl overflow-hidden bg-gray-200 relative shadow-2xs">
-                    <img
+                    <img crossOrigin="anonymous"
                       src={rel.thumbnail}
                       alt={rel.title}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -693,7 +693,7 @@ export default function ChannelPage({
             {(channelData.playlists || []).map((pl) => (
               <div key={pl.id} className="group cursor-pointer flex flex-col gap-2">
                 <div className="aspect-video rounded-xl overflow-hidden bg-gray-100 relative border border-gray-200 shadow-2xs">
-                  <img
+                  <img crossOrigin="anonymous"
                     src={pl.thumbnail}
                     alt={pl.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

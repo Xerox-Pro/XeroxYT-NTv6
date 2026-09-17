@@ -5,6 +5,8 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
+import { useTheme } from './contexts/ThemeContext';
+import { LiquidGlass } from '@ybouane/liquidglass';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
@@ -36,6 +38,29 @@ export default function MainApp() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+
+  const { theme } = useTheme();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const lgInstanceRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (theme === 'liquid' && rootRef.current) {
+      LiquidGlass.init({
+        root: rootRef.current,
+        glassElements: rootRef.current.querySelectorAll('.global-glass')
+      }).then(inst => {
+        lgInstanceRef.current = inst;
+      });
+    }
+
+    return () => {
+      if (lgInstanceRef.current) {
+        lgInstanceRef.current.destroy();
+        lgInstanceRef.current = null;
+      }
+    };
+  }, [theme]);
+
 
   const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
   const [searchQuery, setSearchQuery] = useState('');
@@ -969,10 +994,20 @@ export default function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+    <div ref={rootRef} className={`relative min-h-screen flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800 ${theme === 'liquid' ? 'text-white overflow-hidden' : 'bg-white text-gray-900'}`}>
+      {theme === 'liquid' && (
+        <div className="absolute inset-0 z-[-1] overflow-hidden pointer-events-none">
+          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-gradient-to-tr from-cyan-400 to-blue-600 rounded-full blur-[100px] animate-pulse opacity-60 mix-blend-screen"></div>
+          <div className="absolute bottom-[-20%] right-[-10%] w-[60%] h-[60%] bg-gradient-to-bl from-fuchsia-500 to-purple-600 rounded-full blur-[120px] animate-pulse opacity-60 mix-blend-screen" style={{ animationDelay: '2s' }}></div>
+          <div className="absolute top-[20%] right-[20%] w-[30%] h-[30%] bg-gradient-to-tr from-yellow-300 to-orange-500 rounded-full blur-[80px] animate-pulse opacity-40 mix-blend-screen" style={{ animationDelay: '4s' }}></div>
+        </div>
+      )}
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
-      <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
+      <div 
+        className={`w-full shrink-0 sticky top-0 z-50 ${theme === 'liquid' ? 'global-glass border-b border-white/20' : 'bg-white'}`}
+        data-config={JSON.stringify({ blurAmount: 0, refraction: 1.65, chromAberration: 0.95, specular: 0.25, cornerRadius: 0, zRadius: 30 })}
+      >
         <Navbar
           onSearch={handleSearch}
           onHome={handleGoHome}
@@ -981,7 +1016,7 @@ export default function MainApp() {
         />
       </div>
 
-      <div className="flex flex-1 relative items-start">
+      <div className="flex flex-1 relative items-start h-full" data-dynamic>
         {/* サイドバー: Desktopではsticky、モバイルではfixed overlay */}
         <Sidebar
           isOpen={isSidebarOpen}
@@ -1109,7 +1144,7 @@ export default function MainApp() {
             </div>
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
-            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
+            <div className={`p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen ${theme === 'liquid' ? 'bg-transparent text-white' : 'bg-white text-gray-900'}`}>
               {view === 'search' && (
                 <>
                   <DetectedSearchHeader
@@ -1119,8 +1154,8 @@ export default function MainApp() {
                   />
 
                   {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
-                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                  <div className={`mb-6 border-b pb-3 ${theme === 'liquid' ? 'border-white/20' : 'border-gray-200'}`}>
+                    <h2 className={`text-lg font-bold tracking-tight ${theme === 'liquid' ? 'text-white' : 'text-gray-900'}`}>
                       "{searchQuery}" の検索結果
                     </h2>
                   </div>

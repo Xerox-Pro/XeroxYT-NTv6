@@ -331,7 +331,7 @@ export default function LibraryPage({
                 className="group cursor-pointer flex flex-col gap-1.5"
               >
                 <div className="aspect-video rounded-xl overflow-hidden bg-gray-100 relative border border-gray-200">
-                  <img
+                  <img crossOrigin="anonymous"
                     src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
                     alt={item.title}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -386,7 +386,7 @@ export default function LibraryPage({
                     }`}
                   >
                     <div className="w-20 aspect-video rounded-xl overflow-hidden bg-gray-800 relative shrink-0">
-                      <img src={coverThumb} alt={pl.title} className="w-full h-full object-cover" />
+                      <img crossOrigin="anonymous" src={coverThumb} alt={pl.title} className="w-full h-full object-cover" />
                       <div className="absolute inset-0 bg-black/40 flex items-center justify-center text-white text-[10px] font-bold">
                         {pl.videos.length}本
                       </div>
@@ -558,7 +558,7 @@ export default function LibraryPage({
                           >
                             <span className="text-xs font-bold text-gray-400 w-6 text-center shrink-0">{idx + 1}</span>
                             <div className="w-20 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
-                              <img
+                              <img crossOrigin="anonymous"
                                 src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
                                 alt={video.title}
                                 className="w-full h-full object-cover"
@@ -641,7 +641,7 @@ export default function LibraryPage({
                       className="flex items-center gap-3 p-2 bg-white rounded-xl border border-gray-100 hover:border-gray-200 cursor-pointer transition-all hover:shadow-xs group"
                     >
                       <div className="w-16 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
-                        <img
+                        <img crossOrigin="anonymous"
                           src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
                           alt={video.title}
                           className="w-full h-full object-cover"
@@ -708,7 +708,7 @@ export default function LibraryPage({
                     >
                       <div className="w-16 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
                         {pl.thumbnails ? (
-                          <img
+                          <img crossOrigin="anonymous"
                             src={pl.thumbnails}
                             alt={pl.title}
                             className="w-full h-full object-cover"

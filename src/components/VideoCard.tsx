@@ -59,7 +59,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
         className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200/80 shadow-2xs group-hover:shadow-md transition-shadow duration-300"
       >
         {imgSrc ? (
-          <img
+          <img crossOrigin="anonymous" crossOrigin="anonymous"
             src={imgSrc}
             referrerPolicy="no-referrer"
             onError={handleImgError}

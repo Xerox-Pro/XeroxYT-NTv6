@@ -67,7 +67,7 @@ export default function Avatar({ src, name, channelId, videoId, className = "w-8
 
   if (activeSrc && !imgError) {
     return (
-      <img
+      <img crossOrigin="anonymous" crossOrigin="anonymous"
         src={activeSrc}
         alt={displayName}
         referrerPolicy="no-referrer"

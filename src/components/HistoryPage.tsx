@@ -98,7 +98,7 @@ export default function HistoryPage({
                 onClick={() => onVideoSelect(item.videoId)}
                 className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200"
               >
-                <img
+                <img crossOrigin="anonymous"
                   src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
                   alt={item.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -134,7 +134,7 @@ export default function HistoryPage({
                 onClick={() => onVideoSelect(item.videoId)}
                 className="w-full sm:w-60 aspect-video rounded-xl overflow-hidden bg-gray-100 relative cursor-pointer shrink-0 border border-gray-200 shadow-2xs group-hover:shadow-sm"
               >
-                <img
+                <img crossOrigin="anonymous"
                   src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
                   alt={item.title}
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"

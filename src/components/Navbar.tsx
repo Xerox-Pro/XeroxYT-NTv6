@@ -347,7 +347,7 @@ export default function Navbar({
   }, []);
 
   return (
-    <header className="w-full min-h-[3.5rem] bg-white text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
+    <header className={`w-full min-h-[3.5rem] flex flex-wrap items-center justify-between px-4 py-2 border-b shadow-xs relative z-50 ${isLiquid ? 'text-white border-white/20 bg-transparent' : 'bg-white text-gray-900 border-gray-200'}`}>
       {/* リンク検知通知バナー (トースト: クリーンなミニマルスタイル) */}
       <AnimatePresence>
         {detectedNotice && (
@@ -388,7 +388,7 @@ export default function Navbar({
             onHome();
           }
         }}>
-          <img 
+          <img crossOrigin="anonymous" 
             src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvrN3FNoHzYnXNfVvvvuP-mBKnl4JUP7tyzaJzIaA-5S21wei4MmKP4L08YGfUOnOU2Jug18mVZ4mzGgAtgKmj9AgYD-u9AAShb_PwiI_rFBWFTlO7Vmds1lDHcJPqpI_Xs-vYnNnNxzt8n0TLG8IJ-2O4BjADNtFZeIcbd1KU-PjCIFFpcUB6rWfz6_y6/s1600/YouTubePro.png"
             alt="YouTube Logo" 
             className="h-6 sm:h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
@@ -401,7 +401,7 @@ export default function Navbar({
       {/* 中央: 検索バー + マイク */}
       <div className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
-          <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
+          <div className={`flex w-full rounded-full border focus-within:shadow-inner shadow-xs transition-all duration-150 ${isLiquid ? 'bg-white/10 border-white/30 focus-within:border-white/60 text-white' : 'bg-white border-gray-300 focus-within:border-gray-500'}`}>
             <div className="flex-1 flex items-center pl-4 pr-1">
               <input
                 ref={inputRef}
@@ -416,7 +416,7 @@ export default function Navbar({
                 onFocus={() => setIsSearchFocused(true)}
                 onKeyDown={handleKeyDown}
                 placeholder="検索・リンクを貼り付け"
-                className="w-full bg-transparent py-2 outline-none text-gray-900 text-sm placeholder-gray-500 font-normal"
+                className={`w-full bg-transparent py-2 outline-none text-sm font-normal ${isLiquid ? 'text-white placeholder-gray-300' : 'text-gray-900 placeholder-gray-500'}`}
               />
               {query && (
                 <button
@@ -429,7 +429,7 @@ export default function Navbar({
                     setChannelPreview(null);
                     inputRef.current?.focus();
                   }}
-                  className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors shrink-0"
+                  className={`p-1 rounded-full transition-colors shrink-0 ${isLiquid ? 'text-gray-300 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'}`}
                   title="クリア"
                 >
                   <X size={16} />
@@ -439,7 +439,7 @@ export default function Navbar({
             <motion.button 
               type="submit" 
               whileTap={{ scale: 0.94 }}
-              className="px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
+              className={`px-6 border-l flex items-center justify-center transition-colors shrink-0 rounded-r-full ${isLiquid ? 'border-white/20 bg-white/10 hover:bg-white/20 text-white' : 'border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700'}`}
               title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
               <Search size={19} strokeWidth={2} />
@@ -447,26 +447,26 @@ export default function Navbar({
           </div>
         </form>
 
-        {/* 検索ドロップダウン (ホワイトテーマに調和した自然な動画プレビュー + 履歴 & 候補) */}
+        {/* 検索ドロップダウン */}
         {isSearchFocused && (detectedLink || displayItems.length > 0) && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-200 py-2 z-[100] max-h-[440px] overflow-y-auto">
-            {/* 動画ID検知時: ホワイトテーマに合わせた自然な動画カード */}
+          <div className={`absolute top-full left-0 right-0 mt-1.5 rounded-2xl shadow-xl py-2 z-[100] max-h-[440px] overflow-y-auto border ${isLiquid ? 'bg-black/90 border-white/20 text-white' : 'bg-white border-gray-200 text-gray-900'}`}>
+            {/* 動画ID検知時 */}
             {detectedLink && (detectedLink.type === 'video' || detectedLink.type === 'short') && (
               <div 
                 onClick={() => handleOpenDetected(detectedLink)}
-                className="mx-2 mb-2 p-2.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-xl cursor-pointer transition-colors duration-150 group"
+                className={`mx-2 mb-2 p-2.5 rounded-xl cursor-pointer transition-colors duration-150 group border ${isLiquid ? 'bg-white/10 hover:bg-white/20 border-white/20' : 'bg-white hover:bg-gray-50 border-gray-200'}`}
               >
-                <div className="flex items-center justify-between pb-1.5 mb-2 border-b border-gray-100 text-xs text-gray-500">
-                  <span className="font-medium text-gray-700">
+                <div className={`flex items-center justify-between pb-1.5 mb-2 border-b text-xs ${isLiquid ? 'border-white/10 text-gray-400' : 'border-gray-100 text-gray-500'}`}>
+                  <span className={`font-medium ${isLiquid ? 'text-gray-200' : 'text-gray-700'}`}>
                     {detectedLink.type === 'short' ? 'リンク先: YouTubeショート' : 'リンク先: YouTube動画'}
                   </span>
-                  <span className="font-mono text-[11px] text-gray-400">ID: {detectedLink.id}</span>
+                  <span className={`font-mono text-[11px] ${isLiquid ? 'text-gray-400' : 'text-gray-400'}`}>ID: {detectedLink.id}</span>
                 </div>
 
                 <div className="flex gap-3 items-center">
                   {/* 動画サムネイル */}
                   <div className="relative w-28 sm:w-36 aspect-video bg-gray-100 rounded-lg overflow-hidden shrink-0 border border-gray-100">
-                    <img
+                    <img crossOrigin="anonymous"
                       src={`https://i.ytimg.com/vi/${detectedLink.id}/hqdefault.jpg`}
                       alt="サムネイル"
                       className="w-full h-full object-cover"
@@ -497,7 +497,7 @@ export default function Navbar({
 
                     <div className="flex items-center gap-1.5 mt-1 text-xs text-gray-500">
                       {videoPreview?.authorAvatar && (
-                        <img 
+                        <img crossOrigin="anonymous" 
                           src={videoPreview.authorAvatar} 
                           alt={videoPreview.author || ''} 
                           className="w-4 h-4 rounded-full object-cover shrink-0" 
@@ -532,7 +532,7 @@ export default function Navbar({
                 <div className="flex gap-3 items-center">
                   <div className="w-12 h-12 rounded-full overflow-hidden bg-gray-100 border border-gray-200 shrink-0 flex items-center justify-center">
                     {channelPreview?.avatar ? (
-                      <img
+                      <img crossOrigin="anonymous"
                         src={channelPreview.avatar}
                         alt="アバター"
                         className="w-full h-full object-cover"

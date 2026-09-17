@@ -448,6 +448,49 @@ async function startServer() {
     next();
   });
 
+  // --- Strict API Access Protection (CORS Evasion & Malicious Tool Prevention) ---
+  app.use((req, res, next) => {
+    const isApiRoute = req.path.startsWith("/api/") || req.path.startsWith("/stream") || req.path.startsWith("/360") || req.path.startsWith("/edu") || req.path.startsWith("/scratch-edu");
+    
+    if (isApiRoute) {
+      // 1. Check Fetch Metadata (supported by modern browsers)
+      const secFetchSite = req.headers['sec-fetch-site'];
+      if (secFetchSite) {
+        if (secFetchSite !== 'same-origin' && secFetchSite !== 'same-site') {
+          return res.status(403).json({ error: "Forbidden: API access restricted to same-origin. (sec-fetch-site)" });
+        }
+      } else {
+        // 2. Fallback for older browsers or non-browser clients (e.g. cURL, Postman)
+        // If Sec-Fetch-Site is not present, we require a valid Origin or Referer matching the Host.
+        const referer = req.headers['referer'];
+        const origin = req.headers['origin'];
+        const host = req.headers['host'];
+        
+        let isValidSource = false;
+        
+        if (origin) {
+          try {
+            const originHost = new URL(origin).host;
+            if (originHost === host) isValidSource = true;
+          } catch(e) {}
+        } else if (referer) {
+          try {
+            const refererHost = new URL(referer).host;
+            if (refererHost === host) isValidSource = true;
+          } catch(e) {}
+        }
+        
+        // If neither Origin nor Referer match the Host, block the request.
+        // This blocks direct cURL requests unless headers are explicitly spoofed.
+        // And blocks external links from other domains.
+        if (!isValidSource) {
+          return res.status(403).json({ error: "Forbidden: Direct API access or cross-origin requests are not allowed." });
+        }
+      }
+    }
+    next();
+  });
+
   // --- In-Memory API Response Cache Helper ---
   interface CacheEntry {
     data: any;
