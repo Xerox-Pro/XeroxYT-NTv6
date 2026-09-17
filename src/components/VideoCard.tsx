@@ -51,7 +51,7 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
       whileHover={{ y: -3 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.18, ease: "easeOut" }}
-      className="group cursor-pointer flex flex-col select-none lg-panel-sm p-3"
+      className="group cursor-pointer flex flex-col select-none"
     >
       {/* 16:9 サムネイルカード */}
       <div 

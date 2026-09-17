@@ -5,7 +5,6 @@ import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCh
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
-import { LiquidGlassButton } from './LiquidGlassButton';
 import { parseYouTubeUrl, YouTubeUrlParseResult, fetchJSON, formatDuration } from '../utils';
 
 interface NavbarProps {
@@ -348,7 +347,7 @@ export default function Navbar({
   }, []);
 
   return (
-    <header className="w-full min-h-[3.5rem] bg-white/40 webgl-glass text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
+    <header className="w-full min-h-[3.5rem] bg-white text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
       {/* リンク検知通知バナー (トースト: クリーンなミニマルスタイル) */}
       <AnimatePresence>
         {detectedNotice && (
@@ -402,7 +401,7 @@ export default function Navbar({
       {/* 中央: 検索バー + マイク */}
       <div className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
-          <div className="flex w-full lg-search-bar rounded-full focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
+          <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
             <div className="flex-1 flex items-center pl-4 pr-1">
               <input
                 ref={inputRef}
@@ -440,7 +439,7 @@ export default function Navbar({
             <motion.button 
               type="submit" 
               whileTap={{ scale: 0.94 }}
-              className="px-6 border-l border-gray-300/50 bg-white/20 hover:bg-white/40 active:bg-white/50 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
+              className="px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
               title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
               <Search size={19} strokeWidth={2} />
@@ -631,7 +630,7 @@ export default function Navbar({
           type="button"
           whileTap={{ scale: 0.9 }}
           whileHover={{ scale: 1.05 }}
-          className="p-2.5 rounded-full lg-icon-btn text-gray-700 transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0"
+          className="p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0"
           title="音声で検索"
           onClick={() => {
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -656,11 +655,13 @@ export default function Navbar({
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <PWAInstallButton />
-        <LiquidGlassButton 
-          to="/aistudio" 
-          text="Xray" 
-          className="hidden sm:inline-block"
-        />
+        <Link
+          to="/aistudio"
+          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
+          title="Xrayを開く"
+        >
+          Xray
+        </Link>
       </div>
     </header>
   );

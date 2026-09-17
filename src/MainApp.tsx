@@ -1,4 +1,3 @@
-import { LiquidNavbarWrapper } from "./components/LiquidNavbarWrapper";
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -970,25 +969,16 @@ export default function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50/50 text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800 relative">
-      {/* Global Animated Background for CSS Liquid Glass */}
-      <div className="fixed inset-0 overflow-hidden pointer-events-none z-[-1]">
-        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-300/20 rounded-full mix-blend-multiply filter blur-[80px] animate-blob"></div>
-        <div className="absolute top-[20%] right-[-10%] w-[50%] h-[50%] bg-purple-300/20 rounded-full mix-blend-multiply filter blur-[100px] animate-blob animation-delay-2000"></div>
-        <div className="absolute bottom-[-20%] left-[20%] w-[40%] h-[40%] bg-pink-300/20 rounded-full mix-blend-multiply filter blur-[80px] animate-blob animation-delay-4000"></div>
-      </div>
-
+    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
-      <div className="w-full shrink-0 sticky top-0 z-50">
-        <LiquidNavbarWrapper>
-          <Navbar
-            onSearch={handleSearch}
-            onHome={handleGoHome}
-            toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
-            initialSearchQuery={searchQuery}
-          />
-        </LiquidNavbarWrapper>
+      <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
+        <Navbar
+          onSearch={handleSearch}
+          onHome={handleGoHome}
+          toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
+          initialSearchQuery={searchQuery}
+        />
       </div>
 
       <div className="flex flex-1 relative items-start">
