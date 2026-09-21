@@ -1,9 +1,7 @@
-import { Glass } from "../lib/Liquid";
-import { useTheme } from "../lib/ThemeContext";
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight, Sliders, Sun } from 'lucide-react';
+import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -22,7 +20,6 @@ export default function Navbar({
   toggleSidebar, 
   initialSearchQuery
 }: NavbarProps) {
-  const { theme, setTheme, setShowPrismInspector } = useTheme();
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialSearchQuery);
   const [detectedNotice, setDetectedNotice] = useState<{
@@ -350,7 +347,7 @@ export default function Navbar({
   }, []);
 
   return (
-    <Glass as="header" variant="navbar" className={`w-full min-h-[3.5rem] ${theme === "white" ? "bg-white text-gray-900 border-b border-gray-200 shadow-xs" : "text-white border-b border-white/15 backdrop-blur-md shadow-lg"} flex flex-wrap items-center justify-between px-4 py-2 relative z-50`}>
+    <header className="w-full min-h-[3.5rem] bg-white text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
       {/* リンク検知通知バナー (トースト: クリーンなミニマルスタイル) */}
       <AnimatePresence>
         {detectedNotice && (
@@ -376,11 +373,11 @@ export default function Navbar({
       </AnimatePresence>
 
       {/* 左側: ハンバーガーメニュー + YouTubeロゴ */}
-      <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+      <div className="flex items-center gap-4 shrink-0">
         <motion.button 
           onClick={toggleSidebar} 
           whileTap={{ scale: 0.88 }}
-          className={`p-2 rounded-full ${theme === 'white' ? 'hover:bg-gray-100 active:bg-gray-200 text-gray-800' : 'hover:bg-white/15 active:bg-white/25 text-white'} transition-colors duration-200`}
+          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors duration-200 text-gray-800"
           title="メニュー"
         >
           <Menu size={22} strokeWidth={2} />
@@ -392,28 +389,19 @@ export default function Navbar({
           }
         }}>
           <img 
-            src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvrN3FNoHzYnXNfVvvvuP-mBKnl4JUP7tyzaJzIaA-5S21wei4MmKP4L08YGfUOnOU2Jug18mVZ4mzGgAtgKmj9AgYD-u9AAShb_PwiI_rFBWFTlO7Vmds1lDHcJPqpI_Xs-vYnNnNxzt8n0TLG8IJ-2O4BjADNtFZeIcbd1KU-PjCIFFpcUB6rWfz6_y6/s1600/YouTubePro.png" 
+            src="https://blogger.googleusercontent.com/img/b/R29vZ2xl/AVvXsEjvrN3FNoHzYnXNfVvvvuP-mBKnl4JUP7tyzaJzIaA-5S21wei4MmKP4L08YGfUOnOU2Jug18mVZ4mzGgAtgKmj9AgYD-u9AAShb_PwiI_rFBWFTlO7Vmds1lDHcJPqpI_Xs-vYnNnNxzt8n0TLG8IJ-2O4BjADNtFZeIcbd1KU-PjCIFFpcUB6rWfz6_y6/s1600/YouTubePro.png"
             alt="YouTube Logo" 
             className="h-6 sm:h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
-          <div className="flex items-center gap-1.5">
-            <span className={`text-[17px] sm:text-[19px] font-bold tracking-tight font-sans ${theme === 'white' ? 'text-gray-900' : 'text-white drop-shadow-sm'}`}>
-              XeroxYT-NTv6
-            </span>
-            {theme === 'liquid' && (
-              <span className="hidden sm:inline-block text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-gradient-to-r from-cyan-400/20 via-purple-400/20 to-pink-400/20 text-cyan-300 border border-cyan-400/30">
-                Liquid
-              </span>
-            )}
-          </div>
+          <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT-NTv6</span>
         </Link>
       </div>
       
       {/* 中央: 検索バー + マイク */}
-      <div className="flex-1 max-w-[680px] mx-2 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
+      <div className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
-          <div className={`flex w-full ${theme === 'white' ? 'bg-white border border-gray-300 focus-within:border-gray-500 shadow-xs' : 'bg-white/10 backdrop-blur-md border border-white/25 focus-within:border-cyan-400/60 shadow-[0_4px_20px_rgba(0,0,0,0.25)] ring-1 ring-white/10'} rounded-full transition-all duration-150`}>
+          <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
             <div className="flex-1 flex items-center pl-4 pr-1">
               <input
                 ref={inputRef}
@@ -428,7 +416,7 @@ export default function Navbar({
                 onFocus={() => setIsSearchFocused(true)}
                 onKeyDown={handleKeyDown}
                 placeholder="検索・リンクを貼り付け"
-                className={`w-full bg-transparent py-2 outline-none ${theme === 'white' ? 'text-gray-900 placeholder-gray-500' : 'text-white placeholder-white/60'} text-sm font-normal`}
+                className="w-full bg-transparent py-2 outline-none text-gray-900 text-sm placeholder-gray-500 font-normal"
               />
               {query && (
                 <button
@@ -441,7 +429,7 @@ export default function Navbar({
                     setChannelPreview(null);
                     inputRef.current?.focus();
                   }}
-                  className={`p-1 ${theme === 'white' ? 'text-gray-400 hover:text-gray-700 hover:bg-gray-100' : 'text-white/60 hover:text-white hover:bg-white/15'} rounded-full transition-colors shrink-0`}
+                  className="p-1 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-full transition-colors shrink-0"
                   title="クリア"
                 >
                   <X size={16} />
@@ -451,7 +439,7 @@ export default function Navbar({
             <motion.button 
               type="submit" 
               whileTap={{ scale: 0.94 }}
-              className={`px-5 sm:px-6 ${theme === 'white' ? 'border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700' : 'border-l border-white/20 bg-white/10 hover:bg-white/20 active:bg-white/30 text-white'} flex items-center justify-center transition-colors shrink-0 rounded-r-full`}
+              className="px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
               title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
               <Search size={19} strokeWidth={2} />
@@ -642,7 +630,7 @@ export default function Navbar({
           type="button"
           whileTap={{ scale: 0.9 }}
           whileHover={{ scale: 1.05 }}
-          className={`p-2.5 rounded-full ${theme === 'white' ? 'bg-gray-100 hover:bg-gray-200 text-gray-700' : 'bg-white/10 hover:bg-white/20 text-white border border-white/20 shadow-xs'} transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0`}
+          className="p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0"
           title="音声で検索"
           onClick={() => {
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
@@ -664,62 +652,18 @@ export default function Navbar({
         </motion.button>
       </div>
 
-      {/* 右側: テーマ切替 + プリズムラボ + PWA + Xray */}
+      {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        {/* テーマ切替 pill */}
-        <div className="flex items-center gap-1 p-0.5 rounded-full border border-gray-300/30 bg-black/5 dark:bg-black/20 backdrop-blur-xs">
-          <Glass
-            as="button"
-            variant="button"
-            onClick={() => setTheme(theme === 'white' ? 'liquid' : 'white')}
-            className={`px-3 py-1.5 rounded-full transition-all text-xs font-semibold flex items-center gap-1.5 shadow-xs whitespace-nowrap cursor-pointer ${
-              theme === "white" 
-                ? "bg-white text-gray-800 hover:bg-gray-100 shadow-sm border border-gray-200" 
-                : "bg-gradient-to-r from-cyan-400/25 via-purple-400/25 to-pink-400/25 text-white hover:bg-white/20 border border-white/30"
-            }`}
-            title="テーマの切り替え (White / Liquid Glass)"
-          >
-            {theme === 'white' ? (
-              <>
-                <Sun size={13} className="text-amber-500" />
-                <span>White</span>
-              </>
-            ) : (
-              <>
-                <Sparkles size={13} className="text-cyan-300 animate-pulse" />
-                <span>Liquid Glass</span>
-              </>
-            )}
-          </Glass>
-
-          {/* Liquid Glass Inspector button */}
-          {theme === 'liquid' && (
-            <button
-              type="button"
-              onClick={() => setShowPrismInspector(true)}
-              className="p-1.5 rounded-full hover:bg-white/20 text-cyan-200 transition-colors cursor-pointer"
-              title="Liquid Glass Studio (プリズム・歪みパラメーター調整)"
-            >
-              <Sliders size={14} />
-            </button>
-          )}
-        </div>
-
         <PWAInstallButton />
-        
         <Link
           to="/aistudio"
-          className={`px-3.5 py-1.5 rounded-full transition-colors text-xs sm:text-sm font-medium shadow-xs ${
-            theme === "white" 
-              ? "bg-gray-100 hover:bg-gray-200 text-gray-800" 
-              : "bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-xs"
-          }`}
+          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
           title="Xrayを開く"
         >
           Xray
         </Link>
       </div>
-    </Glass>
+    </header>
   );
 }
 
