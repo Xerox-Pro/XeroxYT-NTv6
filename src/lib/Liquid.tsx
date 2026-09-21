@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useId } from 'react';
-import { LiquidGlass } from '@ybouane/liquidglass';
+import { LiquidGlass } from './liquidglass-engine';
 import { useTheme, LiquidGlassConfig } from './ThemeContext';
 
 // High-definition iridescent prismatic fluid background for authentic refraction and chromatic dispersion
@@ -36,7 +36,7 @@ export function LiquidRoot({ children, className = '', style, as: Component = "d
     const setupLiquid = async () => {
       if (!rootRef.current || !mounted) return;
 
-      const elements = rootRef.current.querySelectorAll(':scope > .glass-element');
+      const elements = rootRef.current.querySelectorAll<HTMLElement>(':scope > .glass-element');
       if (elements.length === 0) return;
 
       try {
@@ -111,7 +111,7 @@ export function LiquidRoot({ children, className = '', style, as: Component = "d
   );
 }
 
-export type GlassVariant = 'default' | 'button' | 'navbar' | 'search' | 'pill' | 'card' | 'dome' | 'chip';
+export type GlassVariant = 'default' | 'button' | 'navbar' | 'search' | 'pill' | 'card' | 'dome' | 'chip' | 'sidebar';
 
 export interface GlassProps extends React.HTMLAttributes<HTMLElement> {
   children?: React.ReactNode;
@@ -179,6 +179,17 @@ export function Glass({
         chromAberration: globalConfig.chromAberration,
         edgeHighlight: 0.2,
         specular: 0.24,
+        shadowOpacity: 0.25,
+      };
+      break;
+    case 'sidebar':
+      variantConfig = {
+        cornerRadius: 0,
+        blurAmount: globalConfig.blurAmount,
+        refraction: Math.max(globalConfig.refraction - 0.1, 1.4),
+        chromAberration: globalConfig.chromAberration,
+        edgeHighlight: 0.2,
+        specular: 0.25,
         shadowOpacity: 0.25,
       };
       break;
@@ -271,7 +282,7 @@ export function FloatingDomeLens() {
     const setup = async () => {
       if (!rootRef.current || !mounted) return;
       try {
-        const domeEl = rootRef.current.querySelector('.dome-element');
+        const domeEl = rootRef.current.querySelector<HTMLElement>('.dome-element');
         if (domeEl) {
           instanceRef.current = await LiquidGlass.init({
             root: rootRef.current,
@@ -361,11 +372,13 @@ export function GlobalLiquidBackground() {
   if (theme !== 'liquid') return null;
 
   return (
-    <div className="fixed inset-0 pointer-events-none overflow-hidden -z-50" aria-hidden="true">
+    <div className="fixed inset-0 pointer-events-none overflow-hidden -z-50 bg-[#070b14]" aria-hidden="true">
+      {/* Dynamic ambient gradient fallback */}
+      <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-cyan-950 opacity-90" />
       {/* Core saturated fluid image */}
       <img
         src={AMBIENT_LIQUID_BG}
-        className="w-full h-full object-cover select-none scale-105"
+        className="w-full h-full object-cover select-none scale-105 opacity-90 mix-blend-screen"
         style={{ filter: 'brightness(0.92) contrast(1.1) saturate(1.15)' }}
         crossOrigin="anonymous"
         alt=""
@@ -377,3 +390,120 @@ export function GlobalLiquidBackground() {
     </div>
   );
 }
+
+/**
+ * プリズム・リキッドグラス パラメータ微調整用インスペクター
+ * ユーザーが屈折率や色収差、ぼかし(0.15標準)をリアルタイムに体感可能
+ */
+export function PrismInspector() {
+  const { theme, config, updateConfig } = useTheme();
+  const [isOpen, setIsOpen] = React.useState(false);
+
+  if (theme !== 'liquid') return null;
+
+  return (
+    <div className="fixed bottom-4 right-4 z-[999] select-none text-xs font-sans">
+      {!isOpen ? (
+        <button
+          onClick={() => setIsOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/60 hover:bg-black/80 text-white/90 border border-white/25 shadow-lg backdrop-blur-md transition-transform hover:scale-105 active:scale-95"
+          title="プリズム / ガラスパラメータ調整"
+        >
+          <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+          <span className="font-medium text-[11px] tracking-wide">Prism Engine</span>
+        </button>
+      ) : (
+        <div className="w-72 p-3.5 rounded-2xl bg-black/80 border border-white/25 text-white shadow-2xl backdrop-blur-xl flex flex-col gap-3">
+          <div className="flex items-center justify-between border-b border-white/15 pb-2">
+            <div className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-gradient-to-tr from-cyan-400 to-purple-400" />
+              <span className="font-bold text-xs tracking-wider uppercase text-cyan-200">Prism Optics</span>
+            </div>
+            <button
+              onClick={() => setIsOpen(false)}
+              className="text-white/60 hover:text-white text-xs px-1.5 py-0.5 rounded hover:bg-white/10"
+            >
+              ✕
+            </button>
+          </div>
+
+          <div className="flex flex-col gap-2.5 text-[11px]">
+            {/* ぼかし (blurAmount) */}
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-white/80">
+                <span>ぼかし (Blur)</span>
+                <span className="font-mono text-cyan-300">{config.blurAmount.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                value={config.blurAmount}
+                onChange={(e) => updateConfig({ blurAmount: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-white/20 rounded-lg"
+              />
+            </div>
+
+            {/* 屈折 (refraction) */}
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-white/80">
+                <span>屈折・歪み (Refraction)</span>
+                <span className="font-mono text-cyan-300">{config.refraction.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0.5"
+                max="3.0"
+                step="0.1"
+                value={config.refraction}
+                onChange={(e) => updateConfig({ refraction: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-white/20 rounded-lg"
+              />
+            </div>
+
+            {/* 色収差 (chromAberration) */}
+            <div className="flex flex-col gap-1">
+              <div className="flex justify-between text-white/80">
+                <span>色収差プリズム (Aberration)</span>
+                <span className="font-mono text-cyan-300">{config.chromAberration.toFixed(2)}</span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="1.2"
+                step="0.05"
+                value={config.chromAberration}
+                onChange={(e) => updateConfig({ chromAberration: parseFloat(e.target.value) })}
+                className="w-full accent-cyan-400 cursor-pointer h-1.5 bg-white/20 rounded-lg"
+              />
+            </div>
+
+            {/* プリセットボタン */}
+            <div className="pt-2 border-t border-white/10 flex items-center gap-1.5">
+              <button
+                onClick={() => updateConfig({ blurAmount: 0.15, refraction: 2.2, chromAberration: 0.65 })}
+                className="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-center text-[10px] text-cyan-200 border border-white/15"
+              >
+                強力プリズム
+              </button>
+              <button
+                onClick={() => updateConfig({ blurAmount: 0.05, refraction: 1.8, chromAberration: 0.4 })}
+                className="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-center text-[10px] text-white/90 border border-white/15"
+              >
+                クリアクリスタル
+              </button>
+              <button
+                onClick={() => updateConfig({ blurAmount: 0.15, refraction: 1.6, chromAberration: 0.35 })}
+                className="flex-1 py-1 rounded bg-white/10 hover:bg-white/20 text-center text-[10px] text-white/70 border border-white/15"
+              >
+                標準
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+

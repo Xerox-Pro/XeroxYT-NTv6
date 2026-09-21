@@ -135,7 +135,7 @@ const ThemeContext = createContext<ThemeContextType>({
 
 export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [theme, setTheme] = useState<Theme>(() => {
-    return (localStorage.getItem('xerox_theme') as Theme) || 'liquid'; // Default to liquid theme
+    return (localStorage.getItem('xerox_theme') as Theme) || 'white';
   });
 
   const [activePreset, setActivePreset] = useState<string>(() => {

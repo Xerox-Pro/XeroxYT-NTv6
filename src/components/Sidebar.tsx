@@ -77,16 +77,20 @@ export default function Sidebar({
           title={link.label}
           className={`w-full flex items-center ${
             isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
-          } transition-colors ${
-            isActive
-              ? 'bg-gray-100 text-black font-semibold'
-              : 'text-gray-800 hover:bg-gray-100 font-normal'
+          } transition-all duration-150 ${
+            theme === 'white'
+              ? isActive
+                ? 'bg-gray-100 text-black font-semibold'
+                : 'text-gray-800 hover:bg-gray-100 font-normal'
+              : isActive
+              ? 'bg-white/25 text-white font-semibold border border-white/30 shadow-xs'
+              : 'text-white/80 hover:bg-white/10 hover:text-white font-normal'
           }`}
         >
           <link.icon 
             size={isOpen ? 22 : 20} 
             strokeWidth={isActive ? 2.2 : 1.8} 
-            className={`shrink-0`} 
+            className={`shrink-0 ${isActive && theme === 'liquid' ? 'text-cyan-300 drop-shadow-sm' : ''}`} 
           />
           <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
             {link.label}
@@ -109,10 +113,15 @@ export default function Sidebar({
       {/* レイアウトスペース確保用プレースホルダー (タブレット以下の画面幅でサイドバーがfixedになった時もmain要素がズレないようにする) */}
       <div className="hidden md:block xl:hidden shrink-0 w-[72px]" />
 
-      <Glass as="aside" config={{ blurAmount: 0.15, refraction: 1.6, cornerRadius: 0 }}
-        className={`z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar shrink-0 ${theme === 'white' ? 'bg-white text-gray-900 border-r border-gray-200' : 'text-white border-r border-white/10'} ${          isOpen 
-             ? "w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none" 
-             : "w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0"
+      <Glass as="aside" variant="sidebar"
+        className={`z-40 transition-transform duration-200 overflow-y-auto select-none no-scrollbar shrink-0 ${
+          theme === 'white' 
+            ? 'bg-white text-gray-900 border-r border-gray-200 shadow-xs' 
+            : 'text-white border-r border-white/15 backdrop-blur-md shadow-2xl'
+        } ${
+          isOpen 
+            ? "w-56 p-2.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 translate-x-0 shadow-2xl xl:shadow-none" 
+            : "w-[72px] p-1.5 fixed xl:sticky top-0 md:top-[56px] h-screen md:h-[calc(100vh-56px)] left-0 -translate-x-full md:translate-x-0"
         }`}
       >
       <div className="flex flex-col gap-1">
@@ -123,11 +132,11 @@ export default function Sidebar({
 
         {isOpen ? (
           <>
-            <hr className="border-gray-200 my-2" />
+            <hr className={theme === 'white' ? "border-gray-200 my-2" : "border-white/15 my-2"} />
             
             {/* セクション 2 */}
             <div className="flex flex-col gap-0.5">
-              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              <h4 className={`px-3 text-xs font-bold uppercase tracking-wider mb-1 ${theme === 'white' ? 'text-gray-500' : 'text-white/60'}`}>
                 ライブラリ & 履歴
               </h4>
               {section2.map(renderLink)}
@@ -137,13 +146,17 @@ export default function Sidebar({
                 onClick={() => handleClick('debug')}
                 className={`w-full flex items-center ${
                   isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
-                } transition-colors ${
-                  currentView === 'debug'
-                    ? 'bg-gray-100 text-black font-semibold'
-                    : 'text-gray-800 hover:bg-gray-100 font-normal'
+                } transition-all duration-150 ${
+                  theme === 'white'
+                    ? currentView === 'debug'
+                      ? 'bg-gray-100 text-black font-semibold'
+                      : 'text-gray-800 hover:bg-gray-100 font-normal'
+                    : currentView === 'debug'
+                    ? 'bg-white/25 text-white font-semibold border border-white/30 shadow-xs'
+                    : 'text-white/80 hover:bg-white/10 hover:text-white font-normal'
                 }`}
               >
-                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className="shrink-0 text-blue-600" />
+                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className={`shrink-0 ${theme === 'white' ? 'text-blue-600' : 'text-cyan-400'}`} />
                 <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
                   APIデバッグ
                 </span>
@@ -151,13 +164,13 @@ export default function Sidebar({
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
-            <hr className="border-gray-200 my-2" />
+            <hr className={theme === 'white' ? "border-gray-200 my-2" : "border-white/15 my-2"} />
             <div className="flex flex-col gap-0.5">
-              <h4 className="px-3 text-xs font-bold text-gray-500 uppercase tracking-wider mb-1">
+              <h4 className={`px-3 text-xs font-bold uppercase tracking-wider mb-1 ${theme === 'white' ? 'text-gray-500' : 'text-white/60'}`}>
                 登録チャンネル ({subscriptions.length})
               </h4>
               {subscriptions.length === 0 ? (
-                <p className="px-3 text-xs text-gray-400">登録チャンネルはありません</p>
+                <p className={`px-3 text-xs ${theme === 'white' ? 'text-gray-400' : 'text-white/40'}`}>登録チャンネルはありません</p>
               ) : (
                 subscriptions.map((sub) => (
                   <motion.div key={sub.id} whileTap={{ scale: 0.96 }} className="w-full">
@@ -169,10 +182,12 @@ export default function Sidebar({
                           onSelectChannel(sub.id);
                         }
                       }}
-                      className="w-full flex items-center gap-4 px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-left group"
+                      className={`w-full flex items-center gap-4 px-3 py-2 rounded-xl transition-all text-left group ${
+                        theme === 'white' ? 'hover:bg-gray-100 text-gray-800' : 'hover:bg-white/15 text-white/90'
+                      }`}
                     >
                       <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-xs shrink-0" />
-                      <span className="text-[14px] font-normal text-gray-800 truncate">
+                      <span className="text-[14px] font-normal truncate">
                         {sub.title}
                       </span>
                     </Link>
@@ -183,12 +198,14 @@ export default function Sidebar({
           </>
         ) : (
           <>
-            <hr className="border-gray-200 my-1.5" />
+            <hr className={theme === 'white' ? "border-gray-200 my-1.5" : "border-white/15 my-1.5"} />
             <div className="flex flex-col gap-1">
               <Link
                 to="/feed/library"
                 onClick={() => handleClick('library')}
-                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
+                className={`w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 ${
+                  theme === 'white' ? 'text-gray-800 hover:bg-gray-100' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
                 title="ライブラリ"
               >
                 <Folder size={20} strokeWidth={1.8} />
@@ -197,7 +214,9 @@ export default function Sidebar({
               <Link
                 to="/feed/history"
                 onClick={() => handleClick('history')}
-                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
+                className={`w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 ${
+                  theme === 'white' ? 'text-gray-800 hover:bg-gray-100' : 'text-white/80 hover:bg-white/10 hover:text-white'
+                }`}
                 title="履歴"
               >
                 <History size={20} strokeWidth={1.8} />

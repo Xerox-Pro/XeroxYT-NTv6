@@ -23,7 +23,7 @@ import SearchChannelCard from './components/SearchChannelCard';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
 import { useTheme } from "./lib/ThemeContext";
-import { GlobalLiquidBackground, LiquidRoot, Glass } from "./lib/Liquid";
+import { LiquidRoot, Glass } from "./lib/Liquid";
 import { Loader2, AlertCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchJSON, parseYouTubeUrl } from './utils';
@@ -38,6 +38,7 @@ export default function MainApp() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const { theme } = useTheme();
 
   const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
   const [searchQuery, setSearchQuery] = useState('');
@@ -181,9 +182,8 @@ export default function MainApp() {
       }
     };
     window.addEventListener('resize', handleResize);
-    const { theme } = useTheme();
 
-  return () => window.removeEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, [view]);
 
   // 無限スクロール用ページ制御
@@ -624,9 +624,8 @@ export default function MainApp() {
     };
 
     timer = setTimeout(poll, 6000);
-    const { theme } = useTheme();
 
-  return () => {
+    return () => {
       clearTimeout(timer);
     };
   }, [isPolling, authFlow]);
@@ -850,9 +849,8 @@ export default function MainApp() {
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
-    const { theme } = useTheme();
 
-  return () => window.removeEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
@@ -976,11 +974,8 @@ export default function MainApp() {
     }
   };
 
-  const { theme } = useTheme();
-
   return (
     <div className={`min-h-screen ${theme === "white" ? "bg-white text-gray-900" : "text-white"} flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
-      <GlobalLiquidBackground />
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <LiquidRoot className={`w-full shrink-0 sticky top-0 z-50 ${theme === "white" ? "bg-white" : ""}`}>
@@ -1108,19 +1103,21 @@ export default function MainApp() {
           ) : loading ? (
             <VideoSkeleton count={12} />
           ) : error && videos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-gray-700 gap-3 bg-white">
+            <div className={`flex flex-col items-center justify-center h-[calc(100vh-8rem)] gap-3 ${theme === 'white' ? 'bg-white text-gray-700' : 'bg-transparent text-white'}`}>
               <AlertCircle className="w-10 h-10 text-red-500" />
               <p className="text-sm font-medium">{error}</p>
               <button
                 onClick={() => view === 'search' ? fetchSearch(searchQuery) : fetchRecommendations(1)}
-                className="mt-2 px-4 py-2 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-800 transition-colors"
+                className={`mt-2 px-4 py-2 text-xs font-bold rounded-lg transition-colors ${
+                  theme === 'white' ? 'bg-black text-white hover:bg-gray-800' : 'bg-white/20 hover:bg-white/30 text-white border border-white/30'
+                }`}
               >
                 再読み込み
               </button>
             </div>
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
-            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
+            <div className={`p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto min-h-screen ${theme === 'white' ? 'bg-white' : 'bg-transparent'}`}>
               {view === 'search' && (
                 <>
                   <DetectedSearchHeader
@@ -1130,8 +1127,8 @@ export default function MainApp() {
                   />
 
                   {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
-                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                  <div className={`mb-6 border-b pb-3 ${theme === 'white' ? 'border-gray-200' : 'border-white/15'}`}>
+                    <h2 className={`text-lg font-bold tracking-tight ${theme === 'white' ? 'text-gray-900' : 'text-white'}`}>
                       "{searchQuery}" の検索結果
                     </h2>
                   </div>
@@ -1140,7 +1137,7 @@ export default function MainApp() {
 
               {/* チャンネル結果（YouTube同様に動画と同じ一覧の先頭に統合表示） */}
               {view === 'search' && searchChannels.length > 0 && (
-                <div className="flex flex-col divide-y divide-gray-100 border-b border-gray-200 pb-6 mb-8">
+                <div className={`flex flex-col border-b pb-6 mb-8 ${theme === 'white' ? 'divide-y divide-gray-100 border-gray-200' : 'divide-y divide-white/10 border-white/15'}`}>
                   {searchChannels.slice(0, 3).map((channel) => (
                     <SearchChannelCard
                       key={channel.id}
@@ -1165,7 +1162,7 @@ export default function MainApp() {
                         e.stopPropagation();
                         setPlaylistModalVideo(video);
                       }}
-                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
+                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md border border-white/10"
                       title="再生リストに保存"
                     >
                       + 保存
@@ -1176,15 +1173,15 @@ export default function MainApp() {
 
               {/* 検索結果が動画もチャンネルもない場合 */}
               {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (
-                <div className="py-20 text-center text-sm text-gray-500">
+                <div className={`py-20 text-center text-sm ${theme === 'white' ? 'text-gray-500' : 'text-white/60'}`}>
                   検索結果が見つかりませんでした。別のキーワードをお試しください。
                 </div>
               )}
 
               {/* 無限スクロールローディングスピナー */}
               {loadingMore && (
-                <div className="flex items-center justify-center py-10 gap-3 text-gray-600">
-                  <Loader2 className="w-6 h-6 animate-spin text-gray-700" />
+                <div className={`flex items-center justify-center py-10 gap-3 ${theme === 'white' ? 'text-gray-600' : 'text-white/80'}`}>
+                  <Loader2 className={`w-6 h-6 animate-spin ${theme === 'white' ? 'text-gray-700' : 'text-cyan-400'}`} />
                   <span className="text-xs font-bold">次の動画を読み込んでいます...</span>
                 </div>
               )}

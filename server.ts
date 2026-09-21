@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import fs from "fs";
 import { Innertube, UniversalCache } from "youtubei.js";
 import axios from "axios";
 import { GoogleGenAI } from "@google/genai";
@@ -2692,12 +2693,79 @@ async function startServer() {
     }
   });
 
-  // EduKey 取得 API (scratch-edu からキー部分を取得し1日(24時間)キャッシュ)
+  // EduKey 取得 API (環境変数 edukey に対応し、txt/json どちらの形式でも抽出・24時間キャッシュ)
   let cachedEduKey: string | null = null;
   let eduKeyFetchTime = 0;
   let lastForceRefreshTime = 0;
   const ONE_DAY_MS = 24 * 60 * 60 * 1000;
   const REFRESH_COOLDOWN_MS = 10000; // 10秒の連続リクエスト防止
+
+  function extractQueryOrKey(raw: string): string | null {
+    if (!raw) return null;
+    let str = raw.trim();
+    // 複数行のテキストファイルの場合、コメント行(#, //)を除いた最初の有効行を採用
+    const lines = str
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#") && !l.startsWith("//"));
+    if (lines.length > 0) {
+      str = lines[0];
+    }
+    // ? から始まるクエリパラメータを含む場合
+    const questionIdx = str.indexOf("?");
+    if (questionIdx !== -1) {
+      let queryPart = str.substring(questionIdx);
+      queryPart = queryPart.replace(/["'}\s]+$/, "");
+      queryPart = queryPart.replaceAll("&amp;", "&");
+      return queryPart;
+    }
+    // ? が省略されているが a=b&c=d パラメータ形式の場合
+    if (str.includes("=") && (str.includes("&") || str.startsWith("autoplay="))) {
+      return "?" + str.replace(/["'}\s]+$/, "").replaceAll("&amp;", "&");
+    }
+    // 単体キー文字列
+    const stripped = str.replace(/^["']|["']$/g, "").trim();
+    return stripped.length > 0 ? stripped : null;
+  }
+
+  function parseEduKeyContent(content: any): string | null {
+    if (!content) return null;
+    let rawStr =
+      typeof content === "object" ? JSON.stringify(content) : String(content).trim();
+
+    // 1. JSON 形式の解析 (.json や JSONレスポンス)
+    try {
+      const parsed = typeof content === "object" ? content : JSON.parse(rawStr);
+      if (parsed && typeof parsed === "object") {
+        const potentialKeys = [
+          parsed.key,
+          parsed.edukey,
+          parsed.eduKey,
+          parsed.query,
+          parsed.params,
+          parsed.url,
+          Array.isArray(parsed) ? parsed[0] : null,
+        ];
+        for (const candidate of potentialKeys) {
+          if (typeof candidate === "string" && candidate.trim()) {
+            const extracted = extractQueryOrKey(candidate);
+            if (extracted) return extracted;
+          }
+        }
+        for (const val of Object.values(parsed)) {
+          if (typeof val === "string" && val.trim()) {
+            const extracted = extractQueryOrKey(val);
+            if (extracted) return extracted;
+          }
+        }
+      }
+    } catch {
+      // JSONでなければプレーンテキストとして続行
+    }
+
+    // 2. プレーンテキスト形式 (.txt や 生文字列) の解析
+    return extractQueryOrKey(rawStr);
+  }
 
   app.get("/api/edukey", async (req, res) => {
     const forceRefresh =
@@ -2723,30 +2791,49 @@ async function startServer() {
         lastForceRefreshTime = now;
       }
 
-      const resp = await axios.get(
-        "https://min-plum.vercel.app/scratch-edu/G5fbV3KefbQ",
-        {
+      // 環境変数 edukey (または EDUKEY) から取得先を読み込み
+      const configuredSource = (
+        process.env.edukey ||
+        process.env.EDUKEY ||
+        ""
+      ).trim();
+      const defaultSource = "https://min-plum.vercel.app/scratch-edu/G5fbV3KefbQ";
+      const source = configuredSource || defaultSource;
+
+      let fetchedData: any = null;
+
+      // 1. HTTP/HTTPS の URL から取得 (.txt / .json / API)
+      if (source.startsWith("http://") || source.startsWith("https://")) {
+        const resp = await axios.get(source, {
           timeout: 8000,
           responseType: "text",
-        },
-      );
-      if (resp.data) {
-        let rawStr =
-          typeof resp.data === "object"
-            ? JSON.stringify(resp.data)
-            : String(resp.data).trim();
-        const questionIdx = rawStr.indexOf("?");
-        if (questionIdx !== -1) {
-          let queryPart = rawStr.substring(questionIdx);
-          queryPart = queryPart.replace(/["'}\s]+$/, "");
-          queryPart = queryPart.replaceAll("&amp;", "&");
-          cachedEduKey = queryPart;
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json, text/plain, text/html, */*",
+          },
+        });
+        fetchedData = resp.data;
+      }
+      // 2. ローカルファイルパス (.txt または .json) から取得
+      else if (fs.existsSync(source)) {
+        fetchedData = await fs.promises.readFile(source, "utf-8");
+      }
+      // 3. 環境変数自体に直接文字列またはJSONが設定されている場合
+      else if (source) {
+        fetchedData = source;
+      }
+
+      if (fetchedData) {
+        const key = parseEduKeyContent(fetchedData);
+        if (key) {
+          cachedEduKey = key;
           eduKeyFetchTime = now;
           res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
-          return res.json({ key: queryPart });
+          return res.json({ key });
         }
       }
-      throw new Error("Invalid scratch-edu key response format");
+
+      throw new Error(`Invalid scratch-edu key response from source: ${source}`);
     } catch (err: any) {
       console.error("Failed to fetch scratch-edu key:", err?.message || err);
       const fallbackKey =
