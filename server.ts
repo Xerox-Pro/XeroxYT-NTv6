@@ -543,7 +543,7 @@ async function startServer() {
       // 15分間メモリキャッシュしてGitHubへの無駄な毎アクセスを防止
       if (now > cachedEduConfig.expires) {
         try {
-          const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json", {
+          const confRes = await fetch("https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt", {
             headers: { "Accept": "application/json" }
           });
           if (confRes.ok) {
