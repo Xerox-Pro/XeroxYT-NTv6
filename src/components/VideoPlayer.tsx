@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
@@ -169,28 +170,39 @@ export default function VideoPlayer({
     }
   };
 
-  // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
+  // 動画を開いた時・再読み込み時に毎回 Wista API (1.txt) から params を取得してプレイヤーURLを構築
   const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
     let params = '?rel=0&autoplay=1';
     try {
-      // 毎回最新の config を取得 (キャッシュ無効化)
-      const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
+      // 毎回最新の Wista API edu key を取得 (キャッシュ無効化)
+      const res = await fetch(`https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt?t=${Date.now()}`, {
         cache: 'no-store'
       });
       if (res.ok) {
-        const config = await res.json();
-        if (config && typeof config.params === 'string') {
-          let cleanParams = config.params.replace(/&amp;/g, '&').trim();
-          if (cleanParams && !cleanParams.startsWith('?') && !cleanParams.startsWith('&')) {
-            cleanParams = '?' + cleanParams;
-          }
-          params = cleanParams;
+        const text = await res.text();
+        let clean = text.replace(/&amp;/g, '&').trim();
+        if (clean.startsWith('{')) {
+          try {
+            const config = JSON.parse(clean);
+            if (config && typeof config.params === 'string') {
+              clean = config.params.replace(/&amp;/g, '&').trim();
+            }
+          } catch {}
+        }
+        const qIdx = clean.indexOf('?');
+        if (qIdx !== -1) {
+          clean = clean.substring(qIdx);
+        } else if (clean && !clean.startsWith('&')) {
+          clean = '?' + clean;
+        }
+        if (clean) {
+          params = clean;
         }
       } else {
         throw new Error(`HTTP ${res.status}`);
       }
     } catch (err) {
-      console.warn('Direct video_config.json fetch failed, using backend fallback:', err);
+      console.warn('Direct Wista API edu key fetch failed, using backend fallback:', err);
       try {
         const fallbackRes = await fetch(`/api/edu/${id}`);
         if (fallbackRes.ok) {
@@ -1004,6 +1016,16 @@ export default function VideoPlayer({
                 {isDescExpanded ? '一部を表示' : 'もっと見る'}
               </button>
             )}
+          </div>
+
+          {/* 製作者クレジット & ライセンス明記 */}
+          <div className="mt-2 px-3.5 py-2 bg-gray-50 rounded-xl text-[11px] text-gray-500 flex items-center justify-between border border-gray-100">
+            <span>
+              API & プレイヤー提供: <strong className="text-gray-800 font-semibold">woolisbest</strong>
+            </span>
+            <Link to="/license" className="text-blue-600 hover:underline font-medium">
+              Wista API License V1 詳細
+            </Link>
           </div>
 
           {/* コメントセクション */}

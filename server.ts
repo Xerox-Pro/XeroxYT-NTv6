@@ -543,13 +543,28 @@ async function startServer() {
       // 15分間メモリキャッシュしてGitHubへの無駄な毎アクセスを防止
       if (now > cachedEduConfig.expires) {
         try {
-          const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json", {
-            headers: { "Accept": "application/json" }
+          const confRes = await fetch("https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt", {
+            headers: { "Accept": "text/plain, application/json, */*" }
           });
           if (confRes.ok) {
-            const config = await confRes.json();
-            if (config && typeof config.params === "string") {
-              params = config.params.replace(/&amp;/g, '&');
+            const rawText = await confRes.text();
+            let clean = rawText.replace(/&amp;/g, '&').trim();
+            if (clean.startsWith('{')) {
+              try {
+                const config = JSON.parse(clean);
+                if (config && typeof config.params === "string") {
+                  clean = config.params.replace(/&amp;/g, '&').trim();
+                }
+              } catch {}
+            }
+            const qIdx = clean.indexOf('?');
+            if (qIdx !== -1) {
+              clean = clean.substring(qIdx);
+            } else if (clean && !clean.startsWith('&')) {
+              clean = '?' + clean;
+            }
+            if (clean) {
+              params = clean;
               cachedEduConfig = {
                 params,
                 expires: now + 15 * 60 * 1000,
@@ -557,7 +572,7 @@ async function startServer() {
             }
           }
         } catch (e) {
-          console.warn("Failed to fetch fresh edu config, using fallback:", e);
+          console.warn("Failed to fetch fresh edu config from Wista API, using fallback:", e);
         }
       }
 
@@ -2724,7 +2739,7 @@ async function startServer() {
       }
 
       const resp = await axios.get(
-        "https://min-plum.vercel.app/scratch-edu/G5fbV3KefbQ",
+        "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt",
         {
           timeout: 8000,
           responseType: "text",
@@ -2735,22 +2750,22 @@ async function startServer() {
           typeof resp.data === "object"
             ? JSON.stringify(resp.data)
             : String(resp.data).trim();
+        rawStr = rawStr.replaceAll("&amp;", "&");
         const questionIdx = rawStr.indexOf("?");
         if (questionIdx !== -1) {
           let queryPart = rawStr.substring(questionIdx);
           queryPart = queryPart.replace(/["'}\s]+$/, "");
-          queryPart = queryPart.replaceAll("&amp;", "&");
           cachedEduKey = queryPart;
           eduKeyFetchTime = now;
           res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
           return res.json({ key: queryPart });
         }
       }
-      throw new Error("Invalid scratch-edu key response format");
+      throw new Error("Invalid Wista API edu key response format");
     } catch (err: any) {
-      console.error("Failed to fetch scratch-edu key:", err?.message || err);
+      console.error("Failed to fetch Wista API edu key:", err?.message || err);
       const fallbackKey =
-        "?autoplay=1&mute=0&controls=1&start=0&origin=https%3A%2F%2Fcreate.kahoot.it&playsinline=1&showinfo=0&rel=0&iv_load_policy=3&modestbranding=1&fs=1&cc_load_policy=0&embed_config=%7B%22enc%22%3A%22AXH1ezkHzTyXd4X3k3e1Ycjh-eskpB6OmPDxYUDffkfgTCY9R6VjpqCuZjy9W3rNaiXOG312zEGCZ3hiOigXiv-Yzj028pgvIvoi1pH3aClyxZHLCVIIZ7eDV56Xo0XU4pUozocgw0f2jPmu3FK9uMUMD1lX2imAFQ%3D%3D%22%2C%22hideTitle%22%3Atrue%7D&enablejsapi=1&widgetid=1&forigin=https%3A%2F%2Fcreate.kahoot.it%2Flearner%2Fcb8cb5ae-d835-4c4a-bc2d-9cc78519d646%2Fcourse%2F6fba06e3-1f76-47a8-9a4a-53c53eb86286%2F0&aoriginsup=1&vf=6";
+        "?embed_config=%7B%22enc%22:%22AXH1ezlF0nNTSu_IsdGAuukXrV75cPjBVoxFG-dXjsrw-s1eUVSVVBCd_4VgfGhJAK-7NvxIWdJturPIcDPEjwkiXafNgHpP4N74VK7H9M2Yvss4wsSXxVTw-uXdhqEx0hfChvidjtCTglHpEb9m9lSX69ewc6ZopVZj5v8eamlb32qO%22%7D&enablejsapi=1&errorlinks=1&origin=https://sites.google.com&vl=1";
       if (!cachedEduKey || forceRefresh) {
         cachedEduKey = fallbackKey;
         eduKeyFetchTime = Date.now();
@@ -2758,6 +2773,43 @@ async function startServer() {
       res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
       return res.json({ key: cachedEduKey });
     }
+  });
+
+  // YouTube Education プレイヤーURL直接取得 API (Wista API Key 適用)
+  app.get("/api/edu/:id", async (req, res) => {
+    const videoId = req.params.id;
+    const now = Date.now();
+    let key = cachedEduKey;
+
+    if (!key || now - eduKeyFetchTime >= ONE_DAY_MS) {
+      try {
+        const resp = await axios.get(
+          "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt",
+          { timeout: 8000, responseType: "text" }
+        );
+        if (resp.data) {
+          let rawStr = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data).trim();
+          rawStr = rawStr.replaceAll("&amp;", "&");
+          const questionIdx = rawStr.indexOf("?");
+          if (questionIdx !== -1) {
+            let queryPart = rawStr.substring(questionIdx).replace(/["'}\s]+$/, "");
+            cachedEduKey = queryPart;
+            eduKeyFetchTime = now;
+            key = queryPart;
+          }
+        }
+      } catch (e) {
+        console.warn("Edu fallback fetch key failed, using cached/fallback key:", e);
+      }
+    }
+
+    if (!key) {
+      key = "?embed_config=%7B%22enc%22:%22AXH1ezlF0nNTSu_IsdGAuukXrV75cPjBVoxFG-dXjsrw-s1eUVSVVBCd_4VgfGhJAK-7NvxIWdJturPIcDPEjwkiXafNgHpP4N74VK7H9M2Yvss4wsSXxVTw-uXdhqEx0hfChvidjtCTglHpEb9m9lSX69ewc6ZopVZj5v8eamlb32qO%22%7D&enablejsapi=1&errorlinks=1&origin=https://sites.google.com&vl=1";
+    }
+
+    const playerUrl = `https://www.youtubeeducation.com/embed/${encodeURIComponent(videoId)}${key}`;
+    res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+    res.send(playerUrl);
   });
 
   // 動画ダウンロードプロキシ API

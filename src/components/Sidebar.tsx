@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
+import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck, ScrollText } from 'lucide-react';
 import { ChannelSubscription } from '../types';
 import Avatar from './Avatar';
 
@@ -14,6 +14,7 @@ interface SidebarProps {
   onLibrary?: () => void;
   onHistory?: () => void;
   onDebugAPI?: () => void;
+  onLicense?: () => void;
   subscriptions?: ChannelSubscription[];
   onSelectChannel?: (channelId: string) => void;
 }
@@ -37,6 +38,7 @@ export default function Sidebar({
   onLibrary,
   onHistory,
   onDebugAPI,
+  onLicense,
   subscriptions = [], 
   onSelectChannel 
 }: SidebarProps) {
@@ -57,6 +59,8 @@ export default function Sidebar({
       onHistory();
     } else if (activeValue === 'debug' && onDebugAPI) {
       onDebugAPI();
+    } else if (activeValue === 'license' && onLicense) {
+      onLicense();
     }
 
     if (window.innerWidth < 768 && onClose) {
@@ -146,6 +150,23 @@ export default function Sidebar({
                   APIデバッグ
                 </span>
               </Link>
+
+              <Link
+                to="/license"
+                onClick={() => handleClick('license')}
+                className={`w-full flex items-center ${
+                  isOpen ? 'gap-4 px-3 py-2 rounded-xl' : 'flex-col justify-center py-2.5 px-1 rounded-lg gap-1'
+                } transition-all duration-200 ${
+                  currentView === 'license'
+                    ? 'bg-gray-100 text-black font-semibold'
+                    : 'text-gray-800 hover:bg-gray-100 font-normal'
+                }`}
+              >
+                <ScrollText size={isOpen ? 22 : 20} strokeWidth={currentView === 'license' ? 2.2 : 1.8} className="shrink-0 text-slate-700" />
+                <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
+                  ライセンス & クレジット
+                </span>
+              </Link>
             </div>
 
             {/* セクション 3 (登録チャンネル) */}
@@ -178,6 +199,26 @@ export default function Sidebar({
                 ))
               )}
             </div>
+
+            {/* 製作者クレジット (フッター) */}
+            <div className="mt-6 pt-4 pb-2 px-3 border-t border-gray-100 text-xs">
+              <Link 
+                to="/license" 
+                onClick={() => handleClick('license')}
+                className="block p-2.5 rounded-xl bg-gray-50/80 hover:bg-gray-100/90 transition-all duration-200 border border-gray-100 group"
+              >
+                <div className="flex items-center justify-between text-[11px] font-semibold text-gray-800 mb-0.5">
+                  <span>Wista API License V1</span>
+                  <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.2 rounded font-medium">準拠</span>
+                </div>
+                <div className="text-[11px] text-gray-500">
+                  製作者: <span className="font-bold text-gray-900 group-hover:text-blue-600 transition-colors">woolisbest</span>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-1 leading-tight">
+                  ※利用者は製作者ではありません
+                </div>
+              </Link>
+            </div>
           </>
         ) : (
           <>
@@ -200,6 +241,15 @@ export default function Sidebar({
               >
                 <History size={20} strokeWidth={1.8} />
                 <span className="text-[10px] text-center truncate w-full">履歴</span>
+              </Link>
+              <Link
+                to="/license"
+                onClick={() => handleClick('license')}
+                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
+                title="ライセンス & クレジット"
+              >
+                <ScrollText size={20} strokeWidth={1.8} className="text-slate-700" />
+                <span className="text-[10px] text-center truncate w-full">ライセンス</span>
               </Link>
             </div>
           </>

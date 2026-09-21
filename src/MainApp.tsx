@@ -17,6 +17,7 @@ import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
+import LicensePage from './components/LicensePage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
@@ -37,7 +38,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -128,6 +129,8 @@ export default function MainApp() {
       setView('history');
     } else if (path === '/debug/api') {
       setView('debug');
+    } else if (path === '/license') {
+      setView('license');
     }
   }, [location.pathname, searchParams]);
 
@@ -146,6 +149,8 @@ export default function MainApp() {
       document.title = 'ライブラリ - XeroxYT-NTv6';
     } else if (view === 'history') {
       document.title = '履歴 - XeroxYT-NTv6';
+    } else if (view === 'license') {
+      document.title = 'ライセンス & 製作者クレジット - XeroxYT-NTv6';
     }
   }, [view, searchQuery]);
 
@@ -994,6 +999,7 @@ export default function MainApp() {
           subscriptions={subscriptions}
           onSelectChannel={handleSelectChannel}
           onDebugAPI={() => navigate('/debug/api')}
+          onLicense={() => navigate('/license')}
         />
 
         {/* メインコンテンツビュー */}
@@ -1094,6 +1100,8 @@ export default function MainApp() {
             )
           ) : view === 'debug' ? (
             <DebugAPI />
+          ) : view === 'license' ? (
+            <LicensePage onBack={handleGoHome} />
           ) : loading ? (
             <VideoSkeleton count={12} />
           ) : error && videos.length === 0 ? (

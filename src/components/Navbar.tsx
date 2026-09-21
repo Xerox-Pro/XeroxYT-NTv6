@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight, ScrollText } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -655,6 +655,14 @@ export default function Navbar({
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <PWAInstallButton />
+        <Link
+          to="/license"
+          className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 hover:text-black bg-gray-100 hover:bg-gray-200/80 rounded-full transition-all duration-200 border border-gray-200/50"
+          title="製作者: woolisbest (Wista API License V1)"
+        >
+          <ScrollText size={13} className="text-gray-600" />
+          <span>製作者: woolisbest</span>
+        </Link>
         <Link
           to="/aistudio"
           className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"

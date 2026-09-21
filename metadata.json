@@ -1,6 +1,6 @@
 {
   "name": "XeroxYT-NTv6",
-  "description": "A refined, modern video sharing platform frontend.",
+  "description": "A refined, modern video sharing platform frontend created by woolisbest. Distributed under Wista API License V1.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
