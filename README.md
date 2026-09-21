@@ -1,9 +1,6 @@
 
 
 ## 👤 製作者クレジット (Creator Credit)
-
-> **重要なお知らせ**  
-> 本リポジトリの運用者・配布者は本ソフトウェアの製作者ではありません。  
 > 本ソフトウェアおよび組み込まれているAPIの**原作者・製作者は「woolisbest」**です。
 
 - **製作者 (Author / Creator)**: **woolisbest**
@@ -18,10 +15,3 @@
 
 - **woolisbest**（原作者 / Creator / Lead Developer）
   - Wista API Project の設計・提供
-  - YouTube Education 連携・自動キー更新システムの提供
-
----
-
-## 📜 ライセンス（日本語）
-
-このプロジェクトは **Wista API License V1** のもとで公開されています。
