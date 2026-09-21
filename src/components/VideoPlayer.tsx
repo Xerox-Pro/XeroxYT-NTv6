@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
@@ -1018,14 +1017,9 @@ export default function VideoPlayer({
             )}
           </div>
 
-          {/* 製作者クレジット & ライセンス明記 */}
-          <div className="mt-2 px-3.5 py-2 bg-gray-50 rounded-xl text-[11px] text-gray-500 flex items-center justify-between border border-gray-100">
-            <span>
-              API & プレイヤー提供: <strong className="text-gray-800 font-semibold">woolisbest</strong>
-            </span>
-            <Link to="/license" className="text-blue-600 hover:underline font-medium">
-              Wista API License V1 詳細
-            </Link>
+          {/* 概要欄の下の製作者クレジット */}
+          <div className="mt-2 text-xs text-gray-500 font-normal">
+            API &amp; プレイヤー提供: woolisbest
           </div>
 
           {/* コメントセクション */}

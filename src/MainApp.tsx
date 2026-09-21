@@ -999,7 +999,6 @@ export default function MainApp() {
           subscriptions={subscriptions}
           onSelectChannel={handleSelectChannel}
           onDebugAPI={() => navigate('/debug/api')}
-          onLicense={() => navigate('/license')}
         />
 
         {/* メインコンテンツビュー */}
