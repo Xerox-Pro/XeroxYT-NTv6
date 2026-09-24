@@ -543,7 +543,7 @@ async function startServer() {
       // 15分間メモリキャッシュしてGitHubへの無駄な毎アクセスを防止
       if (now > cachedEduConfig.expires) {
         try {
-          const confRes = await fetch("https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt", {
+          const confRes = await fetch("https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json", {
             headers: { "Accept": "text/plain, application/json, */*" }
           });
           if (confRes.ok) {
@@ -2739,21 +2739,29 @@ async function startServer() {
       }
 
       const resp = await axios.get(
-        "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt",
+        "https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json",
         {
           timeout: 8000,
           responseType: "text",
         },
       );
       if (resp.data) {
-        let rawStr =
+        let clean =
           typeof resp.data === "object"
             ? JSON.stringify(resp.data)
             : String(resp.data).trim();
-        rawStr = rawStr.replaceAll("&amp;", "&");
-        const questionIdx = rawStr.indexOf("?");
+        clean = clean.replaceAll("&amp;", "&");
+        if (clean.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(clean);
+            if (parsed && typeof parsed.params === "string") {
+              clean = parsed.params.replaceAll("&amp;", "&").trim();
+            }
+          } catch {}
+        }
+        const questionIdx = clean.indexOf("?");
         if (questionIdx !== -1) {
-          let queryPart = rawStr.substring(questionIdx);
+          let queryPart = clean.substring(questionIdx);
           queryPart = queryPart.replace(/["'}\s]+$/, "");
           cachedEduKey = queryPart;
           eduKeyFetchTime = now;
@@ -2761,9 +2769,9 @@ async function startServer() {
           return res.json({ key: queryPart });
         }
       }
-      throw new Error("Invalid Wista API edu key response format");
+      throw new Error("Invalid edu key response format");
     } catch (err: any) {
-      console.error("Failed to fetch Wista API edu key:", err?.message || err);
+      console.error("Failed to fetch edu key:", err?.message || err);
       const fallbackKey =
         "?embed_config=%7B%22enc%22:%22AXH1ezlF0nNTSu_IsdGAuukXrV75cPjBVoxFG-dXjsrw-s1eUVSVVBCd_4VgfGhJAK-7NvxIWdJturPIcDPEjwkiXafNgHpP4N74VK7H9M2Yvss4wsSXxVTw-uXdhqEx0hfChvidjtCTglHpEb9m9lSX69ewc6ZopVZj5v8eamlb32qO%22%7D&enablejsapi=1&errorlinks=1&origin=https://sites.google.com&vl=1";
       if (!cachedEduKey || forceRefresh) {
@@ -2775,7 +2783,7 @@ async function startServer() {
     }
   });
 
-  // YouTube Education プレイヤーURL直接取得 API (Wista API Key 適用)
+  // YouTube Education プレイヤーURL直接取得 API
   app.get("/api/edu/:id", async (req, res) => {
     const videoId = req.params.id;
     const now = Date.now();
@@ -2784,15 +2792,23 @@ async function startServer() {
     if (!key || now - eduKeyFetchTime >= ONE_DAY_MS) {
       try {
         const resp = await axios.get(
-          "https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt",
+          "https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json",
           { timeout: 8000, responseType: "text" }
         );
         if (resp.data) {
-          let rawStr = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data).trim();
-          rawStr = rawStr.replaceAll("&amp;", "&");
-          const questionIdx = rawStr.indexOf("?");
+          let clean = typeof resp.data === "object" ? JSON.stringify(resp.data) : String(resp.data).trim();
+          clean = clean.replaceAll("&amp;", "&");
+          if (clean.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(clean);
+              if (parsed && typeof parsed.params === "string") {
+                clean = parsed.params.replaceAll("&amp;", "&").trim();
+              }
+            } catch {}
+          }
+          const questionIdx = clean.indexOf("?");
           if (questionIdx !== -1) {
-            let queryPart = rawStr.substring(questionIdx).replace(/["'}\s]+$/, "");
+            let queryPart = clean.substring(questionIdx).replace(/["'}\s]+$/, "");
             cachedEduKey = queryPart;
             eduKeyFetchTime = now;
             key = queryPart;

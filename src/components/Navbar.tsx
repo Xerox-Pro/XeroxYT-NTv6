@@ -163,6 +163,26 @@ export default function Navbar({
     setQuery(initialSearchQuery);
   }, [initialSearchQuery]);
 
+  // グローバルショートカット: "/" キーで検索バーにフォーカス
+  useEffect(() => {
+    const handleSlashKey = (e: KeyboardEvent) => {
+      if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const active = document.activeElement;
+        const isInput =
+          active instanceof HTMLInputElement ||
+          active instanceof HTMLTextAreaElement ||
+          (active as HTMLElement)?.isContentEditable;
+        if (!isInput) {
+          e.preventDefault();
+          inputRef.current?.focus();
+          inputRef.current?.select();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleSlashKey);
+    return () => window.removeEventListener('keydown', handleSlashKey);
+  }, []);
+
   // 検出されたリンク先の動画プレイヤーまたはチャンネルページを開く
   const handleOpenDetected = (detected: YouTubeUrlParseResult) => {
     setDetectedNotice({

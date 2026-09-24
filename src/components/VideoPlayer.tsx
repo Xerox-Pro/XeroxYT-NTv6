@@ -6,9 +6,11 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
+  Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard
 } from 'lucide-react';
 import Avatar from './Avatar';
+import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
 interface CommentItemProps {
   comment: Comment;
@@ -169,12 +171,12 @@ export default function VideoPlayer({
     }
   };
 
-  // 動画を開いた時・再読み込み時に毎回 Wista API (1.txt) から params を取得してプレイヤーURLを構築
+  // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
   const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
     let params = '?rel=0&autoplay=1';
     try {
-      // 毎回最新の Wista API edu key を取得 (キャッシュ無効化)
-      const res = await fetch(`https://raw.githubusercontent.com/wista-api-project/auto/refs/heads/main/edu/1.txt?t=${Date.now()}`, {
+      // 毎回最新の edu key (video_config.json) を取得 (キャッシュ無効化)
+      const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
         cache: 'no-store'
       });
       if (res.ok) {
@@ -201,7 +203,7 @@ export default function VideoPlayer({
         throw new Error(`HTTP ${res.status}`);
       }
     } catch (err) {
-      console.warn('Direct Wista API edu key fetch failed, using backend fallback:', err);
+      console.warn('Direct edu key fetch failed, using backend fallback:', err);
       try {
         const fallbackRes = await fetch(`/api/edu/${id}`);
         if (fallbackRes.ok) {
@@ -348,6 +350,344 @@ export default function VideoPlayer({
       }
     };
   }, [videoId]);
+
+  // ─── プレイヤー制御 & グローバルキーボードショートカット ───
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const playerContainerRef = useRef<HTMLDivElement>(null);
+  const [isPlaying, setIsPlaying] = useState(true);
+  const [showShortcutsModal, setShowShortcutsModal] = useState(false);
+
+  // プレイヤー状態の内部トラッキング
+  const currentTimeRef = useRef<number>(0);
+  const durationRef = useRef<number>(0);
+  const playerStateRef = useRef<number>(1); // 1: playing, 2: paused
+  const volumeRef = useRef<number>(100);
+  const isMutedRef = useRef<boolean>(false);
+  const playbackRateRef = useRef<number>(1);
+
+  // HUD オーバーレイ状態 (K, J, L などのキー操作フィードバック)
+  interface HudState {
+    id: number;
+    icon: React.ReactNode;
+    label: string;
+    subLabel?: string;
+    progress?: number;
+  }
+  const [hud, setHud] = useState<HudState | null>(null);
+  const hudTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerHud = useCallback((icon: React.ReactNode, label: string, subLabel?: string, progress?: number) => {
+    if (hudTimerRef.current) {
+      clearTimeout(hudTimerRef.current);
+    }
+    setHud({
+      id: Date.now(),
+      icon,
+      label,
+      subLabel,
+      progress,
+    });
+    hudTimerRef.current = setTimeout(() => {
+      setHud(null);
+    }, 950);
+  }, []);
+
+  // IFrame への postMessage コマンド送信
+  const postPlayerCommand = useCallback((func: string, args: any[] = []) => {
+    try {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({
+            event: 'command',
+            func,
+            args,
+          }),
+          '*'
+        );
+      }
+    } catch (err) {
+      console.warn('postPlayerCommand error:', err);
+    }
+  }, []);
+
+  // YouTube IFrame API メッセージの受信 & 状態同期
+  useEffect(() => {
+    const handleMessage = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (!data) return;
+        if ((data.event === 'infoDelivery' || data.event === 'initialDelivery') && data.info) {
+          if (typeof data.info.currentTime === 'number') {
+            currentTimeRef.current = data.info.currentTime;
+          }
+          if (typeof data.info.duration === 'number' && data.info.duration > 0) {
+            durationRef.current = data.info.duration;
+          }
+          if (typeof data.info.playerState === 'number') {
+            playerStateRef.current = data.info.playerState;
+            setIsPlaying(data.info.playerState === 1);
+          }
+          if (typeof data.info.volume === 'number') {
+            volumeRef.current = data.info.volume;
+          }
+          if (typeof data.info.muted === 'boolean') {
+            isMutedRef.current = data.info.muted;
+          }
+          if (typeof data.info.playbackRate === 'number') {
+            playbackRateRef.current = data.info.playbackRate;
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // 動画変更時に duration / currentTime の初期化
+  useEffect(() => {
+    currentTimeRef.current = 0;
+    const rawDuration = (activeVideo as any).duration;
+    if (activeVideo.lengthSeconds && activeVideo.lengthSeconds > 0) {
+      durationRef.current = activeVideo.lengthSeconds;
+    } else if (typeof rawDuration === 'string') {
+      const parts = rawDuration.split(':').map((p: string) => parseInt(p, 10));
+      if (!parts.some((n: number) => isNaN(n))) {
+        if (parts.length === 3) durationRef.current = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        else if (parts.length === 2) durationRef.current = parts[0] * 60 + parts[1];
+        else if (parts.length === 1) durationRef.current = parts[0];
+      }
+    }
+  }, [activeVideo.videoId, (activeVideo as any).duration, activeVideo.lengthSeconds]);
+
+  // 再生中のローカルタイム積算 (iframe からの更新間隔を補間)
+  useEffect(() => {
+    if (!isPlaying) return;
+    const ticker = setInterval(() => {
+      if (playerStateRef.current === 1) {
+        currentTimeRef.current += 1;
+        if (durationRef.current > 0 && currentTimeRef.current > durationRef.current) {
+          currentTimeRef.current = durationRef.current;
+        }
+      }
+    }, 1000);
+    return () => clearInterval(ticker);
+  }, [isPlaying]);
+
+  // iframe 読み込み完了時に listening 要求を送信
+  const handleIframeLoad = () => {
+    try {
+      if (iframeRef.current && iframeRef.current.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'listening' }),
+          '*'
+        );
+      }
+    } catch {}
+  };
+
+  // グローバルキーボードショートカットハンドラー
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // ブラウザ標準ショートカット(Ctrl/Cmd/Alt)を優先
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+
+      // 入力要素にフォーカスがある場合は無効化
+      const activeEl = document.activeElement;
+      const isInput =
+        activeEl instanceof HTMLInputElement ||
+        activeEl instanceof HTMLTextAreaElement ||
+        (activeEl as HTMLElement)?.isContentEditable ||
+        Boolean(activeEl?.closest('input, textarea, [contenteditable="true"]'));
+      if (isInput) return;
+
+      const key = e.key;
+
+      // 1. K または Space: 再生 / 一時停止
+      if (key === 'k' || key === 'K' || key === ' ') {
+        e.preventDefault();
+        const willPlay = playerStateRef.current !== 1;
+        if (willPlay) {
+          postPlayerCommand('playVideo');
+          playerStateRef.current = 1;
+          setIsPlaying(true);
+          triggerHud(<Play size={24} className="text-white fill-white" />, '再生');
+        } else {
+          postPlayerCommand('pauseVideo');
+          playerStateRef.current = 2;
+          setIsPlaying(false);
+          triggerHud(<Pause size={24} className="text-white fill-white" />, '一時停止');
+        }
+        return;
+      }
+
+      // 2. J: 10秒 巻き戻し
+      if (key === 'j' || key === 'J') {
+        e.preventDefault();
+        const target = Math.max(0, currentTimeRef.current - 10);
+        currentTimeRef.current = target;
+        postPlayerCommand('seekTo', [target, true]);
+        triggerHud(<RotateCcw size={22} />, '10秒 巻き戻し', formatDuration(target));
+        return;
+      }
+
+      // 3. L: 10秒 早送り
+      if (key === 'l' || key === 'L') {
+        e.preventDefault();
+        const maxTime = durationRef.current > 0 ? durationRef.current : 86400;
+        const target = Math.min(maxTime, currentTimeRef.current + 10);
+        currentTimeRef.current = target;
+        postPlayerCommand('seekTo', [target, true]);
+        triggerHud(<RotateCw size={22} />, '10秒 早送り', formatDuration(target));
+        return;
+      }
+
+      // 4. 左矢印: 5秒 巻き戻し
+      if (key === 'ArrowLeft') {
+        e.preventDefault();
+        const target = Math.max(0, currentTimeRef.current - 5);
+        currentTimeRef.current = target;
+        postPlayerCommand('seekTo', [target, true]);
+        triggerHud(<RotateCcw size={22} />, '5秒 巻き戻し', formatDuration(target));
+        return;
+      }
+
+      // 5. 右矢印: 5秒 早送り
+      if (key === 'ArrowRight') {
+        e.preventDefault();
+        const maxTime = durationRef.current > 0 ? durationRef.current : 86400;
+        const target = Math.min(maxTime, currentTimeRef.current + 5);
+        currentTimeRef.current = target;
+        postPlayerCommand('seekTo', [target, true]);
+        triggerHud(<RotateCw size={22} />, '5秒 早送り', formatDuration(target));
+        return;
+      }
+
+      // 6. M: 消音（ミュート）切り替え
+      if (key === 'm' || key === 'M') {
+        e.preventDefault();
+        const newMuted = !isMutedRef.current;
+        isMutedRef.current = newMuted;
+        postPlayerCommand(newMuted ? 'mute' : 'unMute');
+        if (newMuted) {
+          triggerHud(<VolumeX size={22} />, '消音 (ミュート)');
+        } else {
+          triggerHud(<Volume2 size={22} />, `消音解除 (${Math.round(volumeRef.current)}%)`, undefined, volumeRef.current);
+        }
+        return;
+      }
+
+      // 7. 上矢印: 音量 +5%
+      if (key === 'ArrowUp') {
+        e.preventDefault();
+        const newVol = Math.min(100, Math.round(volumeRef.current + 5));
+        volumeRef.current = newVol;
+        if (isMutedRef.current) {
+          isMutedRef.current = false;
+          postPlayerCommand('unMute');
+        }
+        postPlayerCommand('setVolume', [newVol]);
+        triggerHud(<Volume2 size={22} />, `音量 ${newVol}%`, undefined, newVol);
+        return;
+      }
+
+      // 8. 下矢印: 音量 -5%
+      if (key === 'ArrowDown') {
+        e.preventDefault();
+        const newVol = Math.max(0, Math.round(volumeRef.current - 5));
+        volumeRef.current = newVol;
+        postPlayerCommand('setVolume', [newVol]);
+        if (newVol === 0) {
+          triggerHud(<VolumeX size={22} />, '音量 0%', undefined, 0);
+        } else {
+          triggerHud(<Volume2 size={22} />, `音量 ${newVol}%`, undefined, newVol);
+        }
+        return;
+      }
+
+      // 9. F: 全画面切り替え
+      if (key === 'f' || key === 'F') {
+        e.preventDefault();
+        if (!document.fullscreenElement) {
+          if (playerContainerRef.current?.requestFullscreen) {
+            playerContainerRef.current.requestFullscreen().catch(() => {});
+            triggerHud(<Maximize2 size={22} />, '全画面表示');
+          }
+        } else {
+          if (document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+            triggerHud(<Minimize2 size={22} />, '全画面解除');
+          }
+        }
+        return;
+      }
+
+      // 10. 0 〜 9: 動画の 0%〜90% の位置へジャンプ
+      if (/^[0-9]$/.test(key) && !e.shiftKey) {
+        if (durationRef.current > 0) {
+          e.preventDefault();
+          const pct = parseInt(key, 10) * 10;
+          const target = (durationRef.current * pct) / 100;
+          currentTimeRef.current = target;
+          postPlayerCommand('seekTo', [target, true]);
+          triggerHud(<FastForward size={22} />, `${pct}% へジャンプ`, formatDuration(target), pct);
+        }
+        return;
+      }
+
+      // 11. < (Shift+,) または > (Shift+.): 再生速度の調整
+      if (key === '<' || (e.shiftKey && key === ',')) {
+        e.preventDefault();
+        const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+        let idx = speeds.indexOf(playbackRateRef.current);
+        if (idx === -1) idx = speeds.indexOf(1);
+        const nextIdx = Math.max(0, idx - 1);
+        const newSpeed = speeds[nextIdx];
+        playbackRateRef.current = newSpeed;
+        postPlayerCommand('setPlaybackRate', [newSpeed]);
+        triggerHud(<Gauge size={22} />, `再生速度 ${newSpeed}x`);
+        return;
+      }
+      if (key === '>' || (e.shiftKey && key === '.')) {
+        e.preventDefault();
+        const speeds = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+        let idx = speeds.indexOf(playbackRateRef.current);
+        if (idx === -1) idx = speeds.indexOf(1);
+        const nextIdx = Math.min(speeds.length - 1, idx + 1);
+        const newSpeed = speeds[nextIdx];
+        playbackRateRef.current = newSpeed;
+        postPlayerCommand('setPlaybackRate', [newSpeed]);
+        triggerHud(<Gauge size={22} />, `再生速度 ${newSpeed}x`);
+        return;
+      }
+
+      // 12. Shift + N: 次の動画へ移動
+      if (e.shiftKey && (key === 'N' || key === 'n')) {
+        if (relatedVideos && relatedVideos.length > 0) {
+          e.preventDefault();
+          const nextVid = relatedVideos[0];
+          const nextId = nextVid.videoId || (nextVid as any).id;
+          if (nextId) {
+            triggerHud(<SkipForward size={22} />, '次の動画を再生', nextVid.title);
+            setTimeout(() => {
+              onVideoSelect(nextId, nextVid);
+            }, 250);
+          }
+        }
+        return;
+      }
+
+      // 13. ? または Shift + /: ショートカットヘルプ表示
+      if (key === '?' || (e.shiftKey && key === '/')) {
+        e.preventDefault();
+        setShowShortcutsModal((prev) => !prev);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [postPlayerCommand, triggerHud, relatedVideos, onVideoSelect]);
 
   // Fetch video metadata & initial comments
   useEffect(() => {
@@ -796,10 +1136,16 @@ export default function VideoPlayer({
     <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
-        <div className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh]">
+        <div 
+          ref={playerContainerRef}
+          tabIndex={0}
+          className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh] group outline-hidden focus:ring-2 focus:ring-blue-500/20"
+        >
           {iframeUrl ? (
             <iframe
+              ref={iframeRef}
               src={iframeUrl}
+              onLoad={handleIframeLoad}
               className="w-full h-full border-0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
               allowFullScreen
@@ -811,6 +1157,35 @@ export default function VideoPlayer({
               <span className="text-xs text-gray-400">edukeyプレイヤーを準備中...</span>
             </div>
           )}
+
+          {/* HUD (ショートカットキー入力時の視覚フィードバック) */}
+          <AnimatePresence>
+            {hud && (
+              <motion.div
+                key={hud.id}
+                initial={{ opacity: 0, scale: 0.85, y: -8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, transition: { duration: 0.15 } }}
+                className="absolute top-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex flex-col items-center gap-1.5 px-4 py-2.5 bg-black/85 backdrop-blur-md text-white rounded-2xl shadow-2xl border border-white/15 select-none min-w-[130px]"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-white drop-shadow-xs">{hud.icon}</span>
+                  <span className="text-sm font-semibold tracking-wide">{hud.label}</span>
+                </div>
+                {hud.subLabel && (
+                  <span className="text-[11px] text-gray-300 font-mono tracking-tight">{hud.subLabel}</span>
+                )}
+                {typeof hud.progress === 'number' && (
+                  <div className="w-24 h-1.5 bg-white/20 rounded-full overflow-hidden mt-0.5">
+                    <div
+                      className="h-full bg-red-500 rounded-full transition-all duration-150"
+                      style={{ width: `${Math.max(0, Math.min(100, hud.progress))}%` }}
+                    />
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* 動画情報が取得できなかった場合の控えめな通知 */}
@@ -983,6 +1358,18 @@ export default function VideoPlayer({
                 </motion.button>
               )}
 
+              {/* キーボードショートカットヘルプ表示ボタン */}
+              <motion.button
+                onClick={() => setShowShortcutsModal(true)}
+                whileTap={{ scale: 0.92 }}
+                title="キーボードショートカット一覧 (?)"
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Keyboard size={15} />
+                <span className="hidden sm:inline">操作</span>
+                <kbd className="hidden sm:inline px-1.5 py-0.2 bg-white border border-gray-300 rounded font-mono text-[9px] font-bold text-gray-600">?</kbd>
+              </motion.button>
+
               {isLive && (
                 <button
                   onClick={() => setShowSuperChatModal(true)}
@@ -1015,11 +1402,6 @@ export default function VideoPlayer({
                 {isDescExpanded ? '一部を表示' : 'もっと見る'}
               </button>
             )}
-          </div>
-
-          {/* 概要欄の下の製作者クレジット */}
-          <div className="mt-2 text-xs text-gray-500 font-normal">
-            API &amp; プレイヤー提供: woolisbest
           </div>
 
           {/* コメントセクション */}
@@ -1472,6 +1854,12 @@ export default function VideoPlayer({
           <span>リンクをクリップボードにコピーしました</span>
         </div>
       )}
+
+      {/* キーボードショートカット一覧モーダル */}
+      <KeyboardShortcutsModal
+        isOpen={showShortcutsModal}
+        onClose={() => setShowShortcutsModal(false)}
+      />
     </div>
   );
 }

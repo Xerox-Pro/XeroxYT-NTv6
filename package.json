@@ -2,8 +2,6 @@
   "name": "react-example",
   "private": true,
   "version": "0.0.0",
-  "author": "woolisbest",
-  "license": "SEE LICENSE IN README.md (Wista API License V1)",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
