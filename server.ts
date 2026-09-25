@@ -490,15 +490,15 @@ async function startServer() {
     return nextResetUtc.toISOString();
   }
 
-  // クライアント識別子の抽出 (IP + クライアントID)
+  // クライアント識別子の抽出 (ブラウザUUIDを最優先し、IP変更に左右されない安定識別子)
   function getClientIdentifier(req: express.Request): string {
     const clientHeader = (req.headers["x-client-id"] as string) || "";
+    if (clientHeader && /^[a-zA-Z0-9_-]{6,64}$/.test(clientHeader)) {
+      return clientHeader;
+    }
     const forwardedFor = (req.headers["x-forwarded-for"] as string) || "";
     const vercelIp = (req.headers["x-vercel-ip"] as string) || (req.headers["x-real-ip"] as string) || "";
     const ip = vercelIp || forwardedFor.split(",")[0].trim() || req.socket.remoteAddress || "unknown-ip";
-    if (clientHeader && /^[a-zA-Z0-9_-]{6,64}$/.test(clientHeader)) {
-      return `${ip}:${clientHeader}`;
-    }
     return ip;
   }
 
@@ -544,6 +544,7 @@ async function startServer() {
       dailyQuotaMap.set(key, record);
     }
 
+    // 1. クライアント署名トークンから復元
     const clientToken = (req.headers["x-usage-token"] as string) || "";
     if (clientToken) {
       const parsed = parseUsageToken(clientToken);
@@ -551,6 +552,17 @@ async function startServer() {
         record.videos = Math.max(record.videos, parsed.videos);
         record.searches = Math.max(record.searches, parsed.searches);
         record.total = Math.max(record.total, parsed.total);
+      }
+    }
+
+    // 2. クライアントのローカル記録からも同期（インスタンス冷起動・再読み込み対策）
+    const clientUsageHeader = (req.headers["x-client-usage"] as string) || "";
+    if (clientUsageHeader) {
+      const [uDay, uVid, uSearch, uTot] = clientUsageHeader.split("|");
+      if (uDay === today) {
+        record.videos = Math.max(record.videos, parseInt(uVid, 10) || 0);
+        record.searches = Math.max(record.searches, parseInt(uSearch, 10) || 0);
+        record.total = Math.max(record.total, parseInt(uTot, 10) || 0);
       }
     }
 
@@ -566,7 +578,7 @@ async function startServer() {
         dailyQuotaMap.delete(key);
       }
     }
-  }, 10 * 60 * 1000);
+  }, 10 * 60 * 1000).unref?.();
 
   // 利用制限・ステータス確認エンドポイント
   app.get(["/api/limits", "/api/usage"], (req, res) => {
@@ -579,8 +591,13 @@ async function startServer() {
 
     const token = signUsage(clientId, today, record.videos, record.searches, record.total);
     res.setHeader("X-Daily-Usage-Token", token);
+    res.setHeader(
+      "Access-Control-Expose-Headers",
+      "X-RateLimit-Videos-Remaining, X-RateLimit-Searches-Remaining, X-RateLimit-Reset-Seconds, X-Daily-Usage-Token"
+    );
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     return res.json({
+      token,
       videos: {
         used: record.videos,
         limit: DAILY_VIDEO_LIMIT,

@@ -14,20 +14,128 @@ export function getClientUUID(): string {
   }
 }
 
+// JST (UTC+9) 日付文字列 YYYY-MM-DD
+export function getLocalJstDateString(): string {
+  const now = new Date();
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return jst.toISOString().slice(0, 10);
+}
+
+export interface ClientUsageData {
+  day: string;
+  videos: number;
+  searches: number;
+  total: number;
+}
+
+export function getClientUsage(): ClientUsageData {
+  try {
+    const today = getLocalJstDateString();
+    const raw = localStorage.getItem('xerox_client_usage');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.day === today) {
+        return {
+          day: today,
+          videos: Math.max(0, Number(parsed.videos) || 0),
+          searches: Math.max(0, Number(parsed.searches) || 0),
+          total: Math.max(0, Number(parsed.total) || 0),
+        };
+      }
+    }
+    const fresh: ClientUsageData = { day: today, videos: 0, searches: 0, total: 0 };
+    localStorage.setItem('xerox_client_usage', JSON.stringify(fresh));
+    return fresh;
+  } catch {
+    return { day: getLocalJstDateString(), videos: 0, searches: 0, total: 0 };
+  }
+}
+
+export function incrementClientUsage(type: 'video' | 'search' | 'total', delta: number = 1): ClientUsageData {
+  try {
+    const current = getClientUsage();
+    if (type === 'video') {
+      current.videos += delta;
+      current.total += delta;
+    } else if (type === 'search') {
+      current.searches += delta;
+      current.total += delta;
+    } else if (type === 'total') {
+      current.total += delta;
+    }
+    localStorage.setItem('xerox_client_usage', JSON.stringify(current));
+    return current;
+  } catch {
+    return getClientUsage();
+  }
+}
+
 export async function fetchLimits(): Promise<DailyUsageLimits> {
   const clientUuid = getClientUUID();
   const token = localStorage.getItem('xerox_usage_token') || '';
-  const res = await fetch('/api/limits', {
-    headers: {
-      'x-client-id': clientUuid,
-      ...(token ? { 'x-usage-token': token } : {})
+  const localUsage = getClientUsage();
+
+  try {
+    const res = await fetch('/api/limits', {
+      headers: {
+        'x-client-id': clientUuid,
+        ...(token ? { 'x-usage-token': token } : {}),
+        'x-client-usage': `${localUsage.day}|${localUsage.videos}|${localUsage.searches}|${localUsage.total}`
+      }
+    });
+
+    const data = await res.json();
+    const newToken = data.token || res.headers.get('x-daily-usage-token');
+    if (newToken) {
+      try {
+        localStorage.setItem('xerox_usage_token', newToken);
+      } catch {}
     }
-  });
-  const newToken = res.headers.get('x-daily-usage-token');
-  if (newToken) {
-    localStorage.setItem('xerox_usage_token', newToken);
+
+    if (data && data.videos && data.searches && data.total) {
+      // サーバーレス再起動・再読み込み時もローカル記録とマージして利用量が0にリセットされるのを防止
+      const mergedVideos = Math.max(data.videos.used || 0, localUsage.videos);
+      const mergedSearches = Math.max(data.searches.used || 0, localUsage.searches);
+      const mergedTotal = Math.max(data.total.used || 0, localUsage.total);
+
+      data.videos.used = mergedVideos;
+      data.videos.remaining = Math.max(0, data.videos.limit - mergedVideos);
+
+      data.searches.used = mergedSearches;
+      data.searches.remaining = Math.max(0, data.searches.limit - mergedSearches);
+
+      data.total.used = mergedTotal;
+      data.total.remaining = Math.max(0, data.total.limit - mergedTotal);
+
+      data.isLimited = mergedVideos >= data.videos.limit || mergedSearches >= data.searches.limit || mergedTotal >= data.total.limit;
+
+      try {
+        localStorage.setItem('xerox_client_usage', JSON.stringify({
+          day: localUsage.day,
+          videos: mergedVideos,
+          searches: mergedSearches,
+          total: mergedTotal,
+        }));
+      } catch {}
+    }
+
+    return data;
+  } catch (err) {
+    console.warn('Failed to fetch remote limits, using local fallback:', err);
+    // ネットワークエラー時もローカルの利用量をそのまま返却
+    const vLimit = 50;
+    const sLimit = 100;
+    const tLimit = 600;
+    return {
+      videos: { used: localUsage.videos, limit: vLimit, remaining: Math.max(0, vLimit - localUsage.videos) },
+      searches: { used: localUsage.searches, limit: sLimit, remaining: Math.max(0, sLimit - localUsage.searches) },
+      total: { used: localUsage.total, limit: tLimit, remaining: Math.max(0, tLimit - localUsage.total) },
+      resetAt: new Date(Date.now() + 86400000).toISOString(),
+      resetSeconds: 3600,
+      isLimited: localUsage.videos >= vLimit || localUsage.searches >= sLimit || localUsage.total >= tLimit,
+      limitedType: localUsage.videos >= vLimit ? 'video' : localUsage.searches >= sLimit ? 'search' : localUsage.total >= tLimit ? 'total' : null
+    };
   }
-  return res.json();
 }
 
 
@@ -81,6 +189,9 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       url.includes('/auth/') || 
       url.includes('/stream') || 
       url.includes('/download-proxy');
+
+    const isVideoReq = (url.startsWith('/api/video/') && !url.includes('/comments') && !url.includes('/related')) || url.startsWith('/stream') || url.startsWith('/edu');
+    const isSearchReq = url.startsWith('/api/search');
     
     // Check IndexedDB cache for GET requests
     if (isGet && isApiCall && !isTimeSensitive) {
@@ -88,6 +199,9 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         const cached = await get(url);
         const ttl = getCacheTTL(url);
         if (cached && cached.timestamp && (Date.now() - cached.timestamp < ttl) && hasValidContent(cached.data)) {
+          if (isVideoReq) incrementClientUsage('video');
+          else if (isSearchReq) incrementClientUsage('search');
+          else incrementClientUsage('total');
           return cached.data;
         }
       } catch (e) {
@@ -111,11 +225,21 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       if (usageToken && !finalHeaders.has('x-usage-token')) {
         finalHeaders.set('x-usage-token', usageToken);
       }
+      const localUsage = getClientUsage();
+      if (!finalHeaders.has('x-client-usage')) {
+        finalHeaders.set('x-client-usage', `${localUsage.day}|${localUsage.videos}|${localUsage.searches}|${localUsage.total}`);
+      }
     }
     reqOptions.headers = finalHeaders;
 
     const res = await fetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
+
+    if (isApiCall) {
+      if (isVideoReq) incrementClientUsage('video');
+      else if (isSearchReq) incrementClientUsage('search');
+      else incrementClientUsage('total');
+    }
 
     // Save usage token from response
     const newUsageToken = res.headers.get('x-daily-usage-token');
