@@ -150,3 +150,26 @@ export interface SearchChannel {
   description?: string;
   isVerified?: boolean;
 }
+
+export interface DailyUsageLimits {
+  videos: {
+    used: number;
+    limit: number;
+    remaining: number;
+  };
+  searches: {
+    used: number;
+    limit: number;
+    remaining: number;
+  };
+  total: {
+    used: number;
+    limit: number;
+    remaining: number;
+  };
+  resetAt: string;
+  resetSeconds: number;
+  isLimited: boolean;
+  limitedType: 'video' | 'search' | 'total' | 'burst' | null;
+}
+

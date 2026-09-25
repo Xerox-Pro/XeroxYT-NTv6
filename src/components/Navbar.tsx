@@ -12,13 +12,15 @@ interface NavbarProps {
   onHome: () => void;
   toggleSidebar: () => void;
   initialSearchQuery: string;
+  onOpenLimits?: () => void;
 }
 
 export default function Navbar({ 
   onSearch, 
   onHome, 
   toggleSidebar, 
-  initialSearchQuery
+  initialSearchQuery,
+  onOpenLimits
 }: NavbarProps) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialSearchQuery);
@@ -674,6 +676,21 @@ export default function Navbar({
 
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+        <button
+          type="button"
+          onClick={() => {
+            if (onOpenLimits) {
+              onOpenLimits();
+            } else {
+              window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded'));
+            }
+          }}
+          className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-xs font-semibold shadow-xs"
+          title="1日の利用制限と利用状況を確認"
+        >
+          <ShieldCheck size={16} className="text-blue-600 shrink-0" />
+          <span className="hidden sm:inline">利用制限</span>
+        </button>
         <PWAInstallButton />
         <Link
           to="/aistudio"

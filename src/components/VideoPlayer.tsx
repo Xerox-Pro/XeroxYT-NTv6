@@ -7,7 +7,8 @@ import {
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
-  Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard
+  Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
+  AlertTriangle, ShieldCheck
 } from 'lucide-react';
 import Avatar from './Avatar';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
@@ -120,6 +121,8 @@ export default function VideoPlayer({
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isDailyLimitReached, setIsDailyLimitReached] = useState(false);
+  const [limitErrorMessage, setLimitErrorMessage] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
@@ -229,9 +232,10 @@ export default function VideoPlayer({
   useEffect(() => {
     let isCurrent = true;
     const loadPlayer = async () => {
+      if (isDailyLimitReached) return;
       const id = videoId || 'videoseries';
       const url = await getEduPlayerUrl(id, playlistId);
-      if (isCurrent) {
+      if (isCurrent && !isDailyLimitReached) {
         setIframeUrl(url);
       }
     };
@@ -239,7 +243,7 @@ export default function VideoPlayer({
     return () => {
       isCurrent = false;
     };
-  }, [videoId, playlistId]);
+  }, [videoId, playlistId, isDailyLimitReached]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -748,6 +752,13 @@ export default function VideoPlayer({
           throw new Error('動画情報を取得できませんでした');
         }
       } catch (err: any) {
+        if (err?.isDailyLimit || err?.status === 429 || err?.message?.includes('上限') || err?.message?.includes('429')) {
+          setLoading(false);
+          setIsDailyLimitReached(true);
+          setLimitErrorMessage(err.message || '本日の動画視聴上限に達しました');
+          setIframeUrl('');
+          return;
+        }
         console.warn('Video metadata fetch failed, using fallback with edukey player:', err);
         // 動画情報の取得に失敗してもedukeyパラメータからプレイヤーを表示
         setIsFallback(true);
@@ -1141,7 +1152,34 @@ export default function VideoPlayer({
           tabIndex={0}
           className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh] group outline-hidden focus:ring-2 focus:ring-blue-500/20"
         >
-          {iframeUrl ? (
+          {isDailyLimitReached ? (
+            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-white bg-gradient-to-b from-[#181818] to-[#0f0f0f]">
+              <div className="p-3.5 bg-red-500/20 text-red-400 rounded-2xl mb-3 shadow-lg border border-red-500/30">
+                <AlertTriangle size={36} />
+              </div>
+              <h3 className="text-base sm:text-lg font-bold mb-2 text-gray-100">
+                本日の動画視聴上限に達しました
+              </h3>
+              <p className="text-xs text-gray-400 max-w-md mb-6 leading-relaxed">
+                {limitErrorMessage || 'Vercelサーバーの転送量・実行上限保護のため、1日に視聴可能な動画数に達しました。毎日午前0時（JST）にリセットされます。'}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  onClick={() => window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded'))}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-all shadow-md hover:shadow-blue-500/20 flex items-center gap-1.5"
+                >
+                  <ShieldCheck size={16} />
+                  利用枠・残り時間を確認
+                </button>
+                <button
+                  onClick={() => window.history.back()}
+                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition-colors border border-gray-700"
+                >
+                  前のページへ戻る
+                </button>
+              </div>
+            </div>
+          ) : iframeUrl ? (
             <iframe
               ref={iframeRef}
               src={iframeUrl}

@@ -1,4 +1,35 @@
 import { get, set } from 'idb-keyval';
+import { DailyUsageLimits } from './types';
+
+export function getClientUUID(): string {
+  try {
+    let id = localStorage.getItem('xerox_client_uuid');
+    if (!id) {
+      id = 'c_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
+      localStorage.setItem('xerox_client_uuid', id);
+    }
+    return id;
+  } catch {
+    return 'c_temp_user';
+  }
+}
+
+export async function fetchLimits(): Promise<DailyUsageLimits> {
+  const clientUuid = getClientUUID();
+  const token = localStorage.getItem('xerox_usage_token') || '';
+  const res = await fetch('/api/limits', {
+    headers: {
+      'x-client-id': clientUuid,
+      ...(token ? { 'x-usage-token': token } : {})
+    }
+  });
+  const newToken = res.headers.get('x-daily-usage-token');
+  if (newToken) {
+    localStorage.setItem('xerox_usage_token', newToken);
+  }
+  return res.json();
+}
+
 
 export function formatNumber(num: number): string {
   if (!num) return '0';
@@ -70,15 +101,35 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
       finalHeaders.set('x-youtube-credentials', ytCreds);
     }
+
+    // Attach client id and usage token for rate limiting
+    if (isApiCall) {
+      if (!finalHeaders.has('x-client-id')) {
+        finalHeaders.set('x-client-id', getClientUUID());
+      }
+      const usageToken = localStorage.getItem('xerox_usage_token');
+      if (usageToken && !finalHeaders.has('x-usage-token')) {
+        finalHeaders.set('x-usage-token', usageToken);
+      }
+    }
     reqOptions.headers = finalHeaders;
 
     const res = await fetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
+
+    // Save usage token from response
+    const newUsageToken = res.headers.get('x-daily-usage-token');
+    if (newUsageToken) {
+      try {
+        localStorage.setItem('xerox_usage_token', newUsageToken);
+      } catch {}
+    }
     
     if (!res.ok) {
       let errorMessage = `サーバーエラー (${res.status}): ${url} へのリクエストに失敗しました`;
+      let errorData: any = {};
       if (contentType && contentType.includes('application/json')) {
-        const errorData = await res.json().catch(() => ({}));
+        errorData = await res.json().catch(() => ({}));
         errorMessage = errorData.error || errorData.message || errorMessage;
       } else {
         const text = await res.text().catch(() => '');
@@ -87,6 +138,16 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         } else if (text) {
           errorMessage += `\n詳細: ${text.substring(0, 100)}`;
         }
+      }
+
+      if (res.status === 429) {
+        // Daily limit or burst limit exceeded
+        const limitErr = new Error(errorMessage) as any;
+        limitErr.isDailyLimit = true;
+        limitErr.status = 429;
+        limitErr.limitData = errorData;
+        window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded', { detail: errorData }));
+        throw limitErr;
       }
 
       if (res.status === 401 && url.startsWith('/api/user/')) {
