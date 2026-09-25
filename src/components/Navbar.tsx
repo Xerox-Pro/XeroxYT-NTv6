@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, ShieldCheck, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight, ScrollText } from 'lucide-react';
+import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight, ScrollText } from 'lucide-react';
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -676,21 +676,6 @@ export default function Navbar({
 
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <button
-          type="button"
-          onClick={() => {
-            if (onOpenLimits) {
-              onOpenLimits();
-            } else {
-              window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded'));
-            }
-          }}
-          className="flex items-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-xs font-semibold shadow-xs"
-          title="1日の利用制限と利用状況を確認"
-        >
-          <ShieldCheck size={16} className="text-blue-600 shrink-0" />
-          <span className="hidden sm:inline">利用制限</span>
-        </button>
         <PWAInstallButton />
         <Link
           to="/aistudio"
