@@ -19,7 +19,6 @@ import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import LicensePage from './components/LicensePage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
-import DailyLimitModal from './components/DailyLimitModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
@@ -84,24 +83,12 @@ export default function MainApp() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
-  const [limitModalData, setLimitModalData] = useState<any>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(
     window.innerWidth >= 1280 || (window.innerWidth >= 768 && window.matchMedia('(orientation: landscape)').matches)
   );
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768 && !window.matchMedia('(orientation: landscape)').matches);
 
   const recommendationRequestIdRef = useRef(0);
-
-  // 1日のリクエスト上限超過イベント検知
-  useEffect(() => {
-    const handleLimitExceeded = (e: any) => {
-      setLimitModalData(e?.detail || null);
-      setIsLimitModalOpen(true);
-    };
-    window.addEventListener('xerox_daily_limit_exceeded', handleLimitExceeded);
-    return () => window.removeEventListener('xerox_daily_limit_exceeded', handleLimitExceeded);
-  }, []);
 
   useEffect(() => {
     const path = location.pathname;
@@ -996,7 +983,6 @@ export default function MainApp() {
           onHome={handleGoHome}
           toggleSidebar={() => setIsSidebarOpen(!isSidebarOpen)}
           initialSearchQuery={searchQuery}
-          onOpenLimits={() => setIsLimitModalOpen(true)}
         />
       </div>
 
@@ -1013,7 +999,6 @@ export default function MainApp() {
           subscriptions={subscriptions}
           onSelectChannel={handleSelectChannel}
           onDebugAPI={() => navigate('/debug/api')}
-          onOpenLimits={() => setIsLimitModalOpen(true)}
         />
 
         {/* メインコンテンツビュー */}
@@ -1043,6 +1028,7 @@ export default function MainApp() {
               key={currentVideoId}
               videoId={currentVideoId}
               playlistId={currentPlaylistId || undefined}
+              initialVideo={videoCache[currentVideoId] || undefined}
               onVideoSelect={(id, v) => handleVideoSelect(id, v)}
               onSelectChannel={handleSelectChannel}
               subscriptions={subscriptions}
@@ -1123,14 +1109,6 @@ export default function MainApp() {
               <AlertCircle className="w-10 h-10 text-red-500" />
               <p className="text-sm font-medium max-w-md">{error}</p>
               <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
-                {(error.includes('上限') || error.includes('リクエスト') || error.includes('429')) && (
-                  <button
-                    onClick={() => setIsLimitModalOpen(true)}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs"
-                  >
-                    1日の利用状況を確認
-                  </button>
-                )}
                 <button
                   onClick={() => view === 'search' ? fetchSearch(searchQuery) : fetchRecommendations(1)}
                   className="px-4 py-2 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-800 transition-colors"
@@ -1227,15 +1205,6 @@ export default function MainApp() {
           onCreatePlaylist={handleCreatePlaylist}
         />
       )}
-
-      {/* 1日のリクエスト制限状況モーダル */}
-      <DailyLimitModal
-        isOpen={isLimitModalOpen}
-        onClose={() => setIsLimitModalOpen(false)}
-        triggerData={limitModalData}
-      />
-
-
     </div>
   );
 }

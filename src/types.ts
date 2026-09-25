@@ -28,6 +28,7 @@ export interface Video {
   liveViewerCount?: number;
   isPremiere?: boolean;
   isUpcoming?: boolean;
+  isPlayerOnly?: boolean;
 }
 
 export interface CommunityPost {

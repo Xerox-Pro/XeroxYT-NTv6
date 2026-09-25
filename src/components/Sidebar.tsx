@@ -1,7 +1,7 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, ShieldCheck } from 'lucide-react';
+import { Home, Zap, PlaySquare, Folder, History, ThumbsUp, Wrench } from 'lucide-react';
 import { ChannelSubscription } from '../types';
 import Avatar from './Avatar';
 
@@ -14,7 +14,6 @@ interface SidebarProps {
   onLibrary?: () => void;
   onHistory?: () => void;
   onDebugAPI?: () => void;
-  onOpenLimits?: () => void;
   subscriptions?: ChannelSubscription[];
   onSelectChannel?: (channelId: string) => void;
 }
@@ -27,7 +26,6 @@ const section1 = [
 const section2 = [
   { icon: Folder, label: 'ライブラリ', activeValue: 'library', path: '/feed/library' },
   { icon: History, label: '履歴', activeValue: 'history', path: '/feed/history' },
-  { icon: ShieldCheck, label: '利用制限・状態', activeValue: 'limits', path: '#' },
 ];
 
 export default function Sidebar({ 
@@ -39,7 +37,6 @@ export default function Sidebar({
   onLibrary,
   onHistory,
   onDebugAPI,
-  onOpenLimits,
   subscriptions = [], 
   onSelectChannel 
 }: SidebarProps) {
@@ -47,18 +44,6 @@ export default function Sidebar({
   const handleClick = (activeValue: string) => {
     if (activeValue === 'toggle' && onClose) {
       onClose();
-      return;
-    }
-
-    if (activeValue === 'limits') {
-      if (onOpenLimits) {
-        onOpenLimits();
-      } else {
-        window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded'));
-      }
-      if (window.innerWidth < 768 && onClose) {
-        onClose();
-      }
       return;
     }
 
@@ -156,7 +141,7 @@ export default function Sidebar({
                     : 'text-gray-800 hover:bg-gray-100 font-normal'
                 }`}
               >
-                <ShieldCheck size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className="shrink-0 text-blue-600" />
+                <Wrench size={isOpen ? 22 : 20} strokeWidth={currentView === 'debug' ? 2.2 : 1.8} className="shrink-0 text-blue-600" />
                 <span className={isOpen ? 'text-[14px] truncate' : 'text-[10px] text-center truncate w-full'}>
                   APIデバッグ
                 </span>
@@ -216,15 +201,6 @@ export default function Sidebar({
                 <History size={20} strokeWidth={1.8} />
                 <span className="text-[10px] text-center truncate w-full">履歴</span>
               </Link>
-              <button
-                type="button"
-                onClick={() => handleClick('limits')}
-                className="w-full flex flex-col items-center justify-center py-2.5 px-1 rounded-lg gap-1 text-gray-800 hover:bg-gray-100"
-                title="利用制限"
-              >
-                <ShieldCheck size={20} strokeWidth={1.8} className="text-blue-600" />
-                <span className="text-[10px] text-center truncate w-full">制限状況</span>
-              </button>
             </div>
           </>
         )}

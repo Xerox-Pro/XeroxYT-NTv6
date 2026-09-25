@@ -1,14 +1,14 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Video, Comment, ChannelSubscription, WatchHistoryItem } from '../types';
-import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
+import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
+import { formatNumberJP, formatDuration, fetchJSON, isDailyVideoLimitReached } from '../utils';
 import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
   Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
-  AlertTriangle, ShieldCheck
+  AlertTriangle
 } from 'lucide-react';
 import Avatar from './Avatar';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
@@ -95,6 +95,7 @@ interface VideoPlayerProps {
   key?: React.Key;
   videoId: string;
   playlistId?: string;
+  initialVideo?: Video | ShortVideo;
   onVideoSelect: (id: string, video?: Video) => void;
   onSelectChannel: (channelIdOrName: string) => void;
   subscriptions: ChannelSubscription[];
@@ -108,6 +109,7 @@ interface VideoPlayerProps {
 export default function VideoPlayer({
   videoId,
   playlistId,
+  initialVideo,
   onVideoSelect,
   onSelectChannel,
   subscriptions,
@@ -121,8 +123,6 @@ export default function VideoPlayer({
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [isDailyLimitReached, setIsDailyLimitReached] = useState(false);
-  const [limitErrorMessage, setLimitErrorMessage] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
@@ -135,16 +135,23 @@ export default function VideoPlayer({
   const [likeCountDelta, setLikeCountDelta] = useState(0);
   const [copiedToast, setCopiedToast] = useState(false);
 
+  const initialThumbnails = initialVideo && 'videoThumbnails' in initialVideo ? initialVideo.videoThumbnails : undefined;
+  const initialDesc = initialVideo && 'description' in initialVideo ? initialVideo.description : undefined;
+  const initialPublished = initialVideo && 'publishedText' in initialVideo ? initialVideo.publishedText : undefined;
+  const initialLength = initialVideo && 'lengthSeconds' in initialVideo ? initialVideo.lengthSeconds : undefined;
+
   const fallbackVideo: Video = {
     videoId,
-    title: `YouTube動画 (${videoId})`,
-    description: '動画メタデータの取得が制限されているため、edukeyパラメータを使用してプレイヤーを表示しています。',
-    author: 'YouTube',
-    authorId: '',
-    publishedText: '直接再生',
-    viewCount: 0,
-    lengthSeconds: 0,
-    videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, width: 480, height: 360 }],
+    title: initialVideo?.title || `YouTube動画 (${videoId})`,
+    description: initialDesc || '',
+    author: initialVideo?.author || 'YouTube',
+    authorId: initialVideo?.authorId || '',
+    publishedText: initialPublished || '直接再生',
+    viewCount: initialVideo?.viewCount || 0,
+    lengthSeconds: initialLength || 0,
+    videoThumbnails: initialThumbnails && initialThumbnails.length > 0
+      ? initialThumbnails
+      : [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, width: 480, height: 360 }],
     recommendedVideos: [],
     type: 'video'
   };
@@ -232,10 +239,9 @@ export default function VideoPlayer({
   useEffect(() => {
     let isCurrent = true;
     const loadPlayer = async () => {
-      if (isDailyLimitReached) return;
       const id = videoId || 'videoseries';
       const url = await getEduPlayerUrl(id, playlistId);
-      if (isCurrent && !isDailyLimitReached) {
+      if (isCurrent) {
         setIframeUrl(url);
       }
     };
@@ -243,7 +249,7 @@ export default function VideoPlayer({
     return () => {
       isCurrent = false;
     };
-  }, [videoId, playlistId, isDailyLimitReached]);
+  }, [videoId, playlistId]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -697,10 +703,30 @@ export default function VideoPlayer({
   useEffect(() => {
     setCommentPage(1);
     setCommentSort('top');
-    setHasMoreComments(true);
+    setHasMoreComments(false);
     setRelatedPage(1);
-    setHasMoreRelated(true);
+    setHasMoreRelated(false);
     setRelatedVideos([]);
+
+    const isPlayerOnlyMode = isDailyVideoLimitReached();
+
+    // 1日の上限(15本)以降はプレイヤーのみ取得し、コメント・関連動画・メタデータ追加取得は行わない (内部処理)
+    if (isPlayerOnlyMode) {
+      setLoading(false);
+      setError('');
+      setIsFallback(false);
+      setVideoData(fallbackVideo);
+      activeVideoRef.current = fallbackVideo;
+      if (onRecordHistory) {
+        onRecordHistory(fallbackVideo);
+      }
+      setSidebarTab('related');
+      setComments([]);
+      setHasMoreComments(false);
+      setLoadingComments(false);
+      setIsDescExpanded(false);
+      return;
+    }
 
     const fetchVideo = async () => {
       setLoading(true);
@@ -711,6 +737,15 @@ export default function VideoPlayer({
           setVideoData(data);
           setIsFallback(false);
           activeVideoRef.current = data;
+
+          if (data.isPlayerOnly) {
+            setSidebarTab('related');
+            setComments([]);
+            setHasMoreComments(false);
+            setLoadingComments(false);
+            return;
+          }
+
           if (data && data.recommendedVideos) {
             setRelatedVideos(data.recommendedVideos);
             // 初回から自動で2ページ目もバックグラウンドで先読みして結合（ボタン不要で最初から豊富なリストを提供）
@@ -752,15 +787,7 @@ export default function VideoPlayer({
           throw new Error('動画情報を取得できませんでした');
         }
       } catch (err: any) {
-        if (err?.isDailyLimit || err?.status === 429 || err?.message?.includes('上限') || err?.message?.includes('429')) {
-          setLoading(false);
-          setIsDailyLimitReached(true);
-          setLimitErrorMessage(err.message || '本日の動画視聴上限に達しました');
-          setIframeUrl('');
-          return;
-        }
         console.warn('Video metadata fetch failed, using fallback with edukey player:', err);
-        // 動画情報の取得に失敗してもedukeyパラメータからプレイヤーを表示
         setIsFallback(true);
         setVideoData(fallbackVideo);
         activeVideoRef.current = fallbackVideo;
@@ -768,14 +795,6 @@ export default function VideoPlayer({
           onRecordHistory(fallbackVideo);
         }
         setSidebarTab('related');
-        // 関連動画が空の場合はトレンド動画を取得してサイドバーを埋める
-        fetchJSON('/api/trending')
-          .then((items) => {
-            if (Array.isArray(items) && items.length > 0) {
-              setRelatedVideos((prev) => (prev.length === 0 ? items : prev));
-            }
-          })
-          .catch(() => {});
       } finally {
         setLoading(false);
       }
@@ -785,6 +804,11 @@ export default function VideoPlayer({
       setLoadingComments(true);
       try {
         const res = await fetchJSON(`/api/video/${videoId}/comments?sort=top&page=1`);
+        if (res && res.isPlayerOnly) {
+          setComments([]);
+          setHasMoreComments(false);
+          return;
+        }
         const newComments = Array.isArray(res) ? res : res.comments || [];
         setComments(newComments);
         setHasMoreComments(res.hasMore !== undefined ? res.hasMore : newComments.length > 0);
@@ -1152,34 +1176,7 @@ export default function VideoPlayer({
           tabIndex={0}
           className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh] group outline-hidden focus:ring-2 focus:ring-blue-500/20"
         >
-          {isDailyLimitReached ? (
-            <div className="w-full h-full flex flex-col items-center justify-center p-6 text-center text-white bg-gradient-to-b from-[#181818] to-[#0f0f0f]">
-              <div className="p-3.5 bg-red-500/20 text-red-400 rounded-2xl mb-3 shadow-lg border border-red-500/30">
-                <AlertTriangle size={36} />
-              </div>
-              <h3 className="text-base sm:text-lg font-bold mb-2 text-gray-100">
-                本日の動画視聴上限に達しました
-              </h3>
-              <p className="text-xs text-gray-400 max-w-md mb-6 leading-relaxed">
-                {limitErrorMessage || 'Vercelサーバーの転送量・実行上限保護のため、1日に視聴可能な動画数に達しました。毎日午前0時（JST）にリセットされます。'}
-              </p>
-              <div className="flex flex-wrap items-center justify-center gap-3">
-                <button
-                  onClick={() => window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded'))}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl transition-all shadow-md hover:shadow-blue-500/20 flex items-center gap-1.5"
-                >
-                  <ShieldCheck size={16} />
-                  利用枠・残り時間を確認
-                </button>
-                <button
-                  onClick={() => window.history.back()}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-200 text-xs font-semibold rounded-xl transition-colors border border-gray-700"
-                >
-                  前のページへ戻る
-                </button>
-              </div>
-            </div>
-          ) : iframeUrl ? (
+          {iframeUrl ? (
             <iframe
               ref={iframeRef}
               src={iframeUrl}
@@ -1225,20 +1222,6 @@ export default function VideoPlayer({
             )}
           </AnimatePresence>
         </div>
-
-        {/* 動画情報が取得できなかった場合の控えめな通知 */}
-        {isFallback && (
-          <div className="mt-3 py-2 px-3.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-600 flex flex-wrap items-center justify-between gap-2">
-            <span>動画メタデータの取得が制限されていますが、edukeyパラメータからプレイヤーを直接読み込んでいます。</span>
-            <button 
-              onClick={handleReloadPlayer}
-              disabled={refreshingIframe || cooldownSec > 0}
-              className="underline text-gray-800 hover:text-black font-medium cursor-pointer"
-            >
-              {refreshingIframe ? '更新中...' : cooldownSec > 0 ? `再取得 (${cooldownSec}s)` : 'edukey再取得'}
-            </button>
-          </div>
-        )}
         
         <div className="mt-4 flex flex-col">
           {/* 実際のライブ配信時のみバッジを表示 */}

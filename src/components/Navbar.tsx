@@ -12,15 +12,13 @@ interface NavbarProps {
   onHome: () => void;
   toggleSidebar: () => void;
   initialSearchQuery: string;
-  onOpenLimits?: () => void;
 }
 
 export default function Navbar({ 
   onSearch, 
   onHome, 
   toggleSidebar, 
-  initialSearchQuery,
-  onOpenLimits
+  initialSearchQuery
 }: NavbarProps) {
   const navigate = useNavigate();
   const [query, setQuery] = useState(initialSearchQuery);

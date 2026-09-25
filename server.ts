@@ -449,7 +449,7 @@ async function startServer() {
   });
 
   // --- Daily Quotas & Rate Limiting System (Protect Vercel Serverless CPU & Bandwidth) ---
-  const DAILY_VIDEO_LIMIT = Math.max(1, parseInt(process.env.DAILY_VIDEO_LIMIT || "50", 10));
+  const DAILY_VIDEO_LIMIT = Math.max(1, parseInt(process.env.DAILY_VIDEO_LIMIT || "15", 10));
   const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "100", 10));
   const DAILY_TOTAL_LIMIT = Math.max(1, parseInt(process.env.DAILY_TOTAL_LIMIT || "600", 10));
   const BURST_LIMIT_PER_MINUTE = Math.max(1, parseInt(process.env.BURST_LIMIT_PER_MINUTE || "80", 10));
@@ -704,20 +704,11 @@ async function startServer() {
     );
 
     if (isVideoViewRequest) {
-      if (record.videos >= DAILY_VIDEO_LIMIT) {
-        res.setHeader("Retry-After", String(getSecondsUntilJstMidnight()));
-        return res.status(429).json({
-          error: `本日の動画視聴上限（${DAILY_VIDEO_LIMIT}本）に達しました。Vercelサーバー負荷保護のため、明日午前0時(JST)のリセットまでお待ちください。`,
-          code: "DAILY_VIDEO_LIMIT_EXCEEDED",
-          type: "video",
-          limit: DAILY_VIDEO_LIMIT,
-          used: record.videos,
-          remaining: 0,
-          resetAt: getNextJstMidnightIso(),
-          resetSeconds: getSecondsUntilJstMidnight(),
-        });
-      }
+      // 15本までは通常カウント。15本以降はプレイヤーのみ取得モードで再生を許可 (検索や動画再生を429で止めない)
       record.videos++;
+      if (record.videos > DAILY_VIDEO_LIMIT) {
+        res.setHeader("X-Player-Only-Mode", "true");
+      }
     }
 
     // 4. 検索リクエスト判定 (/api/search, /api/search/channels)
@@ -748,9 +739,12 @@ async function startServer() {
     res.setHeader("X-RateLimit-Searches-Remaining", String(Math.max(0, DAILY_SEARCH_LIMIT - record.searches)));
     res.setHeader("X-RateLimit-Reset-Seconds", String(getSecondsUntilJstMidnight()));
     res.setHeader("X-Daily-Usage-Token", token);
+    if (record.videos >= DAILY_VIDEO_LIMIT) {
+      res.setHeader("X-Player-Only-Mode", "true");
+    }
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "X-RateLimit-Videos-Remaining, X-RateLimit-Searches-Remaining, X-RateLimit-Reset-Seconds, X-Daily-Usage-Token"
+      "X-RateLimit-Videos-Remaining, X-RateLimit-Searches-Remaining, X-RateLimit-Reset-Seconds, X-Daily-Usage-Token, X-Player-Only-Mode"
     );
 
     next();
@@ -3183,6 +3177,30 @@ async function startServer() {
       return res.json(cached);
     }
 
+    const clientId = getClientIdentifier(req);
+    const today = getJstDateString();
+    const record = getOrCreateRecord(clientId, today, req);
+    if (record.videos > DAILY_VIDEO_LIMIT) {
+      // 1日の上限(15本)以降は重いメタデータ取得を行わず、プレイヤー再生に必要な軽量情報のみ返却 (プレイヤー以外取得しない)
+      res.setHeader("X-Player-Only-Mode", "true");
+      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
+      return res.json({
+        videoId,
+        title: "YouTube Video",
+        description: "",
+        author: "YouTube",
+        authorId: "",
+        publishedText: "直接再生",
+        viewCount: 0,
+        lengthSeconds: 0,
+        videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, width: 480, height: 360 }],
+        recommendedVideos: [],
+        comments: [],
+        isPlayerOnly: true,
+        type: "video"
+      });
+    }
+
     try {
       const youtube = await getYt();
       let info;
@@ -3419,6 +3437,19 @@ async function startServer() {
     const sort = ((req.query.sort as string) || "top").toLowerCase() === "newest" ? "newest" : "top";
     const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
 
+    const clientId = getClientIdentifier(req);
+    const today = getJstDateString();
+    const record = getOrCreateRecord(clientId, today, req);
+    if (record.videos > DAILY_VIDEO_LIMIT) {
+      // 15本以降はコメントを取得しない (プレイヤー以外取得しない)
+      return res.json({
+        page: 1,
+        comments: [],
+        hasMore: false,
+        isPlayerOnly: true,
+      });
+    }
+
     const cacheKey = `comments:${videoId}:${sort}:${page}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
@@ -3507,6 +3538,19 @@ async function startServer() {
     const videoId = req.params.id;
     const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
     const filter = (req.query.filter as string) || "all";
+
+    const clientId = getClientIdentifier(req);
+    const today = getJstDateString();
+    const record = getOrCreateRecord(clientId, today, req);
+    if (record.videos > DAILY_VIDEO_LIMIT) {
+      // 15本以降は関連動画を取得しない (プレイヤー以外取得しない)
+      return res.json({
+        page: 1,
+        videos: [],
+        hasMore: false,
+        isPlayerOnly: true,
+      });
+    }
 
     const cacheKey = `related:${videoId}:${page}:${filter}`;
     const cached = getFromMemoryCache<any>(cacheKey);

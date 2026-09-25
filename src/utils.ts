@@ -1,6 +1,17 @@
 import { get, set } from 'idb-keyval';
 import { DailyUsageLimits } from './types';
 
+export const DAILY_VIDEO_LIMIT = 15;
+
+export function isDailyVideoLimitReached(): boolean {
+  try {
+    const usage = getClientUsage();
+    return usage.videos >= DAILY_VIDEO_LIMIT;
+  } catch {
+    return false;
+  }
+}
+
 export function getClientUUID(): string {
   try {
     let id = localStorage.getItem('xerox_client_uuid');
@@ -123,7 +134,7 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
   } catch (err) {
     console.warn('Failed to fetch remote limits, using local fallback:', err);
     // ネットワークエラー時もローカルの利用量をそのまま返却
-    const vLimit = 50;
+    const vLimit = DAILY_VIDEO_LIMIT;
     const sLimit = 100;
     const tLimit = 600;
     return {
@@ -265,12 +276,11 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       }
 
       if (res.status === 429) {
-        // Daily limit or burst limit exceeded
+        // Daily limit or burst limit exceeded (handled internally)
         const limitErr = new Error(errorMessage) as any;
         limitErr.isDailyLimit = true;
         limitErr.status = 429;
         limitErr.limitData = errorData;
-        window.dispatchEvent(new CustomEvent('xerox_daily_limit_exceeded', { detail: errorData }));
         throw limitErr;
       }
 
