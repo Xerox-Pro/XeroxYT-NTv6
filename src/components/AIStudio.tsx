@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
+import { safeStorage } from '../services/safeStorage';
 
 interface FileData {
   file: File;
@@ -39,16 +40,9 @@ const AVAILABLE_MODELS = [
 
 export default function AIStudio() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => {
-    try {
-      const saved = localStorage.getItem('gemini_chat_sessions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
-        }
-      }
-    } catch (e) {
-      console.error(e);
+    const saved = safeStorage.getJSON<ChatSession[] | null>('gemini_chat_sessions', null);
+    if (saved && Array.isArray(saved) && saved.length > 0) {
+      return saved;
     }
     return [
       {
@@ -73,13 +67,9 @@ export default function AIStudio() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Save sessions to localStorage
+  // Save sessions to safeStorage
   useEffect(() => {
-    try {
-      localStorage.setItem('gemini_chat_sessions', JSON.stringify(sessions));
-    } catch (e) {
-      console.error(e);
-    }
+    safeStorage.setJSON('gemini_chat_sessions', sessions);
   }, [sessions]);
 
   const currentSession = sessions.find(s => s.id === currentSessionId) || sessions[0];

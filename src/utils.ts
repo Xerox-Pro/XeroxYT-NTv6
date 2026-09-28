@@ -1,23 +1,20 @@
 import { get, set } from 'idb-keyval';
 import { DailyUsageLimits } from './types';
+import { safeStorage } from './services/safeStorage';
 
-export const DAILY_VIDEO_LIMIT = 15;
+export const DAILY_VIDEO_LIMIT = Infinity;
 
+// 視聴制限は完全に解除（常にfalse）
 export function isDailyVideoLimitReached(): boolean {
-  try {
-    const usage = getClientUsage();
-    return usage.videos >= DAILY_VIDEO_LIMIT;
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 export function getClientUUID(): string {
   try {
-    let id = localStorage.getItem('xerox_client_uuid');
+    let id = safeStorage.getItem('xerox_client_uuid');
     if (!id) {
       id = 'c_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-      localStorage.setItem('xerox_client_uuid', id);
+      safeStorage.setItem('xerox_client_uuid', id);
     }
     return id;
   } catch {
@@ -42,7 +39,7 @@ export interface ClientUsageData {
 export function getClientUsage(): ClientUsageData {
   try {
     const today = getLocalJstDateString();
-    const raw = localStorage.getItem('xerox_client_usage');
+    const raw = safeStorage.getItem('xerox_client_usage');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.day === today) {
@@ -55,7 +52,7 @@ export function getClientUsage(): ClientUsageData {
       }
     }
     const fresh: ClientUsageData = { day: today, videos: 0, searches: 0, total: 0 };
-    localStorage.setItem('xerox_client_usage', JSON.stringify(fresh));
+    safeStorage.setItem('xerox_client_usage', JSON.stringify(fresh));
     return fresh;
   } catch {
     return { day: getLocalJstDateString(), videos: 0, searches: 0, total: 0 };
@@ -74,7 +71,7 @@ export function incrementClientUsage(type: 'video' | 'search' | 'total', delta: 
     } else if (type === 'total') {
       current.total += delta;
     }
-    localStorage.setItem('xerox_client_usage', JSON.stringify(current));
+    safeStorage.setItem('xerox_client_usage', JSON.stringify(current));
     return current;
   } catch {
     return getClientUsage();
@@ -83,7 +80,7 @@ export function incrementClientUsage(type: 'video' | 'search' | 'total', delta: 
 
 export async function fetchLimits(): Promise<DailyUsageLimits> {
   const clientUuid = getClientUUID();
-  const token = localStorage.getItem('xerox_usage_token') || '';
+  const token = safeStorage.getItem('xerox_usage_token') || '';
   const localUsage = getClientUsage();
 
   try {
@@ -99,18 +96,18 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
     const newToken = data.token || res.headers.get('x-daily-usage-token');
     if (newToken) {
       try {
-        localStorage.setItem('xerox_usage_token', newToken);
+        safeStorage.setItem('xerox_usage_token', newToken);
       } catch {}
     }
 
     if (data && data.videos && data.searches && data.total) {
-      // サーバーレス再起動・再読み込み時もローカル記録とマージして利用量が0にリセットされるのを防止
-      const mergedVideos = Math.max(data.videos.used || 0, localUsage.videos);
+      // 視聴制限は撤廃（無制限）
+      data.videos.limit = 999999;
+      data.videos.remaining = 999999;
+      data.videos.used = localUsage.videos;
+
       const mergedSearches = Math.max(data.searches.used || 0, localUsage.searches);
       const mergedTotal = Math.max(data.total.used || 0, localUsage.total);
-
-      data.videos.used = mergedVideos;
-      data.videos.remaining = Math.max(0, data.videos.limit - mergedVideos);
 
       data.searches.used = mergedSearches;
       data.searches.remaining = Math.max(0, data.searches.limit - mergedSearches);
@@ -118,12 +115,12 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
       data.total.used = mergedTotal;
       data.total.remaining = Math.max(0, data.total.limit - mergedTotal);
 
-      data.isLimited = mergedVideos >= data.videos.limit || mergedSearches >= data.searches.limit || mergedTotal >= data.total.limit;
+      data.isLimited = false;
 
       try {
-        localStorage.setItem('xerox_client_usage', JSON.stringify({
+        safeStorage.setItem('xerox_client_usage', JSON.stringify({
           day: localUsage.day,
-          videos: mergedVideos,
+          videos: localUsage.videos,
           searches: mergedSearches,
           total: mergedTotal,
         }));
@@ -133,22 +130,17 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
     return data;
   } catch (err) {
     console.warn('Failed to fetch remote limits, using local fallback:', err);
-    // ネットワークエラー時もローカルの利用量をそのまま返却
-    const vLimit = DAILY_VIDEO_LIMIT;
-    const sLimit = 100;
-    const tLimit = 600;
     return {
-      videos: { used: localUsage.videos, limit: vLimit, remaining: Math.max(0, vLimit - localUsage.videos) },
-      searches: { used: localUsage.searches, limit: sLimit, remaining: Math.max(0, sLimit - localUsage.searches) },
-      total: { used: localUsage.total, limit: tLimit, remaining: Math.max(0, tLimit - localUsage.total) },
+      videos: { used: 0, limit: 999999, remaining: 999999 },
+      searches: { used: 0, limit: 100, remaining: 100 },
+      total: { used: 0, limit: 600, remaining: 600 },
       resetAt: new Date(Date.now() + 86400000).toISOString(),
       resetSeconds: 3600,
-      isLimited: localUsage.videos >= vLimit || localUsage.searches >= sLimit || localUsage.total >= tLimit,
-      limitedType: localUsage.videos >= vLimit ? 'video' : localUsage.searches >= sLimit ? 'search' : localUsage.total >= tLimit ? 'total' : null
+      isLimited: false,
+      limitedType: null
     };
   }
 }
-
 
 export function formatNumber(num: number): string {
   if (!num) return '0';
@@ -222,7 +214,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
     const reqOptions = { ...options };
     const finalHeaders = new Headers(reqOptions.headers || {});
-    const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+    const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
     if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
       finalHeaders.set('x-youtube-credentials', ytCreds);
     }
@@ -232,7 +224,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       if (!finalHeaders.has('x-client-id')) {
         finalHeaders.set('x-client-id', getClientUUID());
       }
-      const usageToken = localStorage.getItem('xerox_usage_token');
+      const usageToken = safeStorage.getItem('xerox_usage_token');
       if (usageToken && !finalHeaders.has('x-usage-token')) {
         finalHeaders.set('x-usage-token', usageToken);
       }
@@ -256,7 +248,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const newUsageToken = res.headers.get('x-daily-usage-token');
     if (newUsageToken) {
       try {
-        localStorage.setItem('xerox_usage_token', newUsageToken);
+        safeStorage.setItem('xerox_usage_token', newUsageToken);
       } catch {}
     }
     
@@ -286,8 +278,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
       if (res.status === 401 && url.startsWith('/api/user/')) {
         console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
-        localStorage.removeItem('xerox_youtube_credentials');
-        localStorage.removeItem('xerox_user_info');
+        safeStorage.removeItem('xerox_youtube_credentials');
+        safeStorage.removeItem('xerox_user_info');
       }
 
       throw new Error(errorMessage);

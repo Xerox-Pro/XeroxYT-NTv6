@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
-import { formatNumberJP, formatDuration, fetchJSON, isDailyVideoLimitReached } from '../utils';
+import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
@@ -708,26 +708,6 @@ export default function VideoPlayer({
     setHasMoreRelated(false);
     setRelatedVideos([]);
 
-    const isPlayerOnlyMode = isDailyVideoLimitReached();
-
-    // 1日の上限(15本)以降はプレイヤーのみ取得し、コメント・関連動画・メタデータ追加取得は行わない (内部処理)
-    if (isPlayerOnlyMode) {
-      setLoading(false);
-      setError('');
-      setIsFallback(false);
-      setVideoData(fallbackVideo);
-      activeVideoRef.current = fallbackVideo;
-      if (onRecordHistory) {
-        onRecordHistory(fallbackVideo);
-      }
-      setSidebarTab('related');
-      setComments([]);
-      setHasMoreComments(false);
-      setLoadingComments(false);
-      setIsDescExpanded(false);
-      return;
-    }
-
     const fetchVideo = async () => {
       setLoading(true);
       setError('');
@@ -737,14 +717,6 @@ export default function VideoPlayer({
           setVideoData(data);
           setIsFallback(false);
           activeVideoRef.current = data;
-
-          if (data.isPlayerOnly) {
-            setSidebarTab('related');
-            setComments([]);
-            setHasMoreComments(false);
-            setLoadingComments(false);
-            return;
-          }
 
           if (data && data.recommendedVideos) {
             setRelatedVideos(data.recommendedVideos);
@@ -804,11 +776,6 @@ export default function VideoPlayer({
       setLoadingComments(true);
       try {
         const res = await fetchJSON(`/api/video/${videoId}/comments?sort=top&page=1`);
-        if (res && res.isPlayerOnly) {
-          setComments([]);
-          setHasMoreComments(false);
-          return;
-        }
         const newComments = Array.isArray(res) ? res : res.comments || [];
         setComments(newComments);
         setHasMoreComments(res.hasMore !== undefined ? res.hasMore : newComments.length > 0);
