@@ -4715,19 +4715,22 @@ async function startServer() {
       try {
         const { messages, systemInstruction, temperature, model } = req.body;
 
-        const selectedModel = model || "gemini-3.5-flash-lite";
+        const selectedModel = model || "gemini-3.8-flash";
+        const defaultInstruction =
+          "あなたは有能で親切なAIアシスタント「Xray」です。回答は読みやすく構造化されたMarkdown形式（見出し、箇条書き、太字、表、コードブロックなどを適切に活用）で出力してください。";
+
         const response = await genAI.models.generateContent({
           model: selectedModel,
           contents: messages,
           config: {
-            systemInstruction,
+            systemInstruction: systemInstruction || defaultInstruction,
             temperature: temperature || 0.7,
           },
         });
 
         res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ text: response.text });
-      } catch (e) {
+        return res.json({ text: response.text });
+      } catch (e: any) {
         console.error("[AI Studio] Error calling Gemini API:", e);
         res.status(500).json({ error: e.message || String(e) });
       }
