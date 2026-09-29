@@ -4,6 +4,118 @@ import { safeStorage } from './services/safeStorage';
 
 export const DAILY_VIDEO_LIMIT = Infinity;
 
+/**
+ * Retrieves the API secret key parameter configured in environment variables,
+ * window injection, cookie, query parameter, or local storage.
+ */
+export function getApiKey(): string {
+  if (typeof window !== 'undefined' && (window as any).__APP_API_KEY__) {
+    return (window as any).__APP_API_KEY__;
+  }
+
+  // Check import.meta.env
+  try {
+    const metaEnv = (import.meta as any).env;
+    const envKey = metaEnv?.VITE_API_KEY || metaEnv?.VITE_API_SECRET_KEY || '';
+    if (envKey) return envKey;
+  } catch {}
+
+  if (typeof window !== 'undefined') {
+    // Check URL query parameters (?apiKey=... or ?key=... or ?token=...)
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlKey =
+        params.get('apiKey') ||
+        params.get('api_key') ||
+        params.get('key') ||
+        params.get('token') ||
+        params.get('secret');
+      if (urlKey) {
+        safeStorage.setItem('xerox_api_key', urlKey);
+        return urlKey;
+      }
+    } catch {}
+
+    // Check cookie
+    try {
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)xerox_api_key=([^;]+)/);
+      if (cookieMatch) {
+        const decoded = decodeURIComponent(cookieMatch[1]).trim();
+        if (decoded) {
+          safeStorage.setItem('xerox_api_key', decoded);
+          return decoded;
+        }
+      }
+    } catch {}
+
+    // Check safeStorage
+    const stored = safeStorage.getItem('xerox_api_key');
+    if (stored) return stored;
+  }
+
+  return 'xerox_api_key_2026';
+}
+
+/**
+ * Appends the apiKey parameter to API URLs
+ */
+export function appendApiKey(url: string): string {
+  const isApi =
+    url.startsWith('/api/') ||
+    url.startsWith('/stream') ||
+    url.startsWith('/edu') ||
+    url.startsWith('/360') ||
+    url.startsWith('/scratch-edu') ||
+    url.startsWith('/download-proxy');
+
+  if (!isApi) return url;
+
+  const key = getApiKey();
+  if (!key) return url;
+
+  // Don't re-append if already present
+  if (
+    url.includes('apiKey=') ||
+    url.includes('api_key=') ||
+    url.includes('key=') ||
+    url.includes('token=') ||
+    url.includes('secret=')
+  ) {
+    return url;
+  }
+
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}apiKey=${encodeURIComponent(key)}`;
+}
+
+// Global fetch interceptor to guarantee all relative API requests carry the apiKey parameter & header
+if (typeof window !== 'undefined' && !(window as any).__FETCH_KEY_INTERCEPTED__) {
+  (window as any).__FETCH_KEY_INTERCEPTED__ = true;
+  const rawFetch = window.fetch;
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const isApi =
+      url.startsWith('/api/') ||
+      url.startsWith('/stream') ||
+      url.startsWith('/edu') ||
+      url.startsWith('/360') ||
+      url.startsWith('/scratch-edu') ||
+      url.startsWith('/download-proxy');
+
+    if (isApi) {
+      url = appendApiKey(url);
+      const headers = new Headers(init?.headers || {});
+      const key = getApiKey();
+      if (key && !headers.has('x-api-key')) {
+        headers.set('x-api-key', key);
+      }
+      return rawFetch.call(this, url, { ...init, headers });
+    }
+
+    return rawFetch.call(this, input, init);
+  };
+}
+
 // 視聴制限は完全に解除（常にfalse）
 export function isDailyVideoLimitReached(): boolean {
   return false;
@@ -221,6 +333,11 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
     // Attach client id and usage token for rate limiting
     if (isApiCall) {
+      url = appendApiKey(url);
+      const apiKey = getApiKey();
+      if (apiKey && !finalHeaders.has('x-api-key')) {
+        finalHeaders.set('x-api-key', apiKey);
+      }
       if (!finalHeaders.has('x-client-id')) {
         finalHeaders.set('x-client-id', getClientUUID());
       }

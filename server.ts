@@ -449,6 +449,125 @@ async function startServer() {
     next();
   });
 
+  // --- External Service Abuse Protection: API Secret Key Parameter ---
+  const getExpectedApiKey = (): string => {
+    return (
+      process.env.API_SECRET_KEY ||
+      process.env.API_KEY ||
+      process.env.API_SECRET ||
+      process.env.API_TOKEN ||
+      process.env.ACCESS_TOKEN ||
+      process.env.VITE_API_KEY ||
+      process.env.VITE_API_SECRET_KEY ||
+      "xerox_api_key_2026"
+    ).trim();
+  };
+
+  function extractApiKey(req: express.Request): string {
+    // 1. Query parameters (?apiKey=... or ?key=... or ?token=...)
+    const q = req.query as Record<string, any>;
+    const fromQuery = q.apiKey || q.api_key || q.key || q.token || q.secret || q.access_token;
+    if (typeof fromQuery === "string" && fromQuery.trim()) {
+      return fromQuery.trim();
+    }
+
+    // 2. HTTP Headers (x-api-key, etc.)
+    const h = req.headers;
+    const fromHeader = h["x-api-key"] || h["x-api-secret"] || h["x-secret-key"] || h["x-token"];
+    if (typeof fromHeader === "string" && fromHeader.trim()) {
+      return fromHeader.trim();
+    }
+
+    // 3. Authorization Header (Bearer <token> or direct token)
+    const auth = h["authorization"];
+    if (typeof auth === "string" && auth.trim()) {
+      const trimmed = auth.trim();
+      if (trimmed.toLowerCase().startsWith("bearer ")) {
+        return trimmed.slice(7).trim();
+      }
+      return trimmed;
+    }
+
+    // 4. Request Body (if parsed)
+    if (req.body && typeof req.body === "object") {
+      const b = req.body as Record<string, any>;
+      const fromBody = b.apiKey || b.api_key || b.key || b.token || b.secret;
+      if (typeof fromBody === "string" && fromBody.trim()) {
+        return fromBody.trim();
+      }
+    }
+
+    // 5. Cookies (set during legitimate browser website visits)
+    const cookieHeader = req.headers["cookie"] || "";
+    const match = cookieHeader.match(/(?:^|;\s*)xerox_api_key=([^;]+)/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]).trim();
+      } catch {
+        return match[1].trim();
+      }
+    }
+
+    return "";
+  }
+
+  // Intercept and protect all API & stream endpoints against external scraping/abuse
+  app.use((req, res, next) => {
+    const p = req.path;
+
+    const isApiEndpoint =
+      p.startsWith("/api/") ||
+      p.startsWith("/stream") ||
+      p.startsWith("/edu") ||
+      p.startsWith("/360") ||
+      p.startsWith("/scratch-edu") ||
+      p.startsWith("/download-proxy");
+
+    if (!isApiEndpoint) {
+      // Set cookie for browser page visits so legitimate user sessions have the key
+      const expectedKey = getExpectedApiKey();
+      res.cookie("xerox_api_key", expectedKey, {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      return next();
+    }
+
+    // Exclude system health check
+    if (p === "/api/health") {
+      return next();
+    }
+
+    // Exclude config endpoint (used by legitimate frontend to bootstrap)
+    if (p === "/api/config") {
+      return next();
+    }
+
+    const expectedKey = getExpectedApiKey();
+    const clientKey = extractApiKey(req);
+
+    if (!clientKey || clientKey !== expectedKey) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.status(401).json({
+        error: "Unauthorized: API access requires a valid secret parameter",
+        code: "API_KEY_REQUIRED",
+        message: "外部サービスによる不正利用を防ぐため、APIの取得には環境変数で設定されたパラメーター（apiKey または key）の付与が必要です。",
+      });
+    }
+
+    next();
+  });
+
+  // Client bootstrap config endpoint
+  app.get("/api/config", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json({
+      apiKey: getExpectedApiKey(),
+      appName: "XeroxYT",
+    });
+  });
+
   // --- Daily Quotas & Rate Limiting System (Protect Vercel Serverless CPU & Bandwidth) ---
   const DAILY_VIDEO_LIMIT = Infinity; // 視聴制限は完全に解除（無制限）
   const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "100", 10));
@@ -4703,7 +4822,22 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "index.html"));
+      const expectedKey = getExpectedApiKey();
+      res.cookie("xerox_api_key", expectedKey, {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      try {
+        let html = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+        html = html.replace(
+          "<head>",
+          `<head><script>window.__APP_API_KEY__=${JSON.stringify(expectedKey)};</script>`
+        );
+        res.send(html);
+      } catch {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
     });
   }
 

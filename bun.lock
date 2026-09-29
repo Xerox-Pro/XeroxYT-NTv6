@@ -11,6 +11,7 @@
         "@tailwindcss/typography": "^0.5.20",
         "axios": "^1.19.0",
         "clsx": "^2.1.1",
+        "detectincognitojs": "^1.9.0",
         "dotenv": "^17.2.3",
         "express": "^4.21.2",
         "idb-keyval": "^6.3.0",
@@ -621,6 +622,8 @@
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 
     "detect-node-es": ["detect-node-es@1.1.0", "", {}, ""],
+
+    "detectincognitojs": ["detectincognitojs@1.9.0", "", {}, "sha512-whtb0SqllwfP2RXM8Qh2C3sb/Tj5uNVY9JFj+uoUA1fJzNomTuHDlT96LEjUJ8MHGskk9PhHgVgI+Rc2qbLRcQ=="],
 
     "devlop": ["devlop@1.1.0", "", { "dependencies": { "dequal": "^2.0.0" } }, "sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA=="],
 
