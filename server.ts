@@ -4822,6 +4822,7 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Content-Language", "ja");
       const expectedKey = getExpectedApiKey();
       res.cookie("xerox_api_key", expectedKey, {
         path: "/",
