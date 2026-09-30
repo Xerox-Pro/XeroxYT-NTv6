@@ -75,6 +75,11 @@ export interface Comment {
   text: string;
   publishedTime: string;
   likeCount: string | number;
+  replyCount?: number;
+  hasReplies?: boolean;
+  isHearted?: boolean;
+  authorIsChannelOwner?: boolean;
+  replies?: Comment[];
 }
 
 export interface Playlist {

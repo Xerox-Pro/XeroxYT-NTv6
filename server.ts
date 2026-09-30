@@ -3515,10 +3515,23 @@ async function startServer() {
     currentPage: number;
     feed: any;
     pages: Map<number, any[]>;
+    threadsMap: Map<string, any>;
     hasMore: boolean;
     lastAccess: number;
   }
   const commentsSessions = new Map<string, CommentsSession>();
+
+  // コメント返信セッション管理
+  interface CommentRepliesSession {
+    videoId: string;
+    commentId: string;
+    currentPage: number;
+    feed: any;
+    replies: any[];
+    hasMore: boolean;
+    lastAccess: number;
+  }
+  const commentRepliesSessions = new Map<string, CommentRepliesSession>();
 
   // 関連動画セッション・キャッシュ管理
   interface RelatedVideosSession {
@@ -3554,7 +3567,7 @@ async function startServer() {
 
     for (const item of contents) {
       const c = item.comment || item;
-      if (c && (c.content || c.author)) {
+      if (c && (c.content || c.author || c.text)) {
         let authorAvatar =
           c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
           c.author?.thumbnails?.[0]?.url ||
@@ -3566,6 +3579,21 @@ async function startServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
+
+        let replyCount = 0;
+        if (c.reply_count !== undefined && c.reply_count !== null) {
+          replyCount = parseInt(String(c.reply_count).replace(/[^0-9]/g, ""), 10) || 0;
+        } else if (item.reply_count !== undefined && item.reply_count !== null) {
+          replyCount = parseInt(String(item.reply_count).replace(/[^0-9]/g, ""), 10) || 0;
+        }
+
+        const hasReplies = Boolean(
+          item.has_replies ||
+          replyCount > 0 ||
+          item.comment_replies_data ||
+          (Array.isArray(item.replies) && item.replies.length > 0)
+        );
+
         comments.push({
           id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
@@ -3578,6 +3606,10 @@ async function startServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
+          replyCount: replyCount,
+          hasReplies: hasReplies,
+          isHearted: Boolean(c.is_hearted),
+          authorIsChannelOwner: Boolean(c.author_is_channel_owner),
         });
       }
     }
@@ -3631,12 +3663,19 @@ async function startServer() {
         let commentsData = await youtube.getComments(videoId, sortBy);
         
         let initialComments = parseCommentsList(commentsData?.contents || []);
+        const threadsMap = new Map<string, any>();
+        for (const item of (commentsData?.contents as any[]) || []) {
+          const cId = item?.comment?.comment_id || item?.comment?.id || item?.id;
+          if (cId) threadsMap.set(cId, item);
+        }
+
         session = {
           videoId,
           sort,
           currentPage: 1,
           feed: commentsData,
           pages: new Map([[1, initialComments]]),
+          threadsMap,
           hasMore: Boolean(commentsData?.has_continuation),
           lastAccess: now,
         };
@@ -3650,6 +3689,10 @@ async function startServer() {
           session.currentPage++;
           const nextComments = parseCommentsList(session.feed?.contents || []);
           session.pages.set(session.currentPage, nextComments);
+          for (const item of (session.feed?.contents as any[]) || []) {
+            const cId = item?.comment?.comment_id || item?.comment?.id || item?.id;
+            if (cId) session.threadsMap.set(cId, item);
+          }
           session.hasMore = Boolean(session.feed?.has_continuation);
         }
       }
@@ -3670,6 +3713,140 @@ async function startServer() {
     } catch (err) {
       console.error("Comments fetch error:", err);
       return res.json({ page, comments: [], hasMore: false });
+    }
+  });
+
+  // コメント返信取得 API（スレッド内の返信一覧 & ページネーション）
+  app.get(["/api/video/:id/comments/:commentId/replies", "/api/video/:id/comment/:commentId/replies"], async (req, res) => {
+    const videoId = req.params.id;
+    const commentId = req.params.commentId;
+    const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
+
+    const cacheKey = `replies:${videoId}:${commentId}:${page}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
+    const sessionKey = `${videoId}:${commentId}`;
+    const now = Date.now();
+
+    // 15分以上前の古いセッション削除
+    for (const [k, v] of commentRepliesSessions.entries()) {
+      if (now - v.lastAccess > 15 * 60 * 1000) {
+        commentRepliesSessions.delete(k);
+      }
+    }
+
+    try {
+      let repliesSession = commentRepliesSessions.get(sessionKey);
+
+      // 2ページ目以降の返信取得
+      if (repliesSession && page > 1 && repliesSession.currentPage < page && repliesSession.hasMore && repliesSession.feed) {
+        if (typeof repliesSession.feed.getContinuation === "function") {
+          const nextFeed = await repliesSession.feed.getContinuation();
+          repliesSession.feed = nextFeed;
+          repliesSession.currentPage++;
+          const rawReplies = nextFeed?.replies || nextFeed?.contents || [];
+          const nextBatch = parseCommentsList(rawReplies);
+          repliesSession.replies = [...repliesSession.replies, ...nextBatch];
+          repliesSession.hasMore = Boolean(nextFeed?.has_continuation);
+          repliesSession.lastAccess = now;
+
+          const result = {
+            commentId,
+            page,
+            replies: repliesSession.replies,
+            hasMore: repliesSession.hasMore,
+          };
+          setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+          res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+          return res.json(result);
+        }
+      }
+
+      // 既に取得済みの1ページ目
+      if (repliesSession && page === 1 && repliesSession.replies.length > 0) {
+        repliesSession.lastAccess = now;
+        const result = {
+          commentId,
+          page: 1,
+          replies: repliesSession.replies,
+          hasMore: repliesSession.hasMore,
+        };
+        return res.json(result);
+      }
+
+      // 対象のスレッドを特定
+      let targetThread: any = null;
+      const topSession = commentsSessions.get(`${videoId}:top`);
+      const newestSession = commentsSessions.get(`${videoId}:newest`);
+      if (topSession?.threadsMap?.has(commentId)) {
+        targetThread = topSession.threadsMap.get(commentId);
+      } else if (newestSession?.threadsMap?.has(commentId)) {
+        targetThread = newestSession.threadsMap.get(commentId);
+      }
+
+      // メモリになければInnertubeから再検索
+      const youtube = await getYt();
+      if (!targetThread) {
+        const commentsData = await youtube.getComments(videoId);
+        for (const item of (commentsData?.contents as any[]) || []) {
+          const cId = item?.comment?.comment_id || item?.comment?.id || item?.id;
+          if (cId === commentId) {
+            targetThread = item;
+            break;
+          }
+        }
+
+        // 見つからない場合は継続フィードを最大3回検索
+        let searchFeed = commentsData;
+        let attempts = 0;
+        while (!targetThread && searchFeed?.has_continuation && attempts < 3) {
+          searchFeed = await searchFeed.getContinuation();
+          attempts++;
+          for (const item of (searchFeed?.contents as any[]) || []) {
+            const cId = item?.comment?.comment_id || item?.comment?.id || item?.id;
+            if (cId === commentId) {
+              targetThread = item;
+              break;
+            }
+          }
+        }
+      }
+
+      if (targetThread && typeof targetThread.getReplies === "function") {
+        const repliesFeed = await targetThread.getReplies();
+        const rawReplies = repliesFeed?.replies || repliesFeed?.contents || [];
+        const parsedReplies = parseCommentsList(rawReplies);
+        const hasMore = Boolean(repliesFeed?.has_continuation);
+
+        commentRepliesSessions.set(sessionKey, {
+          videoId,
+          commentId,
+          currentPage: 1,
+          feed: repliesFeed,
+          replies: parsedReplies,
+          hasMore,
+          lastAccess: now,
+        });
+
+        const result = {
+          commentId,
+          page: 1,
+          replies: parsedReplies,
+          hasMore,
+        };
+        setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+        return res.json(result);
+      }
+
+      return res.json({ commentId, page: 1, replies: [], hasMore: false });
+    } catch (err) {
+      console.error(`[CommentReplies] Error fetching replies for ${commentId}:`, err);
+      return res.json({ commentId, page: 1, replies: [], hasMore: false });
     }
   });
 
