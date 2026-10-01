@@ -481,25 +481,10 @@ export default function ChannelPage({
         {activeTab === 'shorts' && (
           <div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {shortList.map((short, index) => (
+              {shortList.map((short) => (
                 <div
                   key={short.videoId}
-                  onClick={() => {
-                    try {
-                      sessionStorage.setItem(
-                        'xerox_channel_shorts',
-                        JSON.stringify({
-                          channelId: channelData?.id || channelId,
-                          channelTitle: channelData?.title || '',
-                          shorts: shortList,
-                          currentIndex: index,
-                        })
-                      );
-                    } catch {}
-                    navigate(
-                      `/shorts/${short.videoId}?from=channel&channelId=${encodeURIComponent(channelData?.id || channelId)}`
-                    );
-                  }}
+                  onClick={() => onVideoSelect(short.videoId)}
                   className="group cursor-pointer flex flex-col gap-2"
                 >
                   <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">

@@ -43,7 +43,7 @@ async function getYt() {
 
   ytInstancePromise = (async () => {
     let attempts = 0;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     while (attempts < maxAttempts) {
       try {
@@ -74,7 +74,7 @@ async function getYt() {
           ytInstancePromise = null;
           throw err;
         }
-        await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
     throw new Error("Failed to initialize YT after multiple attempts");
@@ -433,7 +433,7 @@ const decryptData = (encryptedData: any) => {
   return JSON.parse(decrypted);
 };
 
-function createServer() {
+async function startServer() {
   const app = express();
 
   // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
@@ -787,7 +787,7 @@ function createServer() {
     for (const [k, v] of memoryCache.entries()) {
       if (v.expires <= now) memoryCache.delete(k);
     }
-  }, 5 * 60 * 1000).unref?.();
+  }, 5 * 60 * 1000);
 
   const handleStreamRequest = async (req: express.Request, res: express.Response) => {
     try {
@@ -1955,17 +1955,8 @@ function createServer() {
         .split(/、他|\s*and\s+\d+\s+other/i)[0]
         .trim();
 
-      const decoratedAvatar = v.metadata?.image?.avatar;
-      const decAvatarImages = decoratedAvatar?.image || decoratedAvatar?.thumbnails || v.metadata?.avatar?.thumbnails;
-      const decAvatarUrl = Array.isArray(decAvatarImages) ? decAvatarImages[0]?.url : (decAvatarImages?.url || decoratedAvatar?.url);
-
-      const tapBrowseId =
-        v.metadata?.image?.renderer_context?.command_context?.on_tap?.payload?.browseId ||
-        v.metadata?.image?.renderer_context?.command_context?.on_tap?.endpoint?.browse_endpoint?.browse_id;
-
       let finalAuthorId =
         authorIdCandidate ||
-        (isValidChannelId(tapBrowseId) ? tapBrowseId : undefined) ||
         (collabInfo?.id && isValidChannelId(collabInfo.id) ? collabInfo.id : undefined) ||
         (v.metadata?.avatar?.endpoint?.payload?.browseId && isValidChannelId(v.metadata.avatar.endpoint.payload.browseId) ? v.metadata.avatar.endpoint.payload.browseId : undefined) ||
         (v.content_image?.endpoint?.payload?.browseId && isValidChannelId(v.content_image.endpoint.payload.browseId) ? v.content_image.endpoint.payload.browseId : undefined) ||
@@ -1973,7 +1964,6 @@ function createServer() {
 
       let authorAvatar = "";
       const avatarCandidate =
-        decAvatarUrl ||
         collabInfo?.avatar ||
         v.metadata?.avatar?.thumbnails?.[0]?.url ||
         v.metadata?.avatar?.[0]?.url ||
@@ -1985,11 +1975,6 @@ function createServer() {
         authorAvatar = avatarCandidate.startsWith("//")
           ? "https:" + avatarCandidate
           : avatarCandidate;
-      }
-
-      if (!authorAvatar && finalAuthorId && batchChannelCache.has(finalAuthorId)) {
-        const cached = batchChannelCache.get(finalAuthorId)!;
-        authorAvatar = cached.authorAvatar;
       }
 
       if (
@@ -2005,15 +1990,8 @@ function createServer() {
       }
 
       if (authorAvatar) {
-        if (isValidAuthorName(cleanAuthorCandidate)) {
+        if (isValidAuthorName(cleanAuthorCandidate) && isValidChannelId(finalAuthorId)) {
           safeSetBatchChannelCache(cleanAuthorCandidate, {
-            author: cleanAuthorCandidate,
-            authorAvatar,
-            authorId: finalAuthorId,
-          });
-        }
-        if (isValidChannelId(finalAuthorId)) {
-          safeSetBatchChannelCache(finalAuthorId, {
             author: cleanAuthorCandidate,
             authorAvatar,
             authorId: finalAuthorId,
@@ -2155,11 +2133,6 @@ function createServer() {
       }
     }
 
-    if (!authorAvatar && finalAuthorId && batchChannelCache.has(finalAuthorId)) {
-      const cached = batchChannelCache.get(finalAuthorId);
-      if (cached?.authorAvatar) authorAvatar = cached.authorAvatar;
-    }
-
     if (!authorAvatar && isValidAuthorName(cleanAuthor) && batchChannelCache.has(cleanAuthor)) {
       const cached = batchChannelCache.get(cleanAuthor);
       if (cached?.authorAvatar) authorAvatar = cached.authorAvatar;
@@ -2172,15 +2145,8 @@ function createServer() {
       if (authorAvatar.startsWith("//")) {
         authorAvatar = "https:" + authorAvatar;
       }
-      if (isValidAuthorName(cleanAuthor)) {
+      if (isValidAuthorName(cleanAuthor) && isValidChannelId(finalAuthorId)) {
         safeSetBatchChannelCache(cleanAuthor, {
-          author: cleanAuthor,
-          authorAvatar: authorAvatar,
-          authorId: finalAuthorId,
-        });
-      }
-      if (isValidChannelId(finalAuthorId)) {
-        safeSetBatchChannelCache(finalAuthorId, {
           author: cleanAuthor,
           authorAvatar: authorAvatar,
           authorId: finalAuthorId,
@@ -2741,37 +2707,9 @@ function createServer() {
           [finalVideos[i], finalVideos[j]] = [finalVideos[j], finalVideos[i]];
         }
 
-        const homeShorts: any[] = [];
-        const seenHomeShorts = new Set<string>();
-        [...formattedPersonalized, ...formattedGeneral].forEach((v: any) => {
-          if (
-            (v.lengthSeconds > 0 && v.lengthSeconds <= 60) ||
-            v.title.toLowerCase().includes("short") ||
-            v.title.includes("#shorts") ||
-            v.type === "ShortsLockupView" ||
-            v.type === "ReelItem"
-          ) {
-            if (!seenHomeShorts.has(v.videoId)) {
-              seenHomeShorts.add(v.videoId);
-              homeShorts.push(v);
-            }
-          }
-        });
-
-        // チャンネルアイコンの事前一括解決（後から個別に取得するのを防止）
-        [...finalVideos, ...homeShorts].forEach((v: any) => {
-          if ((!v.authorAvatar || v.authorAvatar.includes("ui-avatars.com")) && v.authorId && batchChannelCache.has(v.authorId)) {
-            v.authorAvatar = batchChannelCache.get(v.authorId)!.authorAvatar;
-          }
-          if ((!v.authorAvatar || v.authorAvatar.includes("ui-avatars.com")) && v.author && batchChannelCache.has(v.author)) {
-            v.authorAvatar = batchChannelCache.get(v.author)!.authorAvatar;
-          }
-        });
-
         res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
         return res.json({
           videos: finalVideos,
-          shorts: homeShorts.slice(0, 16),
           aiKeywords: geminiKeywords,
           seed: seed,
         });
@@ -2788,7 +2726,6 @@ function createServer() {
       res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       return res.json({
         videos: fallbackVideos,
-        shorts: [],
         aiKeywords: [],
         seed: seed,
       });
@@ -2838,16 +2775,13 @@ function createServer() {
   app.get("/api/search", async (req, res) => {
     const q = (req.query.q as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
-    const filterType = (req.query.type as string) || "all"; // 'all' | 'channel' | 'video' | 'shorts'
+    const filterType = (req.query.type as string) || "all"; // 'all' | 'channel' | 'video'
 
     if (!q.trim()) {
       return res.json({ videos: [], channels: [] });
     }
 
-    const searchQuery = filterType === "shorts"
-      ? (page > 1 ? `${q} #shorts ${page}` : `${q} #shorts`)
-      : (page > 1 ? `${q} ${page}` : q);
-
+    const searchQuery = page > 1 ? `${q} ${page}` : q;
     const cacheKey = `search:${searchQuery.toLowerCase().trim()}:${filterType}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
@@ -2874,8 +2808,8 @@ function createServer() {
         searchPromises.push(Promise.resolve(null));
       }
 
-      // チャンネル検索（filterType !== 'video' かつ filterType !== 'shorts' かつ page 1 の場合）
-      if (filterType !== "video" && filterType !== "shorts" && page === 1) {
+      // チャンネル検索（filterType !== 'video' かつ page 1 の場合）
+      if (filterType !== "video" && page === 1) {
         searchPromises.push(
           youtube.search(q, { type: "channel" }).catch((err) => {
             console.warn("[Search] Channel search error:", err?.message || err);
@@ -2900,8 +2834,6 @@ function createServer() {
               r.type === "Video" ||
               r.type === "Playlist" ||
               r.type === "Mix" ||
-              r.type === "ShortsLockupView" ||
-              r.type === "ReelItem" ||
               r.id,
           );
         }
@@ -2913,19 +2845,6 @@ function createServer() {
         videos = rawResults
           .map((v: any) => formatVideoObject(v))
           .filter((v) => v !== null);
-
-        // ショートタブの場合はショート動画のみに絞り込み
-        if (filterType === "shorts") {
-          videos = videos.filter((v: any) => {
-            return (
-              (v.lengthSeconds > 0 && v.lengthSeconds <= 60) ||
-              v.title.toLowerCase().includes("short") ||
-              v.title.includes("#shorts") ||
-              v.type === "ShortsLockupView" ||
-              v.type === "ReelItem"
-            );
-          });
-        }
       }
 
       // チャンネルのフォーマット
@@ -2970,175 +2889,6 @@ function createServer() {
           videos: [],
           channels: [],
         });
-    }
-  });
-
-  // ショートおすすめ API（動画詳細の watch_next_feed および過去の視聴履歴から抽出）
-  app.get("/api/shorts/recommendations", async (req, res) => {
-    const videoId = (req.query.videoId as string) || "";
-    const historyIds = ((req.query.historyIds as string) || "")
-      .split(",")
-      .filter((id) => id && id.trim().length > 0);
-    const page = parseInt((req.query.page as string) || "1", 10);
-
-    const cacheKey = `shorts_recs:${videoId}:${historyIds.slice(0, 5).join("_")}:${page}`;
-    const cached = getFromMemoryCache<any>(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(cached);
-    }
-
-    try {
-      const youtube = await getYt();
-      const shortsList: any[] = [];
-      const seenIds = new Set<string>();
-      if (videoId) seenIds.add(videoId);
-
-      // 1. 指定された動画IDの watch_next_feed からショートおすすめを抽出
-      if (videoId) {
-        try {
-          const info = await youtube.getInfo(videoId).catch(() => youtube.getBasicInfo(videoId));
-          if (info && info.watch_next_feed) {
-            for (const item of info.watch_next_feed) {
-              if (item.type === "ReelShelf" || item.type === "ShortsLockupView" || item.type === "ReelItem") {
-                const subItems = (item as any).items || (item as any).contents || (item as any).content?.items || [item];
-                for (const sub of subItems) {
-                  const formatted = formatVideoObject(sub);
-                  if (formatted && formatted.videoId && !seenIds.has(formatted.videoId)) {
-                    seenIds.add(formatted.videoId);
-                    shortsList.push(formatted);
-                  }
-                }
-              } else {
-                const formatted = formatVideoObject(item);
-                if (formatted && formatted.videoId && !seenIds.has(formatted.videoId)) {
-                  if (formatted.lengthSeconds <= 60 || formatted.title.includes("#shorts") || formatted.title.toLowerCase().includes("short")) {
-                    seenIds.add(formatted.videoId);
-                    shortsList.push(formatted);
-                  }
-                }
-              }
-            }
-          }
-        } catch (e) {
-          console.warn("[Shorts Recs] Error inspecting watch_next_feed:", e);
-        }
-      }
-
-      // 2. 過去の視聴履歴から関連ショートを取得
-      if (shortsList.length < 20 && historyIds.length > 0) {
-        const sampleHistory = historyIds.slice(0, 4);
-        for (const hId of sampleHistory) {
-          if (shortsList.length >= 30) break;
-          try {
-            const hInfo = await youtube.getBasicInfo(hId).catch(() => null);
-            if (hInfo?.basic_info?.title) {
-              const query = `${hInfo.basic_info.title.slice(0, 25)} #shorts`;
-              const sRes = await youtube.search(query, { type: "video" }).catch(() => null);
-              if (sRes?.videos) {
-                for (const v of sRes.videos) {
-                  const f = formatVideoObject(v);
-                  if (f && f.videoId && !seenIds.has(f.videoId)) {
-                    if (f.lengthSeconds <= 60 || f.title.includes("#shorts") || f.title.toLowerCase().includes("short")) {
-                      seenIds.add(f.videoId);
-                      shortsList.push(f);
-                    }
-                  }
-                }
-              }
-            }
-          } catch {}
-        }
-      }
-
-      // 3. 不足分のフォールバック: 人気ショート検索
-      if (shortsList.length < 20) {
-        const queries = ["#shorts 日本 人気 2026", "#shorts 面白い バズ", "#shorts 最新 トレンド"];
-        const q = queries[(page - 1) % queries.length];
-        const popSearch = await youtube.search(q, { type: "video" }).catch(() => null);
-        if (popSearch?.videos) {
-          for (const v of popSearch.videos) {
-            const f = formatVideoObject(v);
-            if (f && f.videoId && !seenIds.has(f.videoId)) {
-              if (f.lengthSeconds <= 60 || f.title.includes("#shorts") || f.title.toLowerCase().includes("short")) {
-                seenIds.add(f.videoId);
-                shortsList.push(f);
-              }
-            }
-          }
-        }
-      }
-
-      // 各ショートのチャンネルアイコンを確実化
-      shortsList.forEach((s) => {
-        if ((!s.authorAvatar || s.authorAvatar.includes("ui-avatars.com")) && s.authorId && batchChannelCache.has(s.authorId)) {
-          s.authorAvatar = batchChannelCache.get(s.authorId)!.authorAvatar;
-        }
-      });
-
-      const result = { shorts: shortsList };
-      setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(result);
-    } catch (err) {
-      console.error("[Shorts Recs Error]:", err);
-      return res.json({ shorts: [] });
-    }
-  });
-
-  // 個別ショート情報 API
-  app.get("/api/shorts/:id", async (req, res) => {
-    const videoId = req.params.id;
-    const cacheKey = `short:${videoId}`;
-    const cached = getFromMemoryCache<any>(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
-      return res.json(cached);
-    }
-
-    try {
-      const youtube = await getYt();
-      let info = await youtube.getInfo(videoId).catch(() => youtube.getBasicInfo(videoId));
-      const basic = info.basic_info;
-
-      let authorAvatar = "";
-      if ((basic as any).author_thumbnail?.[0]?.url) authorAvatar = (basic as any).author_thumbnail[0].url;
-      else if ((basic as any).author_thumbnails?.[0]?.url) authorAvatar = (basic as any).author_thumbnails[0].url;
-
-      if (!authorAvatar && basic.channel_id && batchChannelCache.has(basic.channel_id)) {
-        authorAvatar = batchChannelCache.get(basic.channel_id)!.authorAvatar;
-      }
-      if (!authorAvatar && basic.author && batchChannelCache.has(basic.author)) {
-        authorAvatar = batchChannelCache.get(basic.author)!.authorAvatar;
-      }
-
-      const result = {
-        videoId,
-        title: basic.title || "",
-        description: basic.short_description || "",
-        author: basic.author || "チャンネル",
-        authorId: basic.channel_id || "",
-        authorAvatar: authorAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(basic.author || 'Short')}&background=random&color=fff&size=128`,
-        viewCount: basic.view_count || 0,
-        likeCount: (info as any).primary_info?.menu?.top_level_buttons?.find((b: any) => b.like_button)?.like_button?.like_count || basic.like_count || "高評価",
-        commentCount: (info as any).primary_info?.comments_entry_point_header?.comment_count?.text || "",
-        videoThumbnails: basic.thumbnail || [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
-      };
-
-      setToMemoryCache(cacheKey, result, 30 * 60 * 1000);
-      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
-      return res.json(result);
-    } catch (err) {
-      console.error("[Short Info Error]:", err);
-      return res.json({
-        videoId,
-        title: "ショート動画",
-        description: "",
-        author: "チャンネル",
-        authorAvatar: "",
-        viewCount: 0,
-        likeCount: "高評価",
-      });
     }
   });
 
@@ -3564,30 +3314,6 @@ function createServer() {
         .filter((k: string) => k.length > 0);
       const combinedTags = Array.from(new Set([...hashMatches, ...keywords]));
 
-      // watch_next_feed からショートおすすめを抽出
-      const recommendedShorts: any[] = [];
-      const seenShortsIds = new Set<string>();
-      (info.watch_next_feed || []).forEach((item: any) => {
-        if (item.type === "ReelShelf" || item.type === "ShortsLockupView" || item.type === "ReelItem") {
-          const subItems = item.items || item.contents || item.content?.items || [item];
-          subItems.forEach((sub: any) => {
-            const formatted = formatVideoObject(sub);
-            if (formatted && formatted.videoId && !seenShortsIds.has(formatted.videoId)) {
-              seenShortsIds.add(formatted.videoId);
-              recommendedShorts.push(formatted);
-            }
-          });
-        } else {
-          const formatted = formatVideoObject(item);
-          if (formatted && formatted.videoId && (formatted.lengthSeconds <= 60 || formatted.title.includes("#shorts") || formatted.title.toLowerCase().includes("short"))) {
-            if (!seenShortsIds.has(formatted.videoId)) {
-              seenShortsIds.add(formatted.videoId);
-              recommendedShorts.push(formatted);
-            }
-          }
-        }
-      });
-
       const videoData = {
         videoId: videoId,
         title: basic?.title || primary?.title?.text,
@@ -3608,7 +3334,6 @@ function createServer() {
         subCount: parseCount(owner?.subscriber_count?.text),
         videoThumbnails: basic?.thumbnail || [],
         recommendedVideos: recs,
-        recommendedShorts: recommendedShorts.slice(0, 10),
       };
 
       // 関連動画セッションを即座にウォームアップ
@@ -3641,7 +3366,6 @@ function createServer() {
     lastAccess: number;
   }
   const commentsSessions = new Map<string, CommentsSession>();
-  const commentThreadsCache = new Map<string, any>();
 
   // 関連動画セッション・キャッシュ管理
   interface RelatedVideosSession {
@@ -3689,22 +3413,8 @@ function createServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
-
-        const cid = c.comment_id || c.id || Math.random().toString();
-        if (cid && item && typeof item.getReplies === "function") {
-          commentThreadsCache.set(cid, item);
-        }
-
-        const rawReplyCount = c.reply_count || item.reply_count || 0;
-        let parsedReplyCount = 0;
-        if (typeof rawReplyCount === "number") {
-          parsedReplyCount = rawReplyCount;
-        } else if (typeof rawReplyCount === "string") {
-          parsedReplyCount = parseCount(rawReplyCount) || parseInt(rawReplyCount.replace(/\D/g, ""), 10) || 0;
-        }
-
         comments.push({
-          id: cid,
+          id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
           authorId:
             c.author?.id ||
@@ -3715,91 +3425,11 @@ function createServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
-          replyCount: parsedReplyCount > 0 ? parsedReplyCount : (c.reply_count || 0),
-          hasReplies: Boolean(item.has_replies || parsedReplyCount > 0 || (c.reply_count && c.reply_count !== "0")),
         });
       }
     }
     return comments;
   }
-
-  // コメントの返信取得 API（YouTubeの返信表示対応）
-  app.get("/api/video/:id/comment/:commentId/replies", async (req, res) => {
-    const { id: videoId, commentId } = req.params;
-    const cacheKey = `replies:${videoId}:${commentId}`;
-    const cached = getFromMemoryCache<any>(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(cached);
-    }
-
-    try {
-      let thread = commentThreadsCache.get(commentId);
-      const youtube = await getYt();
-
-      if (!thread || typeof thread.getReplies !== "function") {
-        for (const session of commentsSessions.values()) {
-          if (session.videoId === videoId && session.feed?.contents) {
-            const found = session.feed.contents.find((item: any) => {
-              const c = item.comment || item;
-              return c?.comment_id === commentId || c?.id === commentId;
-            });
-            if (found && typeof found.getReplies === "function") {
-              thread = found;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!thread || typeof thread.getReplies !== "function") {
-        const commentsData = await youtube.getComments(videoId);
-        if (commentsData?.contents) {
-          for (const item of commentsData.contents) {
-            const c: any = item.comment || item;
-            if (c?.comment_id === commentId || c?.id === commentId) {
-              thread = item;
-              break;
-            }
-          }
-        }
-      }
-
-      if (!thread || typeof thread.getReplies !== "function") {
-        return res.json({ replies: [] });
-      }
-
-      const repliesFeed = await thread.getReplies();
-      const rawReplies = repliesFeed.replies || repliesFeed.contents || [];
-      const replies = (Array.isArray(rawReplies) ? rawReplies : []).map((r: any) => {
-        const c = r.comment || r;
-        let authorAvatar =
-          c.author?.thumbnails?.[c.author?.thumbnails?.length - 1]?.url ||
-          c.author?.thumbnails?.[0]?.url ||
-          c.author?.avatar_thumbnail_url ||
-          "";
-        if (authorAvatar.startsWith("//")) authorAvatar = "https:" + authorAvatar;
-
-        return {
-          id: c.comment_id || c.id || Math.random().toString(),
-          author: c.author?.name || c.author?.text || "匿名ユーザー",
-          authorId: c.author?.id || "",
-          authorAvatar,
-          text: c.content?.text || c.text || "",
-          publishedTime: c.published_time || c.published || "最近",
-          likeCount: c.like_count || c.vote_count || "0",
-        };
-      });
-
-      const result = { replies };
-      setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(result);
-    } catch (err) {
-      console.error("[Replies fetch error]:", err);
-      return res.json({ replies: [] });
-    }
-  });
 
   // コメント取得 API（人気順・新しい順 & 2ページ目以降の無限スクロール対応）
   app.get("/api/video/:id/comments", async (req, res) => {
@@ -4111,35 +3741,9 @@ function createServer() {
         hasMore = collectedVideos.length > 0 || page < 10;
       }
 
-      // 1ページ目の場合、watch_next_feedからショート動画も抽出
-      let relatedShorts: any[] = [];
-      if (page === 1 && session?.feed?.watch_next_feed) {
-        const seenShorts = new Set<string>();
-        for (const item of session.feed.watch_next_feed) {
-          if (item.type === "ReelShelf" || item.type === "ShortsLockupView" || item.type === "ReelItem") {
-            const sub = item.items || item.contents || item.content?.items || [item];
-            for (const s of sub) {
-              const f = formatVideoObject(s);
-              if (f && f.videoId && !seenShorts.has(f.videoId)) {
-                seenShorts.add(f.videoId);
-                relatedShorts.push(f);
-              }
-            }
-          }
-        }
-      }
-
-      // チャンネルアイコンの事前解決
-      videos.forEach((v: any) => {
-        if ((!v.authorAvatar || v.authorAvatar.includes("ui-avatars.com")) && v.authorId && batchChannelCache.has(v.authorId)) {
-          v.authorAvatar = batchChannelCache.get(v.authorId)!.authorAvatar;
-        }
-      });
-
       const result = {
         page,
         videos,
-        shorts: relatedShorts.slice(0, 10),
         hasMore,
       };
 
@@ -5051,51 +4655,26 @@ function createServer() {
     }
   });
 
-  // --- AI Studio API ---
-  app.post(
-    "/api/aistudio/chat",
-    express.json({ limit: "50mb" }),
-    async (req, res) => {
-      try {
-        const { messages, systemInstruction, temperature, model } = req.body;
+  // 500 Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("[Fatal Error]", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({
+      error: "サーバー内部でエラーが発生しました。",
+      message: err.message,
+    });
+  });
 
-        const selectedModel = model || "gemini-3.5-flash-lite";
-        const response = await genAI.models.generateContent({
-          model: selectedModel,
-          contents: messages,
-          config: {
-            systemInstruction,
-            temperature: temperature || 0.7,
-          },
-        });
-
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-        return res.json({ text: response.text });
-      } catch (e: any) {
-        console.error("[AI Studio] Error calling Gemini API:", e);
-        res.status(500).json({ error: e.message || String(e) });
-      }
-    },
-  );
-
-  const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION);
-  const isProduction = process.env.NODE_ENV === "production" || isVercel;
-
-  if (!isProduction && !isVercel) {
-    import("vite")
-      .then(({ createServer: createViteServer }) => {
-        return createViteServer({
-          server: { middlewareMode: true },
-          appType: "spa",
-        });
-      })
-      .then((vite) => {
-        app.use(vite.middlewares);
-      })
-      .catch((err) => {
-        console.warn("[Server] Vite middleware load skipped:", err.message);
-      });
-  } else if (!isVercel) {
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
     const distPath = path.join(process.cwd(), "dist");
 
     // Service Worker やマニフェスト、HTMLはキャッシュさせず、サイト変更を即時検知できるようにする
@@ -5120,28 +4699,43 @@ function createServer() {
     });
   }
 
-  // 500 Error Handler
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error("[Fatal Error]", err);
-    if (res.headersSent) {
-      return next(err);
-    }
-    res.status(500).json({
-      error: "サーバー内部でエラーが発生しました。",
-      message: err.message,
-    });
-  });
+  // --- AI Studio API ---
+  app.post(
+    "/api/aistudio/chat",
+    express.json({ limit: "50mb" }),
+    async (req, res) => {
+      try {
+        const { messages, systemInstruction, temperature, model } = req.body;
 
-  if (!isVercel) {
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
-      // Warm up YouTube client
-      getYt().catch((err) => console.error("Initial YT warmup failed:", err));
-    });
-  }
+        const selectedModel = model || "gemini-3.5-flash-lite";
+        const response = await genAI.models.generateContent({
+          model: selectedModel,
+          contents: messages,
+          config: {
+            systemInstruction,
+            temperature: temperature || 0.7,
+          },
+        });
+
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+    return res.json({ text: response.text });
+      } catch (e) {
+        console.error("[AI Studio] Error calling Gemini API:", e);
+        res.status(500).json({ error: e.message || String(e) });
+      }
+    },
+  );
+
+  // ---------------------
+
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+    // Warm up YouTube client
+    getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+  });
 
   return app;
 }
 
-const app = createServer();
-export default app;
+const appPromise = startServer();
+export default appPromise;

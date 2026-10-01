@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Video, Comment, CommentReply, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
+import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON, isDailyVideoLimitReached } from '../utils';
 import { localAI } from '../lib/intelligence';
 import { 
@@ -11,175 +11,73 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import Avatar from './Avatar';
-import ShortsShelf from './ShortsShelf';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
 interface CommentItemProps {
   comment: Comment;
-  videoId: string;
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, videoId, onSelectChannel }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showReplies, setShowReplies] = useState(false);
-  const [replies, setReplies] = useState<CommentReply[]>([]);
-  const [loadingReplies, setLoadingReplies] = useState(false);
   
   // 3行以上または長いテキストの判定
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
 
-  const hasReplies = Boolean(
-    comment.hasReplies ||
-    (comment.replyCount && comment.replyCount !== '0' && comment.replyCount !== 0)
-  );
-  const repliesCount = comment.replyCount || 0;
-
-  const handleToggleReplies = async () => {
-    if (showReplies) {
-      setShowReplies(false);
-      return;
-    }
-
-    if (replies.length > 0) {
-      setShowReplies(true);
-      return;
-    }
-
-    setLoadingReplies(true);
-    try {
-      const res = await fetchJSON(
-        `/api/video/${encodeURIComponent(videoId)}/comment/${encodeURIComponent(comment.id)}/replies`
-      );
-      if (res?.replies && Array.isArray(res.replies)) {
-        setReplies(res.replies);
-      }
-      setShowReplies(true);
-    } catch (err) {
-      console.warn('Failed to load comment replies', err);
-    } finally {
-      setLoadingReplies(false);
-    }
-  };
-
   return (
-    <div className="flex flex-col gap-1 text-sm">
-      <div className="flex items-start gap-3">
-        <button 
-          onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-          className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
-          title={`${comment.author}のチャンネルを開く`}
-        >
-          <Avatar 
-            src={comment.authorAvatar} 
-            name={comment.author} 
-            channelId={comment.authorId}
-            className="w-9 h-9 text-xs shadow-xs" 
-          />
-        </button>
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-              className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
-            >
-              {comment.author}
-            </button>
-            <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
-          </div>
-          
-          <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
-            {comment.text}
-          </p>
+    <div className="flex items-start gap-3 text-sm">
+      <button 
+        onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+        className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
+        title={`${comment.author}のチャンネルを開く`}
+      >
+        <Avatar 
+          src={comment.authorAvatar} 
+          name={comment.author} 
+          channelId={comment.authorId}
+          className="w-9 h-9 text-xs shadow-xs" 
+        />
+      </button>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+            className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
+          >
+            {comment.author}
+          </button>
+          <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
+        </div>
+        
+        <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
+          {comment.text}
+        </p>
 
-          {isLong && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
-            >
-              {isExpanded ? '一部を表示' : '続きを読む'}
-            </button>
-          )}
+        {isLong && (
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
+          >
+            {isExpanded ? '一部を表示' : '続きを読む'}
+          </button>
+        )}
 
-          <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-            <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
-              <ThumbsUp size={14} />
-              <span>{comment.likeCount}</span>
-            </button>
-            <button className="hover:text-gray-900">
-              <ThumbsDown size={14} />
-            </button>
-            <button className="hover:text-gray-900 font-semibold">返信</button>
-          </div>
-
-          {/* YouTube風 返信トグルボタン */}
-          {hasReplies && (
-            <button
-              type="button"
-              onClick={handleToggleReplies}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-blue-600 hover:text-blue-700 hover:bg-blue-50/80 px-2.5 py-1 rounded-full self-start mt-1.5 transition-colors duration-150"
-            >
-              {showReplies ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              <span>{showReplies ? '返信を非表示' : `${repliesCount} 件の返信`}</span>
-            </button>
-          )}
+        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
+            <ThumbsUp size={14} />
+            <span>{comment.likeCount}</span>
+          </button>
+          <button className="hover:text-gray-900">
+            <ThumbsDown size={14} />
+          </button>
+          <button className="hover:text-gray-900 font-semibold">返信</button>
         </div>
       </div>
-
-      {/* 返信一覧 */}
-      {showReplies && (
-        <div className="pl-11 border-l-2 border-gray-100 ml-4.5 flex flex-col gap-3 mt-2">
-          {loadingReplies ? (
-            <div className="flex items-center gap-2 py-2 text-gray-500 text-xs">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
-              <span>返信を読み込み中...</span>
-            </div>
-          ) : replies.length === 0 ? (
-            <span className="text-xs text-gray-400 py-1">返信はありません</span>
-          ) : (
-            replies.map((reply) => (
-              <div key={reply.id} className="flex items-start gap-2.5">
-                <button
-                  onClick={() => onSelectChannel(reply.authorId || reply.author)}
-                  className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
-                >
-                  <Avatar
-                    src={reply.authorAvatar}
-                    name={reply.author}
-                    channelId={reply.authorId}
-                    className="w-7 h-7 text-[10px] shadow-xs"
-                  />
-                </button>
-                <div className="flex flex-col gap-0.5 flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => onSelectChannel(reply.authorId || reply.author)}
-                      className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
-                    >
-                      {reply.author}
-                    </button>
-                    <span className="text-[10px] text-gray-400 shrink-0">{reply.publishedTime}</span>
-                  </div>
-                  <p className="text-gray-800 text-xs leading-relaxed whitespace-pre-wrap break-words">
-                    {reply.text}
-                  </p>
-                  <div className="flex items-center gap-3 mt-0.5 text-[11px] text-gray-500">
-                    <span className="flex items-center gap-1">
-                      <ThumbsUp size={12} />
-                      <span>{reply.likeCount}</span>
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      )}
     </div>
   );
-};
+}
 
 interface LiveChatMessage {
   id: string;
@@ -1607,7 +1505,6 @@ export default function VideoPlayer({
                   <CommentItem 
                     key={comment.id} 
                     comment={comment} 
-                    videoId={videoId}
                     onSelectChannel={onSelectChannel} 
                   />
                 ))}
@@ -1754,15 +1651,6 @@ export default function VideoPlayer({
                 </button>
               ))}
             </div>
-
-            {/* ショートのおすすめ（動画の関連動画内） */}
-            {(activeVideo as any).recommendedShorts && (activeVideo as any).recommendedShorts.length > 0 && (
-              <ShortsShelf
-                shorts={(activeVideo as any).recommendedShorts}
-                isCompact={true}
-                title="ショート"
-              />
-            )}
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (
