@@ -273,190 +273,34 @@ export default function MainApp() {
     }
   };
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const skipNextSync = useRef(false);
-  const isDirtyRef = useRef(false);
-  const initialSyncFinishedRef = useRef(false);
-  const lastSyncedPayloadHashRef = useRef('');
-  const syncDebounceTimer = useRef<NodeJS.Timeout | null>(null);
-
-  const getSyncPayload = () => {
-    const searchHistory = safeStorage.getJSON<string[]>('xerox_yt_search_history', []);
-    return {
-      subscriptions,
-      watchHistory,
-      userPlaylists: playlists,
-      searchHistory,
-    };
-  };
-
-  const flushSync = () => {
-    if (!initialSyncFinishedRef.current || !isDirtyRef.current) return;
-    try {
-      const clientId = getClientUUID();
-      const payloadData = getSyncPayload();
-      const payloadHash = JSON.stringify(payloadData);
-      if (payloadHash === lastSyncedPayloadHashRef.current) {
-        isDirtyRef.current = false;
-        return;
-      }
-      lastSyncedPayloadHashRef.current = payloadHash;
-      isDirtyRef.current = false;
-
-      fetch('/api/sync/save', {
-        method: 'POST',
-        keepalive: true,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientId, data: payloadData }),
-      }).catch(() => {});
-    } catch {}
-  };
-
-  const performServerSync = () => {
-    if (!initialSyncFinishedRef.current || skipNextSync.current) return;
-    isDirtyRef.current = true;
-    if (syncDebounceTimer.current) {
-      clearTimeout(syncDebounceTimer.current);
-    }
-    syncDebounceTimer.current = setTimeout(async () => {
-      syncDebounceTimer.current = null;
-      if (!initialSyncFinishedRef.current || skipNextSync.current || !isDirtyRef.current) return;
-      try {
-        const clientId = getClientUUID();
-        const payloadData = getSyncPayload();
-        const payloadHash = JSON.stringify(payloadData);
-        if (payloadHash === lastSyncedPayloadHashRef.current) {
-          isDirtyRef.current = false;
-          return;
-        }
-
-        lastSyncedPayloadHashRef.current = payloadHash;
-        isDirtyRef.current = false;
-
-        await fetchJSON('/api/sync/save', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            clientId,
-            data: payloadData,
-          }),
-        });
-      } catch (e) {
-        console.warn('Server sync warning:', e);
-      }
-    }, 15000);
-  };
-
-  // 起動時の自動同期（シークレットモード・サンドボックスでもサーバーと同期して復元）
+  // 他タブ/ウィンドウ間のリアルタイム同期リスナー（ローカルストレージベース）
   useEffect(() => {
-    const initSync = async () => {
-      const clientId = getClientUUID();
-      setIsSyncing(true);
-      try {
-        const res = await fetchJSON('/api/sync/load', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clientId })
-        });
-        if (res && res.data) {
-          skipNextSync.current = true;
-          if (Array.isArray(res.data.subscriptions) && res.data.subscriptions.length > 0) {
-            setSubscriptions(res.data.subscriptions);
-            safeStorage.setJSON('xerox_subscriptions', res.data.subscriptions);
-          }
-          if (Array.isArray(res.data.watchHistory) && res.data.watchHistory.length > 0) {
-            setWatchHistory((prev) => {
-              const map = new Map<string, WatchHistoryItem>();
-              for (const item of [...prev, ...res.data.watchHistory]) {
-                if (item && item.videoId) {
-                  const existing = map.get(item.videoId);
-                  if (!existing || (item.timestamp || 0) > (existing.timestamp || 0)) {
-                    map.set(item.videoId, item);
-                  }
-                }
-              }
-              const merged = Array.from(map.values()).sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)).slice(0, 50);
-              safeStorage.setJSON('xerox_watch_history', merged);
-              return merged;
-            });
-          }
-          if (Array.isArray(res.data.userPlaylists) && res.data.userPlaylists.length > 0) {
-            setPlaylists(res.data.userPlaylists);
-            safeStorage.setJSON('xerox_user_playlists', res.data.userPlaylists);
-          }
-          if (Array.isArray(res.data.searchHistory) && res.data.searchHistory.length > 0) {
-            safeStorage.setJSON('xerox_yt_search_history', res.data.searchHistory);
-          }
-          // 初期ロードされたデータのハッシュを記録して初回重複保存を防止
-          lastSyncedPayloadHashRef.current = JSON.stringify({
-            subscriptions: res.data.subscriptions || [],
-            watchHistory: res.data.watchHistory || [],
-            userPlaylists: res.data.userPlaylists || [],
-            searchHistory: res.data.searchHistory || [],
-          });
-          setTimeout(() => {
-            skipNextSync.current = false;
-            initialSyncFinishedRef.current = true;
-          }, 1500);
-        } else {
-          initialSyncFinishedRef.current = true;
-        }
-      } catch (e) {
-        console.warn('Initial server sync warning:', e);
-        initialSyncFinishedRef.current = true;
-      } finally {
-        setIsSyncing(false);
-      }
-    };
-    initSync();
-
-    // ページ離脱・バックグラウンド移行時のセーフティフラッシュ
-    const handleVisibility = () => {
-      if (document.visibilityState === 'hidden') {
-        flushSync();
-      }
-    };
-    const handleBeforeUnload = () => {
-      flushSync();
-    };
-    window.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    // 他タブ/ウィンドウ間のリアルタイム同期リスナー
     const unsubscribe = safeStorage.onSync((key, value) => {
       if (key === 'xerox_watch_history' && value) {
         try {
           const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            skipNextSync.current = true;
             setWatchHistory(parsed);
-            setTimeout(() => { skipNextSync.current = false; }, 500);
           }
         } catch {}
       } else if (key === 'xerox_subscriptions' && value) {
         try {
           const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            skipNextSync.current = true;
             setSubscriptions(parsed);
-            setTimeout(() => { skipNextSync.current = false; }, 500);
           }
         } catch {}
       } else if (key === 'xerox_user_playlists' && value) {
         try {
           const parsed = JSON.parse(value);
           if (Array.isArray(parsed)) {
-            skipNextSync.current = true;
             setPlaylists(parsed);
-            setTimeout(() => { skipNextSync.current = false; }, 500);
           }
         } catch {}
       }
     });
 
     return () => {
-      window.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('beforeunload', handleBeforeUnload);
       unsubscribe();
     };
   }, []);
@@ -1199,7 +1043,6 @@ export default function MainApp() {
                   } else {
                     setWatchHistory([]);
                     safeStorage.removeItem('xerox_watch_history');
-                    performServerSync();
                   }
                 }}
                 onRemoveHistoryItem={(id) => {
@@ -1209,7 +1052,6 @@ export default function MainApp() {
                     setWatchHistory(prev => {
                       const updated = prev.filter(i => i.videoId !== id);
                       safeStorage.setJSON('xerox_watch_history', updated);
-                      performServerSync();
                       return updated;
                     });
                   }

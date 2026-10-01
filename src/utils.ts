@@ -303,7 +303,6 @@ export async function fetchJSON(url: string, options?: RequestInit) {
   const isGet = !options || !options.method || options.method === 'GET';
   const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
   const isTimeSensitive = 
-    url.includes('/sync/') || 
     url.includes('/auth/') || 
     url.includes('/stream') || 
     url.includes('/download-proxy');
