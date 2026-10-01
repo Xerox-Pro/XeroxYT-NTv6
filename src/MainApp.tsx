@@ -8,6 +8,7 @@ import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from '
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
+import ShortsPage from './components/ShortsPage';
 import VideoCard from './components/VideoCard';
 import VideoSkeleton from './components/VideoSkeleton';
 import TopProgressBar from './components/TopProgressBar';
@@ -25,7 +26,7 @@ import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo,
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON, parseYouTubeUrl } from './utils';
+import { fetchJSON, parseYouTubeUrl, formatNumberJP } from './utils';
 
 declare global {
   interface Window {
@@ -38,7 +39,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'shorts'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -46,6 +47,9 @@ export default function MainApp() {
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
+  const [shortsChannelId, setShortsChannelId] = useState<string | null>(null);
+  const [homeShorts, setHomeShorts] = useState<any[]>([]);
+  const [searchFilter, setSearchFilter] = useState<'all' | 'shorts'>('all');
   const [authFlow, setAuthFlow] = useState<{ userCode: string, verificationUrl: string } | null>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -99,13 +103,15 @@ export default function MainApp() {
       const parts = path.split('/');
       const shortId = parts[2]?.split('?')[0];
       if (shortId) {
-        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
+        setCurrentVideoId(shortId);
+        setView('shorts');
       }
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
         setSearchQuery(q);
         setView('search');
+        setSearchFilter('all');
         fetchSearch(q, 1, false);
       }
     } else if (path === '/watch') {
@@ -710,6 +716,16 @@ export default function MainApp() {
       });
       const result = await fetchJSON(`/api/recommendations?${queryParams.toString()}`);
 
+      if (!append) {
+        fetchJSON(`/api/shorts/recommendations?historyIds=${encodeURIComponent(historyIds)}`)
+          .then(shorts => {
+            if (Array.isArray(shorts)) {
+              setHomeShorts(shorts);
+            }
+          })
+          .catch(e => console.warn('Failed to fetch home shorts:', e));
+      }
+
       if (currentReqId !== recommendationRequestIdRef.current) return;
 
       let publicData: Video[] = [];
@@ -868,7 +884,7 @@ export default function MainApp() {
     }
   };
 
-  const handleVideoSelect = (videoId: string, videoObj?: Video) => {
+  const handleVideoSelect = (videoId: string, videoObj?: Video, isShort: boolean = false, channelId: string | null = null) => {
     if (videoObj) {
       localAI.processVideoInteraction(videoObj, 1.0);
       updateCache([videoObj]);
@@ -876,8 +892,13 @@ export default function MainApp() {
       localAI.processVideoInteraction(videoCache[videoId], 1.0);
     }
     
-    const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
-    navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
+    if (isShort) {
+      setShortsChannelId(channelId);
+      navigate(`/shorts/${videoId}`);
+    } else {
+      const playlistId = videoObj?.playlistId || (videoId && videoCache[videoId] ? (videoCache[videoId] as Video).playlistId : null);
+      navigate(`/watch?v=${videoId}${playlistId ? `&list=${playlistId}` : ''}`);
+    }
   };
 
   const handleSelectChannel = (channelIdOrName: string) => {
@@ -1023,13 +1044,21 @@ export default function MainApp() {
               )}
 
           {/* ビュー分岐 */}
-          {view === 'video' && currentVideoId ? (
+          {view === 'shorts' && currentVideoId ? (
+            <ShortsPage
+              initialVideoId={currentVideoId}
+              channelIdForQueue={shortsChannelId}
+              watchHistory={watchHistory}
+              onBackToHome={handleGoHome}
+              onSelectChannel={handleSelectChannel}
+            />
+          ) : view === 'video' && currentVideoId ? (
             <VideoPlayer
               key={currentVideoId}
               videoId={currentVideoId}
               playlistId={currentPlaylistId || undefined}
               initialVideo={videoCache[currentVideoId] || undefined}
-              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
+              onVideoSelect={(id, v, isShort) => handleVideoSelect(id, v, isShort)}
               onSelectChannel={handleSelectChannel}
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
@@ -1041,7 +1070,7 @@ export default function MainApp() {
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
               channelId={selectedChannelId}
-              onVideoSelect={(id) => handleVideoSelect(id)}
+              onVideoSelect={(id, isShort, chId) => handleVideoSelect(id, undefined, isShort, chId)}
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
               onSelectChannel={handleSelectChannel}
@@ -1129,10 +1158,40 @@ export default function MainApp() {
                   />
 
                   {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
+                  <div className="mb-4 border-b border-gray-200 pb-3 flex flex-wrap items-center justify-between gap-4">
                     <h2 className="text-lg font-bold text-gray-900 tracking-tight">
                       "{searchQuery}" の検索結果
                     </h2>
+                  </div>
+
+                  {/* 検索結果サブタブ */}
+                  <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
+                    <button
+                      onClick={() => {
+                        setSearchFilter('all');
+                        fetchSearch(searchQuery, 1, false);
+                      }}
+                      className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                        searchFilter === 'all'
+                          ? 'bg-black text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      すべて
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSearchFilter('shorts');
+                        fetchSearch(`${searchQuery} #shorts`, 1, false);
+                      }}
+                      className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all cursor-pointer ${
+                        searchFilter === 'shorts'
+                          ? 'bg-black text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      ショート動画
+                    </button>
                   </div>
                 </>
               )}
@@ -1151,27 +1210,94 @@ export default function MainApp() {
               )}
 
               {/* 動画リスト */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-                {videos.map((video, idx) => (
-                  <div key={`${video.videoId}-${idx}`} className="relative group">
-                    <VideoCard
-                      video={video}
-                      onClick={() => handleVideoSelect(video.videoId, video)}
-                      onSelectChannel={handleSelectChannel}
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPlaylistModalVideo(video);
-                      }}
-                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
-                      title="再生リストに保存"
+              {searchFilter === 'shorts' && view === 'search' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                  {videos.map((video, idx) => (
+                    <div 
+                      key={`${video.videoId}-${idx}`} 
+                      onClick={() => handleVideoSelect(video.videoId, video, true)}
+                      className="group cursor-pointer flex flex-col gap-2 animate-fade-in"
                     >
-                      + 保存
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      <div className="aspect-[9/16] rounded-2xl overflow-hidden bg-black relative border border-gray-200/80 shadow-xs">
+                        <img 
+                          src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
+                          alt={video.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/30 to-transparent text-white">
+                          <p className="text-xs font-bold line-clamp-2 leading-relaxed pr-1">
+                            {video.title}
+                          </p>
+                          <span className="text-[10px] text-gray-300 font-medium mt-1 block">
+                            {video.viewCount ? `${formatNumberJP(video.viewCount)}回視聴` : 'Shorts'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+                  {videos.map((video, idx) => (
+                    <React.Fragment key={`${video.videoId}-${idx}`}>
+                      <div className="relative group">
+                        <VideoCard
+                          video={video}
+                          onClick={() => handleVideoSelect(video.videoId, video)}
+                          onSelectChannel={handleSelectChannel}
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlaylistModalVideo(video);
+                          }}
+                          className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md cursor-pointer"
+                          title="再生リストに保存"
+                        >
+                          + 保存
+                        </button>
+                      </div>
+
+                      {/* ホーム画面にショートのおすすめを表示 */}
+                      {view === 'home' && idx === 5 && homeShorts.length > 0 && (
+                        <div className="col-span-full py-6 border-y border-gray-100 my-4 bg-gray-50/50 rounded-2xl px-4">
+                          <div className="flex items-center gap-2 mb-4">
+                            <span className="p-1 rounded-lg bg-red-50 text-red-600 font-extrabold flex items-center gap-1 text-sm select-none">
+                              ⚡
+                            </span>
+                            <h3 className="text-base font-extrabold text-gray-900">Shorts</h3>
+                          </div>
+                          <div className="flex gap-4 overflow-x-auto no-scrollbar scroll-smooth pb-2">
+                            {homeShorts.slice(0, 10).map((short) => (
+                              <div 
+                                key={short.videoId}
+                                onClick={() => handleVideoSelect(short.videoId, short, true)}
+                                className="w-[150px] sm:w-[170px] shrink-0 group cursor-pointer animate-fade-in"
+                              >
+                                <div className="aspect-[9/16] rounded-2xl overflow-hidden bg-black relative border border-gray-200/80 shadow-xs">
+                                  <img 
+                                    src={short.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
+                                    alt={short.title}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                  <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/30 to-transparent text-white">
+                                    <p className="text-xs font-bold line-clamp-2 leading-relaxed pr-1">
+                                      {short.title}
+                                    </p>
+                                    <span className="text-[10px] text-gray-300 font-medium mt-1 block">
+                                      {short.viewCount ? `${formatNumberJP(short.viewCount)}回視聴` : 'Shorts'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              )}
 
               {/* 検索結果が動画もチャンネルもない場合 */}
               {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (

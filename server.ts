@@ -2294,6 +2294,7 @@ async function startServer() {
         const home = await youtube.getHomeFeed();
         const videos = extractVideosFromFeed(home);
         if (videos && videos.length > 0) {
+          await resolveAvatarsForVideos(videos);
           res.setHeader("Cache-Control", "private, no-cache, no-store, must-revalidate");
           return res.json({
             videos: videos,
@@ -2707,6 +2708,8 @@ async function startServer() {
           [finalVideos[i], finalVideos[j]] = [finalVideos[j], finalVideos[i]];
         }
 
+        await resolveAvatarsForVideos(finalVideos);
+
         res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
         return res.json({
           videos: finalVideos,
@@ -2723,6 +2726,8 @@ async function startServer() {
         .map((v: any) => formatVideoObject(v))
         .filter((v: any) => v && v.videoId);
 
+      await resolveAvatarsForVideos(fallbackVideos);
+
       res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
       return res.json({
         videos: fallbackVideos,
@@ -2733,6 +2738,214 @@ async function startServer() {
       console.error("[Recs] Recommendations API error:", err);
       res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
       return res.json({ videos: [], aiKeywords: [], seed: seed });
+    }
+  });
+
+  // 安全で高速なアバター解決関数
+  async function resolveAvatarsForVideos(videos: any[]) {
+    if (!videos || !Array.isArray(videos)) return;
+    try {
+      const youtube = await getYt();
+      
+      // 1. キャッシュから極力引く
+      for (const v of videos) {
+        if (!v) continue;
+        const key = v.authorId || v.author;
+        if (key && typeof batchChannelCache !== "undefined" && batchChannelCache.has(key)) {
+          const cached = batchChannelCache.get(key);
+          if (cached) {
+            v.authorAvatar = cached.authorAvatar;
+            if (cached.authorId) v.authorId = cached.authorId;
+          }
+        }
+      }
+
+      // 2. プレースホルダー（ui-avatars）のものを最大15件並列取得
+      const missing = videos.filter(
+        v => v && (!v.authorAvatar || v.authorAvatar.includes("ui-avatars.com"))
+      ).slice(0, 15);
+
+      if (missing.length === 0) return;
+
+      await Promise.all(
+        missing.map(async (v) => {
+          try {
+            let avatarUrl = "";
+            let chId = v.authorId;
+            const originalAuthor = v.author || "";
+            const cleanAuthor = originalAuthor
+              .split(/、他|\s*and\s+\d+\s+other/i)[0]
+              .trim();
+            const authorName = cleanAuthor || originalAuthor;
+
+            if (isValidChannelId(chId)) {
+              try {
+                const ch = await youtube.getChannel(chId);
+                const header = ch.header as any;
+                avatarUrl =
+                  header?.author?.best_thumbnail?.url ||
+                  header?.author?.thumbnails?.[0]?.url ||
+                  ch.metadata?.avatar?.[0]?.url ||
+                  "";
+              } catch {}
+            }
+
+            if (!avatarUrl && isValidAuthorName(authorName)) {
+              try {
+                const searchRes = await youtube.search(authorName, {
+                  type: "channel",
+                });
+                if (searchRes.channels && searchRes.channels.length > 0) {
+                  const targetNorm = authorName.toLowerCase().replace(/[\s\-_]/g, "");
+                  const matchedCh = searchRes.channels.find((foundCh: any) => {
+                    const foundTitle = (
+                      foundCh.author?.name ||
+                      foundCh.title?.text ||
+                      foundCh.name ||
+                      ""
+                    )
+                      .toLowerCase()
+                      .replace(/[\s\-_]/g, "");
+                    return (
+                      foundTitle === targetNorm ||
+                      foundTitle.includes(targetNorm) ||
+                      targetNorm.includes(foundTitle)
+                    );
+                  });
+
+                  const selectedCh = matchedCh || searchRes.channels[0];
+                  if (selectedCh && isValidChannelId(selectedCh.id)) {
+                    chId = selectedCh.id;
+                    const chAny = selectedCh as any;
+                    avatarUrl =
+                      chAny.author?.best_thumbnail?.url ||
+                      chAny.author?.thumbnails?.[0]?.url ||
+                      chAny.thumbnails?.[0]?.url ||
+                      "";
+                  }
+                }
+              } catch {}
+            }
+
+            if (avatarUrl) {
+              const finalAvatar = avatarUrl.startsWith("//")
+                ? "https:" + avatarUrl
+                : avatarUrl;
+              v.authorAvatar = finalAvatar;
+              if (isValidChannelId(chId)) v.authorId = chId;
+
+              const info = {
+                author: authorName,
+                authorAvatar: finalAvatar,
+                authorId: isValidChannelId(chId) ? chId : undefined,
+              };
+
+              if (typeof safeSetBatchChannelCache !== "undefined") {
+                if (isValidChannelId(chId)) safeSetBatchChannelCache(chId, info);
+                if (isValidAuthorName(cleanAuthor) && isValidChannelId(chId)) {
+                  safeSetBatchChannelCache(cleanAuthor, info);
+                }
+              }
+            }
+          } catch {}
+        })
+      );
+    } catch (err) {
+      console.warn("[resolveAvatarsForVideos Error]:", err);
+    }
+  }
+
+  // ショートおすすめ API
+  app.get("/api/shorts/recommendations", async (req, res) => {
+    const historyIds = ((req.query.historyIds as string) || "")
+      .split(",")
+      .filter((id) => id && id.trim().length > 0);
+
+    try {
+      const youtube = await getYt();
+      let searchQueries: string[] = ["#shorts 面白い", "#shorts バズり", "shorts おすすめ"];
+
+      if (historyIds.length > 0) {
+        const sampleHistory = historyIds.slice(0, 3);
+        const keywordsList: string[] = [];
+        const authorsList: string[] = [];
+
+        await Promise.all(
+          sampleHistory.map(async (id) => {
+            try {
+              const info = await youtube.getBasicInfo(id);
+              if (info?.basic_info) {
+                if (info.basic_info.author) authorsList.push(info.basic_info.author);
+                if (info.basic_info.title) {
+                  const clean = info.basic_info.title
+                    .replace(/【.*?】|\[.*?\]|\(.*?\)|#\S+/g, "")
+                    .split(/\s+/)[0];
+                  if (clean && clean.length > 1) keywordsList.push(clean);
+                }
+              }
+            } catch {}
+          })
+        );
+
+        if (authorsList.length > 0) {
+          searchQueries.unshift(...authorsList.map(a => `${a} #shorts`));
+        }
+        if (keywordsList.length > 0) {
+          searchQueries.unshift(...keywordsList.map(k => `${k} #shorts`));
+        }
+      }
+
+      const queriesToTry = Array.from(new Set(searchQueries)).slice(0, 3);
+      let foundShorts: any[] = [];
+      const seenIds = new Set<string>();
+
+      await Promise.all(
+        queriesToTry.map(async (q) => {
+          try {
+            const searchRes = await youtube.search(q, { type: "video" });
+            if (searchRes && searchRes.videos) {
+              const formatted = searchRes.videos
+                .map((v: any) => formatVideoObject(v))
+                .filter((v: any) => {
+                  if (!v || !v.videoId || seenIds.has(v.videoId)) return false;
+                  const isShort =
+                    (v.lengthSeconds && v.lengthSeconds <= 90) ||
+                    (v.title && v.title.toLowerCase().includes("short"));
+                  if (isShort) {
+                    seenIds.add(v.videoId);
+                    return true;
+                  }
+                  return false;
+                });
+              foundShorts.push(...formatted);
+            }
+          } catch {}
+        })
+      );
+
+      if (foundShorts.length < 8) {
+        try {
+          const fallback = await youtube.search("#shorts 人気", { type: "video" });
+          if (fallback && fallback.videos) {
+            const formatted = fallback.videos
+              .map((v: any) => formatVideoObject(v))
+              .filter((v: any) => {
+                if (!v || !v.videoId || seenIds.has(v.videoId)) return false;
+                seenIds.add(v.videoId);
+                return true;
+              });
+            foundShorts.push(...formatted);
+          }
+        } catch {}
+      }
+
+      await resolveAvatarsForVideos(foundShorts);
+
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=600");
+      return res.json(foundShorts.slice(0, 20));
+    } catch (err) {
+      console.error("[Shorts Recs API Error]:", err);
+      return res.json([]);
     }
   });
 
@@ -2865,6 +3078,8 @@ async function startServer() {
       }
 
       console.log(`[Search] Formatted: ${videos.length} videos, ${channels.length} channels`);
+
+      await resolveAvatarsForVideos(videos);
 
       const result = {
         videos,
@@ -3413,6 +3628,31 @@ async function startServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
+
+        // 返信の抽出
+        let replies: any[] = [];
+        if (item.replies) {
+          let rList: any[] = [];
+          if (Array.isArray(item.replies)) {
+            rList = item.replies;
+          } else if (item.replies.contents && Array.isArray(item.replies.contents)) {
+            rList = item.replies.contents;
+          }
+          if (rList.length > 0) {
+            replies = parseCommentsList(rList);
+          }
+        } else if (c.replies) {
+          let rList: any[] = [];
+          if (Array.isArray(c.replies)) {
+            rList = c.replies;
+          } else if (c.replies.contents && Array.isArray(c.replies.contents)) {
+            rList = c.replies.contents;
+          }
+          if (rList.length > 0) {
+            replies = parseCommentsList(rList);
+          }
+        }
+
         comments.push({
           id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
@@ -3425,6 +3665,7 @@ async function startServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
+          replies: replies,
         });
       }
     }
@@ -3576,6 +3817,7 @@ async function startServer() {
       if (session && session.pages.has(page)) {
         session.lastAccess = now;
         const pageVideos = session.pages.get(page) || [];
+        await resolveAvatarsForVideos(pageVideos);
         const result = {
           page,
           videos: pageVideos,
@@ -3740,6 +3982,8 @@ async function startServer() {
         videos = collectedVideos;
         hasMore = collectedVideos.length > 0 || page < 10;
       }
+
+      await resolveAvatarsForVideos(videos);
 
       const result = {
         page,
