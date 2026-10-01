@@ -393,6 +393,16 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       }
       
       if (!res.ok) {
+        // 500/504 等の一時的なサーバーレスエラー時は1回自動再試行
+        if (res.status >= 500 && isGet && !options?.headers?.['x-is-retry']) {
+          console.warn(`[Fetch] Retrying request on status ${res.status}: ${url}`);
+          await new Promise((r) => setTimeout(r, 600));
+          return fetchJSON(url, {
+            ...options,
+            headers: { ...(options?.headers || {}), 'x-is-retry': 'true' },
+          });
+        }
+
         let errorMessage = `リクエストエラー (${res.status})`;
         let errorData: any = {};
         if (contentType && contentType.includes('application/json')) {
@@ -401,7 +411,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         } else {
           const text = await res.text().catch(() => '');
           if (text) {
-            errorMessage += `: ${text.substring(0, 100)}`;
+            errorMessage += `: ${text.substring(0, 80)}`;
           }
         }
 
@@ -409,6 +419,16 @@ export async function fetchJSON(url: string, options?: RequestInit) {
           console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
           safeStorage.removeItem('xerox_youtube_credentials');
           safeStorage.removeItem('xerox_user_info');
+        }
+
+        // キャッシュが存在する場合はフォールバック
+        if (isGet) {
+          try {
+            const cached = await get(url);
+            if (cached && hasValidContent(cached.data)) {
+              return cached.data;
+            }
+          } catch {}
         }
 
         throw new Error(errorMessage);

@@ -44,18 +44,24 @@ async function getYt() {
 
   ytInstancePromise = (async () => {
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 2;
 
     while (attempts < maxAttempts) {
       try {
         attempts++;
         console.log(`[YT] Initializing Innertube (Attempt ${attempts})...`);
-        const instance = await Innertube.create({
+        const createPromise = Innertube.create({
           cache: new UniversalCache(false),
           location: "JP",
           lang: "ja",
           retrieve_player: false,
         });
+
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Innertube initialization timeout (5s)")), 5000)
+        );
+
+        const instance = await Promise.race([createPromise, timeoutPromise]);
         
         instance.session.on("auth", ({ credentials }) => {
           console.log("[YT] Auth event triggered. Got credentials!");
@@ -75,9 +81,10 @@ async function getYt() {
           ytInstancePromise = null;
           throw err;
         }
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 1000));
       }
     }
+    ytInstancePromise = null;
     throw new Error("Failed to initialize YT after multiple attempts");
   })();
 
@@ -5133,18 +5140,58 @@ async function startServer() {
 
   // ---------------------
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-    // Warm up YouTube client
-    getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+  // --- Express Global Error Handler (Vercel Serverless Safe) ---
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("[Express Global Error Handler]:", err);
+    if (!res.headersSent) {
+      res.status(200).json({
+        error: err?.message || "Internal Server Error",
+        videos: [],
+        results: [],
+        success: false,
+      });
+    }
   });
+
+  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
+      // Warm up YouTube client
+      getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+    });
+  }
 
   return app;
 }
 
-const appPromise = startServer();
+const appPromise = startServer().catch((err) => {
+  console.error("Critical: Failed to start server:", err);
+  const fallbackApp = express();
+  fallbackApp.use((req, res) => {
+    res.status(200).json({
+      error: "サーバー起動待機中",
+      videos: [],
+      results: [],
+      success: false,
+    });
+  });
+  return fallbackApp;
+});
+
 export { appPromise };
 export default async (req: any, res: any) => {
-  const app = await appPromise;
-  return app(req, res);
+  try {
+    const app = await appPromise;
+    return app(req, res);
+  } catch (err: any) {
+    console.error("[Serverless Export Handler Error]:", err);
+    if (!res.headersSent) {
+      res.status(200).json({
+        error: "Server Handler Error",
+        videos: [],
+        results: [],
+        success: false,
+      });
+    }
+  }
 };
