@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fs from "fs";
 import crypto from "crypto";
 import { Innertube, UniversalCache } from "youtubei.js";
 import axios from "axios";
@@ -448,8 +449,200 @@ async function startServer() {
     next();
   });
 
+  // --- External Service Abuse Protection: API Secret Key Parameter ---
+  const getExpectedApiKey = (): string => {
+    return (
+      process.env.API_SECRET_KEY ||
+      process.env.API_KEY ||
+      process.env.API_SECRET ||
+      process.env.API_TOKEN ||
+      process.env.ACCESS_TOKEN ||
+      process.env.VITE_API_KEY ||
+      process.env.VITE_API_SECRET_KEY ||
+      "xerox_api_key_2026"
+    ).trim();
+  };
+
+  function extractApiKey(req: express.Request): string {
+    // 1. Query parameters (?apiKey=... or ?key=... or ?token=...)
+    const q = req.query as Record<string, any>;
+    const fromQuery = q.apiKey || q.api_key || q.key || q.token || q.secret || q.access_token;
+    if (typeof fromQuery === "string" && fromQuery.trim()) {
+      return fromQuery.trim();
+    }
+
+    // 2. HTTP Headers (x-api-key, etc.)
+    const h = req.headers;
+    const fromHeader = h["x-api-key"] || h["x-api-secret"] || h["x-secret-key"] || h["x-token"];
+    if (typeof fromHeader === "string" && fromHeader.trim()) {
+      return fromHeader.trim();
+    }
+
+    // 3. Authorization Header (Bearer <token> or direct token)
+    const auth = h["authorization"];
+    if (typeof auth === "string" && auth.trim()) {
+      const trimmed = auth.trim();
+      if (trimmed.toLowerCase().startsWith("bearer ")) {
+        return trimmed.slice(7).trim();
+      }
+      return trimmed;
+    }
+
+    // 4. Request Body (if parsed)
+    if (req.body && typeof req.body === "object") {
+      const b = req.body as Record<string, any>;
+      const fromBody = b.apiKey || b.api_key || b.key || b.token || b.secret;
+      if (typeof fromBody === "string" && fromBody.trim()) {
+        return fromBody.trim();
+      }
+    }
+
+    // 5. Cookies (set during legitimate browser website visits)
+    const cookieHeader = req.headers["cookie"] || "";
+    const match = cookieHeader.match(/(?:^|;\s*)xerox_api_key=([^;]+)/);
+    if (match) {
+      try {
+        return decodeURIComponent(match[1]).trim();
+      } catch {
+        return match[1].trim();
+      }
+    }
+
+    return "";
+  }
+
+  // Intercept and protect all API & stream endpoints against external scraping/abuse
+  app.use((req, res, next) => {
+    const p = req.path;
+
+    const isApiEndpoint =
+      p.startsWith("/api/") ||
+      p.startsWith("/stream") ||
+      p.startsWith("/edu") ||
+      p.startsWith("/360") ||
+      p.startsWith("/scratch-edu") ||
+      p.startsWith("/download-proxy");
+
+    if (!isApiEndpoint) {
+      // Set cookie for browser page visits so legitimate user sessions have the key
+      const expectedKey = getExpectedApiKey();
+      res.cookie("xerox_api_key", expectedKey, {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      // Set legitimate browser session cookie to prove this is a real browser visit
+      res.cookie("legit_browser_session", "1", {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      return next();
+    }
+
+    // Exclude system health check
+    if (p === "/api/health") {
+      return next();
+    }
+
+    // 1. Block common scripting/scraping user agents
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isScriptOrScraper = /curl|wget|python|requests|postman|insomnia|axios|got|node-fetch|urllib|httpclient|java|go-http-client/i.test(userAgent);
+    if (isScriptOrScraper) {
+      return res.status(403).json({
+        error: "Access Forbidden: External automated tools are not allowed.",
+        message: "外部サービスやスクリプトによる自動アクセスはブロックされています。"
+      });
+    }
+
+    // 2. Referer and Origin validation
+    const referer = req.headers["referer"];
+    const origin = req.headers["origin"];
+    const host = req.headers["host"] || "";
+
+    if (referer) {
+      try {
+        const refUrl = new URL(referer);
+        const refHost = refUrl.host;
+        const isLegitReferer = 
+          refHost === host || 
+          refHost.includes("localhost") || 
+          refHost.includes("127.0.0.1") || 
+          refHost.endsWith(".run.app") || 
+          refHost.endsWith(".google.com");
+          
+        if (!isLegitReferer) {
+          return res.status(403).json({
+            error: "Access Forbidden: External website referer is blocked.",
+            message: "外部サイトからのリクエストは許可されていません。"
+          });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid referer header." });
+      }
+    }
+
+    if (origin) {
+      try {
+        const origUrl = new URL(origin);
+        const origHost = origUrl.host;
+        const isLegitOrigin = 
+          origHost === host || 
+          origHost.includes("localhost") || 
+          origHost.includes("127.0.0.1") || 
+          origHost.endsWith(".run.app") || 
+          origHost.endsWith(".google.com");
+          
+        if (!isLegitOrigin) {
+          return res.status(403).json({
+            error: "Access Forbidden: External website origin is blocked.",
+            message: "外部のオリジンからのリクエストは許可されていません。"
+          });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid origin header." });
+      }
+    }
+
+    // 3. Legit session cookie validation (except config, but config is validated by referer/origin above)
+    if (p !== "/api/config") {
+      const cookieHeader = req.headers["cookie"] || "";
+      const hasLegitSession = /(?:^|;\s*)legit_browser_session=1/.test(cookieHeader);
+      if (!hasLegitSession) {
+        return res.status(403).json({
+          error: "Access Forbidden: Legit browser session required.",
+          message: "サイトを直接ブラウザで開いてからご利用ください（外部APIリクエストはすべてブロックされています）。"
+        });
+      }
+    }
+
+    // 4. API key verification
+    const expectedKey = getExpectedApiKey();
+    const clientKey = extractApiKey(req);
+
+    if (!clientKey || clientKey !== expectedKey) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.status(401).json({
+        error: "Unauthorized: API access requires a valid secret parameter",
+        code: "API_KEY_REQUIRED",
+        message: "外部サービスによる不正利用を防ぐため、APIの取得には環境変数で設定されたパラメーター（apiKey または key）の付与が必要です。",
+      });
+    }
+
+    next();
+  });
+
+  // Client bootstrap config endpoint
+  app.get("/api/config", (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.json({
+      apiKey: getExpectedApiKey(),
+      appName: "XeroxYT",
+    });
+  });
+
   // --- Daily Quotas & Rate Limiting System (Protect Vercel Serverless CPU & Bandwidth) ---
-  const DAILY_VIDEO_LIMIT = Math.max(1, parseInt(process.env.DAILY_VIDEO_LIMIT || "15", 10));
+  const DAILY_VIDEO_LIMIT = Infinity; // 視聴制限は完全に解除（無制限）
   const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "100", 10));
   const DAILY_TOTAL_LIMIT = Math.max(1, parseInt(process.env.DAILY_TOTAL_LIMIT || "600", 10));
   const BURST_LIMIT_PER_MINUTE = Math.max(1, parseInt(process.env.BURST_LIMIT_PER_MINUTE || "80", 10));
@@ -490,11 +683,20 @@ async function startServer() {
     return nextResetUtc.toISOString();
   }
 
-  // クライアント識別子の抽出 (ブラウザUUIDを最優先し、IP変更に左右されない安定識別子)
+  // クライアント識別子の抽出 (ヘッダー, Cookie, クエリ, IP fallback)
   function getClientIdentifier(req: express.Request): string {
     const clientHeader = (req.headers["x-client-id"] as string) || "";
-    if (clientHeader && /^[a-zA-Z0-9_-]{6,64}$/.test(clientHeader)) {
+    if (clientHeader && /^[a-zA-Z0-9_-]{4,64}$/.test(clientHeader)) {
       return clientHeader;
+    }
+    const cookieHeader = (req.headers["cookie"] as string) || "";
+    const cookieMatch = cookieHeader.match(/(?:^|;\s*)xerox_client_uuid=([a-zA-Z0-9_-]{4,64})/);
+    if (cookieMatch) {
+      return cookieMatch[1];
+    }
+    const queryId = (req.query?.clientId as string) || "";
+    if (queryId && /^[a-zA-Z0-9_-]{4,64}$/.test(queryId)) {
+      return queryId;
     }
     const forwardedFor = (req.headers["x-forwarded-for"] as string) || "";
     const vercelIp = (req.headers["x-vercel-ip"] as string) || (req.headers["x-real-ip"] as string) || "";
@@ -585,7 +787,7 @@ async function startServer() {
     const clientId = getClientIdentifier(req);
     const today = getJstDateString();
     const record = getOrCreateRecord(clientId, today, req);
-    const isVideoLimited = record.videos >= DAILY_VIDEO_LIMIT;
+    const isVideoLimited = false; // 視聴制限は完全に解除
     const isSearchLimited = record.searches >= DAILY_SEARCH_LIMIT;
     const isTotalLimited = record.total >= DAILY_TOTAL_LIMIT;
 
@@ -600,8 +802,8 @@ async function startServer() {
       token,
       videos: {
         used: record.videos,
-        limit: DAILY_VIDEO_LIMIT,
-        remaining: Math.max(0, DAILY_VIDEO_LIMIT - record.videos),
+        limit: 999999,
+        remaining: 999999,
       },
       searches: {
         used: record.searches,
@@ -615,8 +817,8 @@ async function startServer() {
       },
       resetAt: getNextJstMidnightIso(),
       resetSeconds: getSecondsUntilJstMidnight(),
-      isLimited: isVideoLimited || isSearchLimited || isTotalLimited,
-      limitedType: isVideoLimited ? "video" : isSearchLimited ? "search" : isTotalLimited ? "total" : null,
+      isLimited: isSearchLimited || isTotalLimited,
+      limitedType: isSearchLimited ? "search" : isTotalLimited ? "total" : null,
     });
   });
 
@@ -704,11 +906,7 @@ async function startServer() {
     );
 
     if (isVideoViewRequest) {
-      // 15本までは通常カウント。15本以降はプレイヤーのみ取得モードで再生を許可 (検索や動画再生を429で止めない)
       record.videos++;
-      if (record.videos > DAILY_VIDEO_LIMIT) {
-        res.setHeader("X-Player-Only-Mode", "true");
-      }
     }
 
     // 4. 検索リクエスト判定 (/api/search, /api/search/channels)
@@ -733,18 +931,23 @@ async function startServer() {
     // 総リクエスト数をインクリメント
     record.total++;
 
-    // レスポンスヘッダーに残り利用枠と署名トークンを付与
+    // レスポンスヘッダーに残り利用枠と署名トークンを付与 (動画視聴は無制限)
     const token = signUsage(clientId, today, record.videos, record.searches, record.total);
-    res.setHeader("X-RateLimit-Videos-Remaining", String(Math.max(0, DAILY_VIDEO_LIMIT - record.videos)));
+    res.setHeader("X-RateLimit-Videos-Remaining", "999999");
     res.setHeader("X-RateLimit-Searches-Remaining", String(Math.max(0, DAILY_SEARCH_LIMIT - record.searches)));
     res.setHeader("X-RateLimit-Reset-Seconds", String(getSecondsUntilJstMidnight()));
     res.setHeader("X-Daily-Usage-Token", token);
-    if (record.videos >= DAILY_VIDEO_LIMIT) {
-      res.setHeader("X-Player-Only-Mode", "true");
+    res.setHeader("X-Client-Id", clientId);
+
+    // クッキーが未設定の場合、シークレットモード/サンドボックス対応のためCookieを設定
+    const cookieHeader = req.headers["cookie"] || "";
+    if (!cookieHeader.includes("xerox_client_uuid=") && clientId && !clientId.includes(".")) {
+      res.setHeader("Set-Cookie", `xerox_client_uuid=${clientId}; Path=/; Max-Age=31536000; SameSite=Lax`);
     }
+
     res.setHeader(
       "Access-Control-Expose-Headers",
-      "X-RateLimit-Videos-Remaining, X-RateLimit-Searches-Remaining, X-RateLimit-Reset-Seconds, X-Daily-Usage-Token, X-Player-Only-Mode"
+      "X-RateLimit-Videos-Remaining, X-RateLimit-Searches-Remaining, X-RateLimit-Reset-Seconds, X-Daily-Usage-Token, X-Client-Id"
     );
 
     next();
@@ -895,97 +1098,144 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  app.post("/api/sync/save", async (req, res) => {
-    const { credentialId, data } = req.body;
-    if (!credentialId || !data) return res.status(400).send("Missing args");
+  // --- Persistent User Profile Database (Sandbox & Incognito Safe) ---
+  const DATA_DIR = path.join(process.cwd(), "data");
+  const PROFILES_FILE = path.join(DATA_DIR, "user_profiles.json");
 
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
     }
+  } catch (e) {
+    console.warn("Could not create data dir:", e);
+  }
 
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const encryptedPayload = encryptData(data);
-      const fileContent = Buffer.from(
-        JSON.stringify(encryptedPayload),
-      ).toString("base64");
+  const userProfilesMap = new Map<string, any>();
+  const ipToClientMap = new Map<string, string>();
 
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      let sha: string | undefined = undefined;
-      try {
-        const getRes = await axios.get(url, { headers: getGithubHeaders() });
-        sha = getRes.data.sha;
-      } catch (e: any) {
-        if (e.response?.status !== 404) throw e;
+  try {
+    if (fs.existsSync(PROFILES_FILE)) {
+      const raw = fs.readFileSync(PROFILES_FILE, "utf-8");
+      const loaded = JSON.parse(raw);
+      for (const [id, prof] of Object.entries(loaded)) {
+        userProfilesMap.set(id, prof);
+        if ((prof as any)?.ip) {
+          ipToClientMap.set((prof as any).ip, id);
+        }
       }
-
-      await axios.put(
-        url,
-        {
-          message: `Sync data for ${hashedId}`,
-          content: fileContent,
-          sha,
-        },
-        { headers: getGithubHeaders() },
-      );
-
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error("Save error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to save to GitHub" });
     }
+  } catch (e) {
+    console.warn("Could not load user profiles from disk:", e);
+  }
+
+  let profileDiskSaveTimeout: NodeJS.Timeout | null = null;
+  function scheduleSaveProfilesToDisk() {
+    if (profileDiskSaveTimeout) return;
+    profileDiskSaveTimeout = setTimeout(() => {
+      profileDiskSaveTimeout = null;
+      try {
+        const obj: Record<string, any> = {};
+        for (const [k, v] of userProfilesMap.entries()) {
+          obj[k] = v;
+        }
+        fs.writeFileSync(PROFILES_FILE, JSON.stringify(obj, null, 2), "utf-8");
+      } catch (err) {
+        console.error("Failed to write user profiles to disk:", err);
+      }
+    }, 400);
+  }
+
+  app.post("/api/sync/save", async (req, res) => {
+    const rawId = req.body.clientId || req.body.credentialId || getClientIdentifier(req) || "";
+    const clientId = String(rawId).trim();
+    const data = req.body.data;
+    if (!clientId || !data) return res.status(400).json({ error: "Missing clientId or data" });
+
+    const clientIp = getClientIdentifier(req);
+    const existing = userProfilesMap.get(clientId) || {};
+    const updated = {
+      ...existing,
+      ...data,
+      clientId,
+      ip: clientIp,
+      updatedAt: Date.now()
+    };
+
+    userProfilesMap.set(clientId, updated);
+    if (clientIp) {
+      ipToClientMap.set(clientIp, clientId);
+    }
+    scheduleSaveProfilesToDisk();
+
+    // Background optional sync to GitHub if configured
+    if (process.env.GITHUB_TOKEN && process.env.GITHUB_USERNAME && process.env.GITHUB_REPO) {
+      (async () => {
+        try {
+          const hashedId = crypto.createHash("sha256").update(clientId).digest("hex");
+          const filename = `${hashedId}.json`;
+          const encryptedPayload = encryptData(updated);
+          const fileContent = Buffer.from(JSON.stringify(encryptedPayload)).toString("base64");
+          const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
+          let sha: string | undefined = undefined;
+          try {
+            const getRes = await axios.get(url, { headers: getGithubHeaders() });
+            sha = getRes.data.sha;
+          } catch (e: any) {
+            if (e.response?.status !== 404) throw e;
+          }
+          await axios.put(url, { message: `Sync data for ${hashedId}`, content: fileContent, sha }, { headers: getGithubHeaders() });
+        } catch (err: any) {
+          console.warn("GitHub backup optional sync error:", err.message);
+        }
+      })();
+    }
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    return res.json({ success: true, clientId });
   });
 
   app.post("/api/sync/load", async (req, res) => {
-    const { credentialId } = req.body;
-    if (!credentialId) return res.status(400).send("Missing args");
+    let rawId = req.body.clientId || req.body.credentialId || getClientIdentifier(req) || "";
+    let clientId = String(rawId).trim();
+    const clientIp = getClientIdentifier(req);
 
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
-    }
+    let profile = userProfilesMap.get(clientId);
 
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      const getRes = await axios.get(url, { headers: getGithubHeaders() });
-      const encryptedPayload = JSON.parse(
-        Buffer.from(getRes.data.content, "base64").toString("utf8"),
-      );
-
-      const data = decryptData(encryptedPayload);
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true, data });
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-        return res.json({ success: true, data: null }); // No existing data
+    // Fallback by client IP if incognito closed the tab and storage/cookies were wiped
+    if (!profile && clientIp && ipToClientMap.has(clientIp)) {
+      const fallbackId = ipToClientMap.get(clientIp)!;
+      const found = userProfilesMap.get(fallbackId);
+      if (found) {
+        clientId = fallbackId;
+        profile = found;
       }
-      console.error("Load error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to load from GitHub" });
     }
+
+    if (profile) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.json({ success: true, clientId, data: profile });
+    }
+
+    // Optional GitHub fallback
+    if (process.env.GITHUB_TOKEN && process.env.GITHUB_USERNAME && process.env.GITHUB_REPO && clientId) {
+      try {
+        const hashedId = crypto.createHash("sha256").update(clientId).digest("hex");
+        const filename = `${hashedId}.json`;
+        const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
+        const getRes = await axios.get(url, { headers: getGithubHeaders() });
+        const encryptedPayload = JSON.parse(Buffer.from(getRes.data.content, "base64").toString("utf8"));
+        const data = decryptData(encryptedPayload);
+        if (data) {
+          userProfilesMap.set(clientId, data);
+          scheduleSaveProfilesToDisk();
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+          return res.json({ success: true, clientId, data });
+        }
+      } catch (err: any) {}
+    }
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    return res.json({ success: true, clientId, data: null });
   });
 
   // Request logger
@@ -3177,30 +3427,6 @@ async function startServer() {
       return res.json(cached);
     }
 
-    const clientId = getClientIdentifier(req);
-    const today = getJstDateString();
-    const record = getOrCreateRecord(clientId, today, req);
-    if (record.videos > DAILY_VIDEO_LIMIT) {
-      // 1日の上限(15本)以降は重いメタデータ取得を行わず、プレイヤー再生に必要な軽量情報のみ返却 (プレイヤー以外取得しない)
-      res.setHeader("X-Player-Only-Mode", "true");
-      res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
-      return res.json({
-        videoId,
-        title: "YouTube Video",
-        description: "",
-        author: "YouTube",
-        authorId: "",
-        publishedText: "直接再生",
-        viewCount: 0,
-        lengthSeconds: 0,
-        videoThumbnails: [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, width: 480, height: 360 }],
-        recommendedVideos: [],
-        comments: [],
-        isPlayerOnly: true,
-        type: "video"
-      });
-    }
-
     try {
       const youtube = await getYt();
       let info;
@@ -3362,6 +3588,7 @@ async function startServer() {
     currentPage: number;
     feed: any;
     pages: Map<number, any[]>;
+    threads: Map<string, any>;
     hasMore: boolean;
     lastAccess: number;
   }
@@ -3413,6 +3640,12 @@ async function startServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
+
+        const replyCount = 
+          (typeof c.reply_count === "number" ? c.reply_count : parseInt(c.reply_count, 10)) ||
+          (typeof item.reply_count === "number" ? item.reply_count : parseInt(item.reply_count, 10)) ||
+          0;
+
         comments.push({
           id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
@@ -3425,6 +3658,7 @@ async function startServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
+          replyCount: isNaN(replyCount) ? 0 : replyCount,
         });
       }
     }
@@ -3436,19 +3670,6 @@ async function startServer() {
     const videoId = req.params.id;
     const sort = ((req.query.sort as string) || "top").toLowerCase() === "newest" ? "newest" : "top";
     const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
-
-    const clientId = getClientIdentifier(req);
-    const today = getJstDateString();
-    const record = getOrCreateRecord(clientId, today, req);
-    if (record.videos > DAILY_VIDEO_LIMIT) {
-      // 15本以降はコメントを取得しない (プレイヤー以外取得しない)
-      return res.json({
-        page: 1,
-        comments: [],
-        hasMore: false,
-        isPlayerOnly: true,
-      });
-    }
 
     const cacheKey = `comments:${videoId}:${sort}:${page}`;
     const cached = getFromMemoryCache<any>(cacheKey);
@@ -3497,9 +3718,18 @@ async function startServer() {
           currentPage: 1,
           feed: commentsData,
           pages: new Map([[1, initialComments]]),
+          threads: new Map(),
           hasMore: Boolean(commentsData?.has_continuation),
           lastAccess: now,
         };
+        if (commentsData?.contents) {
+          for (const thread of commentsData.contents) {
+            const commentId = thread.comment?.comment_id || thread.comment?.id || thread.id;
+            if (commentId) {
+              session.threads.set(commentId, thread);
+            }
+          }
+        }
         commentsSessions.set(sessionKey, session);
       }
 
@@ -3511,6 +3741,15 @@ async function startServer() {
           const nextComments = parseCommentsList(session.feed?.contents || []);
           session.pages.set(session.currentPage, nextComments);
           session.hasMore = Boolean(session.feed?.has_continuation);
+
+          if (session.feed?.contents) {
+            for (const thread of session.feed.contents) {
+              const commentId = thread.comment?.comment_id || thread.comment?.id || thread.id;
+              if (commentId) {
+                session.threads.set(commentId, thread);
+              }
+            }
+          }
         }
       }
 
@@ -3533,24 +3772,69 @@ async function startServer() {
     }
   });
 
+  // コメント返信取得 API（YouTubei.js の getReplies による取得）
+  app.get("/api/video/:id/comments/:commentId/replies", async (req, res) => {
+    const videoId = req.params.id;
+    const commentId = req.params.commentId;
+    const sort = ((req.query.sort as string) || "top").toLowerCase() === "newest" ? "newest" : "top";
+
+    try {
+      const sessionKey = `${videoId}:${sort}`;
+      let session = commentsSessions.get(sessionKey);
+
+      // セッションがない、またはスレッドがキャッシュにない場合は初期化して1ページ目から探す
+      if (!session) {
+        const youtube = await getYt();
+        const sortBy = sort === "newest" ? "NEWEST_FIRST" : "TOP_COMMENTS";
+        let commentsData = await youtube.getComments(videoId, sortBy);
+        let initialComments = parseCommentsList(commentsData?.contents || []);
+        session = {
+          videoId,
+          sort,
+          currentPage: 1,
+          feed: commentsData,
+          pages: new Map([[1, initialComments]]),
+          threads: new Map(),
+          hasMore: Boolean(commentsData?.has_continuation),
+          lastAccess: Date.now(),
+        };
+        if (commentsData?.contents) {
+          for (const thread of commentsData.contents) {
+            const cid = thread.comment?.comment_id || thread.comment?.id || thread.id;
+            if (cid) {
+              session.threads.set(cid, thread);
+            }
+          }
+        }
+        commentsSessions.set(sessionKey, session);
+      }
+
+      let thread = session.threads.get(commentId);
+      if (!thread) {
+        // スレッドが見つからない場合は空配列を返す
+        return res.json({ replies: [] });
+      }
+
+      if (typeof thread.getReplies !== "function") {
+        return res.json({ replies: [] });
+      }
+
+      const repliesData = await thread.getReplies();
+      const rawReplies = repliesData?.contents || [];
+      const replies = parseCommentsList(rawReplies);
+
+      return res.json({ replies });
+    } catch (err) {
+      console.error("Replies fetch error:", err);
+      return res.json({ replies: [] });
+    }
+  });
+
   // 関連動画 取得 API（2ページ目以降の無限スクロール対応）
   app.get("/api/video/:id/related", async (req, res) => {
     const videoId = req.params.id;
     const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
     const filter = (req.query.filter as string) || "all";
-
-    const clientId = getClientIdentifier(req);
-    const today = getJstDateString();
-    const record = getOrCreateRecord(clientId, today, req);
-    if (record.videos > DAILY_VIDEO_LIMIT) {
-      // 15本以降は関連動画を取得しない (プレイヤー以外取得しない)
-      return res.json({
-        page: 1,
-        videos: [],
-        hasMore: false,
-        isPlayerOnly: true,
-      });
-    }
 
     const cacheKey = `related:${videoId}:${page}:${filter}`;
     const cached = getFromMemoryCache<any>(cacheKey);
@@ -4695,7 +4979,22 @@ async function startServer() {
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.sendFile(path.join(distPath, "index.html"));
+      const expectedKey = getExpectedApiKey();
+      res.cookie("xerox_api_key", expectedKey, {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
+      try {
+        let html = fs.readFileSync(path.join(distPath, "index.html"), "utf8");
+        html = html.replace(
+          "<head>",
+          `<head><script>window.__APP_API_KEY__=${JSON.stringify(expectedKey)};</script>`
+        );
+        res.send(html);
+      } catch {
+        res.sendFile(path.join(distPath, "index.html"));
+      }
     });
   }
 
@@ -4707,19 +5006,22 @@ async function startServer() {
       try {
         const { messages, systemInstruction, temperature, model } = req.body;
 
-        const selectedModel = model || "gemini-3.5-flash-lite";
+        const selectedModel = model || "gemini-3.8-flash";
+        const defaultInstruction =
+          "あなたは有能で親切なAIアシスタント「Xray」です。回答は読みやすく構造化されたMarkdown形式（見出し、箇条書き、太字、表、コードブロックなどを適切に活用）で出力してください。";
+
         const response = await genAI.models.generateContent({
           model: selectedModel,
           contents: messages,
           config: {
-            systemInstruction,
+            systemInstruction: systemInstruction || defaultInstruction,
             temperature: temperature || 0.7,
           },
         });
 
         res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ text: response.text });
-      } catch (e) {
+        return res.json({ text: response.text });
+      } catch (e: any) {
         console.error("[AI Studio] Error calling Gemini API:", e);
         res.status(500).json({ error: e.message || String(e) });
       }

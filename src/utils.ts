@@ -3,6 +3,60 @@ import { DailyUsageLimits } from './types';
 
 export const DAILY_VIDEO_LIMIT = 15;
 
+export async function detectIncognito(): Promise<boolean> {
+  // 1. Session Storage toggle
+  try {
+    if (sessionStorage.getItem('xerox_incognito_mode') === 'true') {
+      return true;
+    }
+  } catch {}
+
+  // 2. URL search param check
+  try {
+    if (window.location.search.includes('incognito=true')) {
+      return true;
+    }
+  } catch {}
+
+  // 3. Chromium Storage Quota check
+  if (navigator.storage && navigator.storage.estimate) {
+    try {
+      const { quota } = await navigator.storage.estimate();
+      if (quota && quota < 120000000) { // ~120MB threshold in Chromium Incognito
+        return true;
+      }
+    } catch {}
+  }
+
+  // 4. Firefox Private Mode check
+  if ('mozPay' in navigator || (navigator as any).mozContacts) {
+    try {
+      const db = indexedDB.open("test_incognito_check");
+      const isPrivate = await new Promise<boolean>((resolve) => {
+        db.onerror = () => resolve(true);
+        db.onsuccess = () => resolve(false);
+      });
+      if (isPrivate) return true;
+    } catch {
+      return true;
+    }
+  }
+
+  // 5. Safari Private Browsing check
+  try {
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    if (isSafari) {
+      try {
+        (window as any).openDatabase(null, null, null, null);
+      } catch {
+        return true;
+      }
+    }
+  } catch {}
+
+  return false;
+}
+
 export function isDailyVideoLimitReached(): boolean {
   try {
     const usage = getClientUsage();
