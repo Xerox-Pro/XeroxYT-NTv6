@@ -437,15 +437,113 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-  // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
-  app.use((req, res, next) => {
-    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
-    const isBot = /gptbot|chatgpt|ccbot|bytespider|claudebot|anthropic|amazonbot|facebookbot|semrush|ahrefs|dotbot|yandexbot|petalbot|dataforseo/i.test(userAgent);
-    
-    if (isBot && (req.path.startsWith("/api/") || req.path.startsWith("/stream") || req.path.startsWith("/edu") || req.path.startsWith("/360"))) {
-      res.setHeader("Cache-Control", "public, max-age=86400");
-      return res.status(403).json({ error: "Automated API access is not allowed." });
+  // --- External Service & Cross-Origin Strict Blocker ---
+  function isAuthorizedOrigin(req: express.Request): boolean {
+    // 1. Sec-Fetch-Site (ブラウザによるクロスサイトリクエスト遮断)
+    const secFetchSite = req.headers["sec-fetch-site"];
+    if (secFetchSite === "cross-site") {
+      return false; // 外部サイトからの埋め込み・クロスオリジン呼び出しを即座に遮断
     }
+
+    // 現在のホスト名
+    const currentHost = (req.get("host") || (req.headers["host"] as string) || "").split(":")[0].toLowerCase();
+    
+    // 2. Origin ヘッダーの検証
+    const origin = req.headers["origin"] as string;
+    if (origin) {
+      try {
+        const originUrl = new URL(origin);
+        const originHost = originUrl.hostname.toLowerCase();
+        
+        const isMatch =
+          originHost === currentHost ||
+          originHost === "localhost" ||
+          originHost === "127.0.0.1" ||
+          originHost.endsWith(".run.app") ||
+          originHost.endsWith(".vercel.app") ||
+          (process.env.ALLOWED_DOMAINS && process.env.ALLOWED_DOMAINS.split(",").some((d) => originHost === d.trim() || originHost.endsWith("." + d.trim())));
+        
+        if (!isMatch) return false;
+      } catch {
+        return false;
+      }
+    }
+
+    // 3. Referer ヘッダーの検証
+    const referer = req.headers["referer"] as string;
+    if (referer) {
+      try {
+        const refererUrl = new URL(referer);
+        const refererHost = refererUrl.hostname.toLowerCase();
+        
+        const isMatch =
+          refererHost === currentHost ||
+          refererHost === "localhost" ||
+          refererHost === "127.0.0.1" ||
+          refererHost.endsWith(".run.app") ||
+          refererHost.endsWith(".vercel.app") ||
+          (process.env.ALLOWED_DOMAINS && process.env.ALLOWED_DOMAINS.split(",").some((d) => refererHost === d.trim() || refererHost.endsWith("." + d.trim())));
+        
+        if (!isMatch) return false;
+      } catch {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // --- Bot, External Tools & Cross-Origin Protection Middleware ---
+  app.use((req, res, next) => {
+    const p = req.path;
+    const isApiOrStream =
+      p.startsWith("/api/") ||
+      p.startsWith("/stream") ||
+      p.startsWith("/edu") ||
+      p.startsWith("/360") ||
+      p.startsWith("/scratch-edu") ||
+      p.startsWith("/download-proxy");
+
+    if (!isApiOrStream) {
+      return next();
+    }
+
+    // 1. 外部オリジン・クロスサイトアクセスの遮断
+    if (!isAuthorizedOrigin(req)) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.status(403).json({
+        error: "Access Denied: External service and cross-origin requests are strictly blocked.",
+        code: "EXTERNAL_SERVICE_BLOCKED",
+        message: "外部サービスや他サイトからのAPIアクセスは全面的にブロックされています。"
+      });
+    }
+
+    // 2. 自動スクレイピングツール・クローラー・ボットの遮断 (外部からの回避取得防止)
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isScraperOrBot =
+      !userAgent ||
+      /gptbot|chatgpt|ccbot|bytespider|claudebot|anthropic|amazonbot|facebookbot|semrush|ahrefs|dotbot|yandexbot|petalbot|dataforseo|curl|wget|python-requests|postman|insomnia|httpie|scrapy|node-fetch|go-http-client|aiohttp|urllib/i.test(userAgent);
+    
+    if (isScraperOrBot && p !== "/api/health") {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.status(403).json({
+        error: "Access Denied: Automated scraping tools are strictly blocked.",
+        code: "BOT_BLOCKED"
+      });
+    }
+
+    // 3. Preflight OPTIONS リクエストのハンドリング
+    if (req.method === "OPTIONS") {
+      const origin = req.headers["origin"] as string;
+      if (origin) {
+        res.setHeader("Access-Control-Allow-Origin", origin);
+        res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+        res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, x-api-key, x-client-id, x-youtube-credentials, x-usage-token, x-client-usage");
+        res.setHeader("Access-Control-Allow-Credentials", "true");
+      }
+      return res.status(204).end();
+    }
+
     next();
   });
 

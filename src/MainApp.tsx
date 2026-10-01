@@ -275,44 +275,76 @@ export default function MainApp() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const skipNextSync = useRef(false);
+  const isDirtyRef = useRef(false);
   const initialSyncFinishedRef = useRef(false);
   const lastSyncedPayloadHashRef = useRef('');
   const syncDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const performServerSync = (data: any) => {
+  const getSyncPayload = () => {
+    const searchHistory = safeStorage.getJSON<string[]>('xerox_yt_search_history', []);
+    return {
+      subscriptions,
+      watchHistory,
+      userPlaylists: playlists,
+      searchHistory,
+    };
+  };
+
+  const flushSync = () => {
+    if (!initialSyncFinishedRef.current || !isDirtyRef.current) return;
+    try {
+      const clientId = getClientUUID();
+      const payloadData = getSyncPayload();
+      const payloadHash = JSON.stringify(payloadData);
+      if (payloadHash === lastSyncedPayloadHashRef.current) {
+        isDirtyRef.current = false;
+        return;
+      }
+      lastSyncedPayloadHashRef.current = payloadHash;
+      isDirtyRef.current = false;
+
+      fetch('/api/sync/save', {
+        method: 'POST',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, data: payloadData }),
+      }).catch(() => {});
+    } catch {}
+  };
+
+  const performServerSync = () => {
     if (!initialSyncFinishedRef.current || skipNextSync.current) return;
+    isDirtyRef.current = true;
     if (syncDebounceTimer.current) {
       clearTimeout(syncDebounceTimer.current);
     }
     syncDebounceTimer.current = setTimeout(async () => {
       syncDebounceTimer.current = null;
-      if (!initialSyncFinishedRef.current || skipNextSync.current) return;
+      if (!initialSyncFinishedRef.current || skipNextSync.current || !isDirtyRef.current) return;
       try {
         const clientId = getClientUUID();
-        const searchHistory = safeStorage.getJSON<string[]>('xerox_yt_search_history', []);
-        const payloadData = {
-          ...data,
-          searchHistory,
-        };
+        const payloadData = getSyncPayload();
         const payloadHash = JSON.stringify(payloadData);
         if (payloadHash === lastSyncedPayloadHashRef.current) {
-          // データに差分がない場合はサーバー通信をスキップ（無駄なVercel実行を防止）
+          isDirtyRef.current = false;
           return;
         }
 
         lastSyncedPayloadHashRef.current = payloadHash;
+        isDirtyRef.current = false;
+
         await fetchJSON('/api/sync/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientId,
             data: payloadData,
-          })
+          }),
         });
       } catch (e) {
         console.warn('Server sync warning:', e);
       }
-    }, 4000);
+    }, 15000);
   };
 
   // 起動時の自動同期（シークレットモード・サンドボックスでもサーバーと同期して復元）
@@ -378,6 +410,18 @@ export default function MainApp() {
     };
     initSync();
 
+    // ページ離脱・バックグラウンド移行時のセーフティフラッシュ
+    const handleVisibility = () => {
+      if (document.visibilityState === 'hidden') {
+        flushSync();
+      }
+    };
+    const handleBeforeUnload = () => {
+      flushSync();
+    };
+    window.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
     // 他タブ/ウィンドウ間のリアルタイム同期リスナー
     const unsubscribe = safeStorage.onSync((key, value) => {
       if (key === 'xerox_watch_history' && value) {
@@ -411,6 +455,8 @@ export default function MainApp() {
     });
 
     return () => {
+      window.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
       unsubscribe();
     };
   }, []);
@@ -444,19 +490,17 @@ export default function MainApp() {
     }
   }, [view, userInfo]);
 
+  // ローカルストレージ（ブラウザ内）への即時保存のみ行い、無駄なサーバー通信を根絶
   useEffect(() => {
     safeStorage.setJSON('xerox_subscriptions', subscriptions);
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [subscriptions]);
 
   useEffect(() => {
     safeStorage.setJSON('xerox_watch_history', watchHistory);
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [watchHistory]);
 
   useEffect(() => {
     safeStorage.setJSON('xerox_user_playlists', playlists);
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [playlists]);
 
   // 閲覧履歴（通常動画）記録
@@ -1155,7 +1199,7 @@ export default function MainApp() {
                   } else {
                     setWatchHistory([]);
                     safeStorage.removeItem('xerox_watch_history');
-                    performServerSync({ subscriptions, watchHistory: [], userPlaylists: playlists });
+                    performServerSync();
                   }
                 }}
                 onRemoveHistoryItem={(id) => {
@@ -1165,7 +1209,7 @@ export default function MainApp() {
                     setWatchHistory(prev => {
                       const updated = prev.filter(i => i.videoId !== id);
                       safeStorage.setJSON('xerox_watch_history', updated);
-                      performServerSync({ subscriptions, watchHistory: updated, userPlaylists: playlists });
+                      performServerSync();
                       return updated;
                     });
                   }
