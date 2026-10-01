@@ -1,77 +1,132 @@
 import { get, set } from 'idb-keyval';
 import { DailyUsageLimits } from './types';
+import { safeStorage } from './services/safeStorage';
 
-export const DAILY_VIDEO_LIMIT = 15;
+export const DAILY_VIDEO_LIMIT = Infinity;
 
-export async function detectIncognito(): Promise<boolean> {
-  // 1. Session Storage toggle
+/**
+ * Retrieves the API secret key parameter configured in environment variables,
+ * window injection, cookie, query parameter, or local storage.
+ */
+export function getApiKey(): string {
+  if (typeof window !== 'undefined' && (window as any).__APP_API_KEY__) {
+    return (window as any).__APP_API_KEY__;
+  }
+
+  // Check import.meta.env
   try {
-    if (sessionStorage.getItem('xerox_incognito_mode') === 'true') {
-      return true;
-    }
+    const metaEnv = (import.meta as any).env;
+    const envKey = metaEnv?.VITE_API_KEY || metaEnv?.VITE_API_SECRET_KEY || '';
+    if (envKey) return envKey;
   } catch {}
 
-  // 2. URL search param check
-  try {
-    if (window.location.search.includes('incognito=true')) {
-      return true;
-    }
-  } catch {}
-
-  // 3. Chromium Storage Quota check
-  if (navigator.storage && navigator.storage.estimate) {
+  if (typeof window !== 'undefined') {
+    // Check URL query parameters (?apiKey=... or ?key=... or ?token=...)
     try {
-      const { quota } = await navigator.storage.estimate();
-      if (quota && quota < 120000000) { // ~120MB threshold in Chromium Incognito
-        return true;
+      const params = new URLSearchParams(window.location.search);
+      const urlKey =
+        params.get('apiKey') ||
+        params.get('api_key') ||
+        params.get('key') ||
+        params.get('token') ||
+        params.get('secret');
+      if (urlKey) {
+        safeStorage.setItem('xerox_api_key', urlKey);
+        return urlKey;
       }
     } catch {}
-  }
 
-  // 4. Firefox Private Mode check
-  if ('mozPay' in navigator || (navigator as any).mozContacts) {
+    // Check cookie
     try {
-      const db = indexedDB.open("test_incognito_check");
-      const isPrivate = await new Promise<boolean>((resolve) => {
-        db.onerror = () => resolve(true);
-        db.onsuccess = () => resolve(false);
-      });
-      if (isPrivate) return true;
-    } catch {
-      return true;
-    }
+      const cookieMatch = document.cookie.match(/(?:^|;\s*)xerox_api_key=([^;]+)/);
+      if (cookieMatch) {
+        const decoded = decodeURIComponent(cookieMatch[1]).trim();
+        if (decoded) {
+          safeStorage.setItem('xerox_api_key', decoded);
+          return decoded;
+        }
+      }
+    } catch {}
+
+    // Check safeStorage
+    const stored = safeStorage.getItem('xerox_api_key');
+    if (stored) return stored;
   }
 
-  // 5. Safari Private Browsing check
-  try {
-    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-    if (isSafari) {
-      try {
-        (window as any).openDatabase(null, null, null, null);
-      } catch {
-        return true;
-      }
-    }
-  } catch {}
-
-  return false;
+  return 'xerox_api_key_2026';
 }
 
-export function isDailyVideoLimitReached(): boolean {
-  try {
-    const usage = getClientUsage();
-    return usage.videos >= DAILY_VIDEO_LIMIT;
-  } catch {
-    return false;
+/**
+ * Appends the apiKey parameter to API URLs
+ */
+export function appendApiKey(url: string): string {
+  const isApi =
+    url.startsWith('/api/') ||
+    url.startsWith('/stream') ||
+    url.startsWith('/edu') ||
+    url.startsWith('/360') ||
+    url.startsWith('/scratch-edu') ||
+    url.startsWith('/download-proxy');
+
+  if (!isApi) return url;
+
+  const key = getApiKey();
+  if (!key) return url;
+
+  // Don't re-append if already present
+  if (
+    url.includes('apiKey=') ||
+    url.includes('api_key=') ||
+    url.includes('key=') ||
+    url.includes('token=') ||
+    url.includes('secret=')
+  ) {
+    return url;
   }
+
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}apiKey=${encodeURIComponent(key)}`;
+}
+
+// Global fetch interceptor to guarantee all relative API requests carry the apiKey parameter & header
+if (typeof window !== 'undefined' && !(window as any).__FETCH_KEY_INTERCEPTED__) {
+  (window as any).__FETCH_KEY_INTERCEPTED__ = true;
+  const rawFetch = window.fetch;
+  window.fetch = function (input: RequestInfo | URL, init?: RequestInit) {
+    let url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+    const isApi =
+      url.startsWith('/api/') ||
+      url.startsWith('/stream') ||
+      url.startsWith('/edu') ||
+      url.startsWith('/360') ||
+      url.startsWith('/scratch-edu') ||
+      url.startsWith('/download-proxy');
+
+    if (isApi) {
+      url = appendApiKey(url);
+      const headers = new Headers(init?.headers || {});
+      const key = getApiKey();
+      if (key && !headers.has('x-api-key')) {
+        headers.set('x-api-key', key);
+      }
+      return rawFetch.call(this, url, { ...init, headers });
+    }
+
+    return rawFetch.call(this, input, init);
+  };
+}
+
+// 視聴制限は完全に解除（常にfalse）
+export function isDailyVideoLimitReached(): boolean {
+  return false;
 }
 
 export function getClientUUID(): string {
   try {
-    let id = localStorage.getItem('xerox_client_uuid');
+    let id = safeStorage.getItem('xerox_client_uuid');
     if (!id) {
       id = 'c_' + Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
-      localStorage.setItem('xerox_client_uuid', id);
+      safeStorage.setItem('xerox_client_uuid', id);
     }
     return id;
   } catch {
@@ -96,7 +151,7 @@ export interface ClientUsageData {
 export function getClientUsage(): ClientUsageData {
   try {
     const today = getLocalJstDateString();
-    const raw = localStorage.getItem('xerox_client_usage');
+    const raw = safeStorage.getItem('xerox_client_usage');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.day === today) {
@@ -109,7 +164,7 @@ export function getClientUsage(): ClientUsageData {
       }
     }
     const fresh: ClientUsageData = { day: today, videos: 0, searches: 0, total: 0 };
-    localStorage.setItem('xerox_client_usage', JSON.stringify(fresh));
+    safeStorage.setItem('xerox_client_usage', JSON.stringify(fresh));
     return fresh;
   } catch {
     return { day: getLocalJstDateString(), videos: 0, searches: 0, total: 0 };
@@ -128,7 +183,7 @@ export function incrementClientUsage(type: 'video' | 'search' | 'total', delta: 
     } else if (type === 'total') {
       current.total += delta;
     }
-    localStorage.setItem('xerox_client_usage', JSON.stringify(current));
+    safeStorage.setItem('xerox_client_usage', JSON.stringify(current));
     return current;
   } catch {
     return getClientUsage();
@@ -137,7 +192,7 @@ export function incrementClientUsage(type: 'video' | 'search' | 'total', delta: 
 
 export async function fetchLimits(): Promise<DailyUsageLimits> {
   const clientUuid = getClientUUID();
-  const token = localStorage.getItem('xerox_usage_token') || '';
+  const token = safeStorage.getItem('xerox_usage_token') || '';
   const localUsage = getClientUsage();
 
   try {
@@ -153,18 +208,18 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
     const newToken = data.token || res.headers.get('x-daily-usage-token');
     if (newToken) {
       try {
-        localStorage.setItem('xerox_usage_token', newToken);
+        safeStorage.setItem('xerox_usage_token', newToken);
       } catch {}
     }
 
     if (data && data.videos && data.searches && data.total) {
-      // サーバーレス再起動・再読み込み時もローカル記録とマージして利用量が0にリセットされるのを防止
-      const mergedVideos = Math.max(data.videos.used || 0, localUsage.videos);
+      // 視聴制限は撤廃（無制限）
+      data.videos.limit = 999999;
+      data.videos.remaining = 999999;
+      data.videos.used = localUsage.videos;
+
       const mergedSearches = Math.max(data.searches.used || 0, localUsage.searches);
       const mergedTotal = Math.max(data.total.used || 0, localUsage.total);
-
-      data.videos.used = mergedVideos;
-      data.videos.remaining = Math.max(0, data.videos.limit - mergedVideos);
 
       data.searches.used = mergedSearches;
       data.searches.remaining = Math.max(0, data.searches.limit - mergedSearches);
@@ -172,12 +227,12 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
       data.total.used = mergedTotal;
       data.total.remaining = Math.max(0, data.total.limit - mergedTotal);
 
-      data.isLimited = mergedVideos >= data.videos.limit || mergedSearches >= data.searches.limit || mergedTotal >= data.total.limit;
+      data.isLimited = false;
 
       try {
-        localStorage.setItem('xerox_client_usage', JSON.stringify({
+        safeStorage.setItem('xerox_client_usage', JSON.stringify({
           day: localUsage.day,
-          videos: mergedVideos,
+          videos: localUsage.videos,
           searches: mergedSearches,
           total: mergedTotal,
         }));
@@ -187,22 +242,17 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
     return data;
   } catch (err) {
     console.warn('Failed to fetch remote limits, using local fallback:', err);
-    // ネットワークエラー時もローカルの利用量をそのまま返却
-    const vLimit = DAILY_VIDEO_LIMIT;
-    const sLimit = 100;
-    const tLimit = 600;
     return {
-      videos: { used: localUsage.videos, limit: vLimit, remaining: Math.max(0, vLimit - localUsage.videos) },
-      searches: { used: localUsage.searches, limit: sLimit, remaining: Math.max(0, sLimit - localUsage.searches) },
-      total: { used: localUsage.total, limit: tLimit, remaining: Math.max(0, tLimit - localUsage.total) },
+      videos: { used: 0, limit: 999999, remaining: 999999 },
+      searches: { used: 0, limit: 100, remaining: 100 },
+      total: { used: 0, limit: 600, remaining: 600 },
       resetAt: new Date(Date.now() + 86400000).toISOString(),
       resetSeconds: 3600,
-      isLimited: localUsage.videos >= vLimit || localUsage.searches >= sLimit || localUsage.total >= tLimit,
-      limitedType: localUsage.videos >= vLimit ? 'video' : localUsage.searches >= sLimit ? 'search' : localUsage.total >= tLimit ? 'total' : null
+      isLimited: false,
+      limitedType: null
     };
   }
 }
-
 
 export function formatNumber(num: number): string {
   if (!num) return '0';
@@ -276,17 +326,22 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
     const reqOptions = { ...options };
     const finalHeaders = new Headers(reqOptions.headers || {});
-    const ytCreds = localStorage.getItem('xerox_youtube_credentials');
+    const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
     if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
       finalHeaders.set('x-youtube-credentials', ytCreds);
     }
 
     // Attach client id and usage token for rate limiting
     if (isApiCall) {
+      url = appendApiKey(url);
+      const apiKey = getApiKey();
+      if (apiKey && !finalHeaders.has('x-api-key')) {
+        finalHeaders.set('x-api-key', apiKey);
+      }
       if (!finalHeaders.has('x-client-id')) {
         finalHeaders.set('x-client-id', getClientUUID());
       }
-      const usageToken = localStorage.getItem('xerox_usage_token');
+      const usageToken = safeStorage.getItem('xerox_usage_token');
       if (usageToken && !finalHeaders.has('x-usage-token')) {
         finalHeaders.set('x-usage-token', usageToken);
       }
@@ -310,7 +365,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const newUsageToken = res.headers.get('x-daily-usage-token');
     if (newUsageToken) {
       try {
-        localStorage.setItem('xerox_usage_token', newUsageToken);
+        safeStorage.setItem('xerox_usage_token', newUsageToken);
       } catch {}
     }
     
@@ -340,8 +395,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
       if (res.status === 401 && url.startsWith('/api/user/')) {
         console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
-        localStorage.removeItem('xerox_youtube_credentials');
-        localStorage.removeItem('xerox_user_info');
+        safeStorage.removeItem('xerox_youtube_credentials');
+        safeStorage.removeItem('xerox_user_info');
       }
 
       throw new Error(errorMessage);

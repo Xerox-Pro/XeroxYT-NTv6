@@ -6,6 +6,7 @@ import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
 import { parseYouTubeUrl, YouTubeUrlParseResult, fetchJSON, formatDuration } from '../utils';
+import { safeStorage } from '../services/safeStorage';
 
 interface NavbarProps {
   onSearch: (q: string) => void;
@@ -49,12 +50,7 @@ export default function Navbar({
 
   // 検索履歴 & 候補
   const [searchHistory, setSearchHistory] = useState<string[]>(() => {
-    try {
-      const saved = localStorage.getItem('xerox_yt_search_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
+    return safeStorage.getJSON<string[]>('xerox_yt_search_history', []);
   });
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
@@ -221,11 +217,7 @@ export default function Navbar({
     setSearchHistory((prev) => {
       const filtered = prev.filter((item) => item.toLowerCase() !== trimmed.toLowerCase());
       const updated = [trimmed, ...filtered].slice(0, 25);
-      try {
-        localStorage.setItem('xerox_yt_search_history', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to save search history', e);
-      }
+      safeStorage.setJSON('xerox_yt_search_history', updated);
       return updated;
     });
   };
@@ -236,11 +228,7 @@ export default function Navbar({
     e.preventDefault();
     setSearchHistory((prev) => {
       const updated = prev.filter((item) => item !== termToRemove);
-      try {
-        localStorage.setItem('xerox_yt_search_history', JSON.stringify(updated));
-      } catch (e) {
-        console.error('Failed to update search history', e);
-      }
+      safeStorage.setJSON('xerox_yt_search_history', updated);
       return updated;
     });
   };
@@ -250,11 +238,7 @@ export default function Navbar({
     e.stopPropagation();
     e.preventDefault();
     setSearchHistory([]);
-    try {
-      localStorage.removeItem('xerox_yt_search_history');
-    } catch (e) {
-      console.error('Failed to clear search history', e);
-    }
+    safeStorage.removeItem('xerox_yt_search_history');
   };
 
   // サジェスト取得 (デバウンス)

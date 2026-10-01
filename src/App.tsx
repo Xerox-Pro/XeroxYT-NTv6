@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import MainApp from './MainApp';
 import AIStudio from './components/AIStudio';
 import PWAUpdateIndicator from './components/PWAUpdateIndicator';
+import IncognitoBlockedScreen from './components/IncognitoBlockedScreen';
 import { checkIsIncognitoWithTimeout, IncognitoDetectionResult } from './utils/incognitoDetector';
 
 export default function App() {
@@ -54,14 +55,26 @@ export default function App() {
       .catch(() => {});
   }, []);
 
-  // While checking, wait silently or show empty
+  // While checking, display a clean dark loader to prevent flash of content in incognito mode
   if (!incognitoState.checked) {
-    return null;
+    return (
+      <div className="min-h-screen bg-[#0F0F12] flex flex-col items-center justify-center gap-3">
+        <div className="w-8 h-8 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin" />
+        <span className="text-xs text-gray-500 font-medium">セキュリティチェック中...</span>
+      </div>
+    );
   }
 
-  // Block completely if incognito / private mode is detected: display only 'error'
+  // Block completely if incognito / private mode is detected
   if (incognitoState.isPrivate) {
-    return <div>error</div>;
+    return (
+      <IncognitoBlockedScreen
+        browserName={incognitoState.browserName}
+        reason={incognitoState.reason}
+        onRetry={runDetection}
+        isRetrying={isRetrying}
+      />
+    );
   }
 
   // Normal browsing mode: regular app experience
