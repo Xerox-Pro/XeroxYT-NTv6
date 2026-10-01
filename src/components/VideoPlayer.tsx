@@ -348,6 +348,203 @@ export default function VideoPlayer({
   const [likeCountDelta, setLikeCountDelta] = useState(0);
   const [copiedToast, setCopiedToast] = useState(false);
 
+  // Player mode & stream states
+  const [playerMode, setPlayerMode] = useState<'embed' | 'stream'>('embed');
+  const [streamQuality, setStreamQuality] = useState<'1080p' | '720p' | '360p'>('1080p');
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamVideoUrl, setStreamVideoUrl] = useState('');
+  const [streamAudioUrl, setStreamAudioUrl] = useState('');
+  
+  // Download Modal states
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+  const [dlLoading, setDlLoading] = useState(false);
+  const [dlFormats, setDlFormats] = useState<any[]>([]);
+  const [dlAdaptiveFormats, setDlAdaptiveFormats] = useState<any[]>([]);
+  const [dlTitle, setDlTitle] = useState('');
+
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Sync video and audio refs for adaptive formats
+  useEffect(() => {
+    const video = videoRef.current;
+    const audio = audioRef.current;
+    if (!video || !audio) return;
+
+    const onPlay = () => audio.play().catch(() => {});
+    const onPause = () => audio.pause();
+    const onSeeking = () => {
+      audio.currentTime = video.currentTime;
+    };
+    const onRateChange = () => {
+      audio.playbackRate = video.playbackRate;
+    };
+    const onWaiting = () => audio.pause();
+    const onPlaying = () => audio.play().catch(() => {});
+
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
+    video.addEventListener('seeking', onSeeking);
+    video.addEventListener('ratechange', onRateChange);
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('playing', onPlaying);
+
+    return () => {
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('seeking', onSeeking);
+      video.removeEventListener('ratechange', onRateChange);
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('playing', onPlaying);
+    };
+  }, [streamVideoUrl, streamAudioUrl]);
+
+  // Reset player when videoId changes
+  useEffect(() => {
+    setPlayerMode('embed');
+    setStreamVideoUrl('');
+    setStreamAudioUrl('');
+  }, [videoId]);
+
+  const loadStreamUrls = async (quality: '1080p' | '720p' | '360p') => {
+    if (!videoId) return;
+    setStreamLoading(true);
+    try {
+      const res = await fetch(`/api/download-info/${encodeURIComponent(videoId)}`);
+      if (!res.ok) throw new Error('Failed to fetch stream details');
+      const data = await res.json();
+      
+      if (data && data.status === 'OK') {
+        const adaptive = data.adaptiveFormats || [];
+        const formats = data.formats || [];
+        
+        // Find video URL
+        let videoUrl = '';
+        let audioUrl = '';
+        
+        if (quality === '1080p') {
+          const match = adaptive.find((f: any) => f.qualityLabel === '1080p' && f.mimeType?.includes('video'));
+          if (match) videoUrl = match.url;
+        } else if (quality === '720p') {
+          const match = adaptive.find((f: any) => f.qualityLabel === '720p' && f.mimeType?.includes('video'));
+          if (match) videoUrl = match.url;
+        }
+        
+        // Fallback to highest adaptive or standard format if preferred quality is missing
+        if (!videoUrl) {
+          const match = adaptive.find((f: any) => f.qualityLabel === '720p' && f.mimeType?.includes('video')) ||
+                        adaptive.find((f: any) => f.qualityLabel === '480p' && f.mimeType?.includes('video')) ||
+                        adaptive.find((f: any) => f.qualityLabel === '1080p' && f.mimeType?.includes('video'));
+          if (match) {
+            videoUrl = match.url;
+          } else if (formats.length > 0) {
+            // Combined format (typically 360p)
+            videoUrl = formats[0].url;
+          }
+        }
+        
+        // Find audio track if it's an adaptive format (which doesn't have audio embedded)
+        const isAdaptive = adaptive.some((f: any) => f.url === videoUrl);
+        if (isAdaptive) {
+          const audioMatch = adaptive.find((f: any) => f.mimeType?.includes('audio') && f.itag === 140) || // M4A medium
+                             adaptive.find((f: any) => f.mimeType?.includes('audio')); // any audio fallback
+          if (audioMatch) audioUrl = audioMatch.url;
+        }
+        
+        setStreamVideoUrl(videoUrl);
+        setStreamAudioUrl(audioUrl);
+      } else {
+        // Fallback to general proxy stream endpoint if api.download-info fails or is empty
+        const streamText = await fetch(`/api/stream/${encodeURIComponent(videoId)}`).then(r => r.text());
+        if (streamText && streamText.startsWith('http')) {
+          setStreamVideoUrl(streamText);
+          setStreamAudioUrl('');
+        } else {
+          throw new Error('Fallback failed');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch stream details:', e);
+      // Absolute fallback using stream proxy
+      try {
+        const streamText = await fetch(`/api/stream/${encodeURIComponent(videoId)}`).then(r => r.text());
+        if (streamText && streamText.startsWith('http')) {
+          setStreamVideoUrl(streamText);
+          setStreamAudioUrl('');
+        } else {
+          setStreamVideoUrl('');
+        }
+      } catch {
+        setStreamVideoUrl('');
+      }
+    } finally {
+      setStreamLoading(false);
+    }
+  };
+
+  const handlePlayerModeChange = (mode: 'embed' | 'stream') => {
+    setPlayerMode(mode);
+    if (mode === 'stream' && !streamVideoUrl) {
+      loadStreamUrls(streamQuality);
+    }
+  };
+
+  const handleStreamQualityChange = (quality: '1080p' | '720p' | '360p') => {
+    setStreamQuality(quality);
+    loadStreamUrls(quality);
+  };
+
+  const handleOpenDownloadModal = async () => {
+    setDownloadModalOpen(true);
+    setDlLoading(true);
+    try {
+      const res = await fetch(`/api/download-info/${encodeURIComponent(videoId || '')}`);
+      if (!res.ok) throw new Error('Failed to fetch format details');
+      const data = await res.json();
+      if (data && data.status === 'OK') {
+        setDlTitle(data.title || activeVideo.title);
+        setDlFormats(data.formats || []);
+        setDlAdaptiveFormats(data.adaptiveFormats || []);
+      } else {
+        throw new Error('Fallback needed');
+      }
+    } catch (e) {
+      console.error('Failed to load downloads options, creating static fallbacks:', e);
+      // Construct fallbacks
+      setDlTitle(activeVideo.title);
+      setDlFormats([
+        {
+          itag: 18,
+          qualityLabel: '360p',
+          mimeType: 'video/mp4; codecs="avc1.42001E, mp4a.40.2"',
+          url: `/api/download-proxy?videoId=${videoId}&formatId=18`
+        }
+      ]);
+      setDlAdaptiveFormats([
+        {
+          itag: 137,
+          qualityLabel: '1080p',
+          mimeType: 'video/mp4; codecs="avc1.640028"',
+          url: `/api/download-proxy?videoId=${videoId}&formatId=137`
+        },
+        {
+          itag: 136,
+          qualityLabel: '720p',
+          mimeType: 'video/mp4; codecs="avc1.64001F"',
+          url: `/api/download-proxy?videoId=${videoId}&formatId=136`
+        },
+        {
+          itag: 140,
+          qualityLabel: '音声のみ (M4A)',
+          mimeType: 'audio/mp4; codecs="mp4a.40.2"',
+          url: `/api/download-proxy?videoId=${videoId}&formatId=140`
+        }
+      ]);
+    } finally {
+      setDlLoading(false);
+    }
+  };
+
   const initialThumbnails = initialVideo && 'videoThumbnails' in initialVideo ? initialVideo.videoThumbnails : undefined;
   const initialDesc = initialVideo && 'description' in initialVideo ? initialVideo.description : undefined;
   const initialPublished = initialVideo && 'publishedText' in initialVideo ? initialVideo.publishedText : undefined;
@@ -1389,7 +1586,59 @@ export default function VideoPlayer({
           tabIndex={0}
           className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh] group outline-hidden focus:ring-2 focus:ring-blue-500/20"
         >
-          {iframeUrl ? (
+          {playerMode === 'stream' ? (
+            <div className="w-full h-full relative bg-black flex items-center justify-center">
+              {streamLoading ? (
+                <div className="flex flex-col items-center justify-center text-white gap-3">
+                  <Loader2 className="w-10 h-10 animate-spin text-red-500" />
+                  <span className="text-sm font-semibold">1080p ストリーミング接続中...</span>
+                </div>
+              ) : streamVideoUrl ? (
+                <div className="w-full h-full relative">
+                  <video
+                    ref={videoRef}
+                    src={streamVideoUrl}
+                    controls
+                    autoPlay
+                    className="w-full h-full object-contain"
+                    playsInline
+                  />
+                  {streamAudioUrl && (
+                    <audio
+                      ref={audioRef}
+                      src={streamAudioUrl}
+                      autoPlay
+                    />
+                  )}
+                  
+                  {/* Quality select overlay at top-right corner of stream player */}
+                  <div className="absolute top-4 right-4 z-40 bg-black/60 hover:bg-black/80 backdrop-blur-md text-white rounded-lg px-2.5 py-1.5 text-[11px] font-bold border border-white/10 transition-colors flex items-center gap-1.5">
+                    <span>画質:</span>
+                    <select 
+                      value={streamQuality} 
+                      onChange={(e) => handleStreamQualityChange(e.target.value as any)}
+                      className="bg-transparent text-white outline-none cursor-pointer border-none font-bold"
+                    >
+                      <option value="1080p" className="bg-zinc-950 text-white">1080p (フルHD)</option>
+                      <option value="720p" className="bg-zinc-950 text-white">720p (HD)</option>
+                      <option value="360p" className="bg-zinc-950 text-white">360p (標準)</option>
+                    </select>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center text-white gap-3 p-6 text-center">
+                  <AlertTriangle className="w-12 h-12 text-yellow-500" />
+                  <p className="text-sm font-semibold max-w-sm">ストリーミングリンクを取得できませんでした。</p>
+                  <button 
+                    onClick={() => loadStreamUrls(streamQuality)}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+                  >
+                    再試行
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : iframeUrl ? (
             <iframe
               ref={iframeRef}
               src={iframeUrl}
@@ -1556,10 +1805,34 @@ export default function VideoPlayer({
                 <span>共有</span>
               </motion.button>
 
+              <div className="flex bg-gray-100 p-0.5 rounded-full border border-gray-200 shadow-2xs shrink-0 items-center">
+                <button
+                  onClick={() => handlePlayerModeChange('embed')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all cursor-pointer ${
+                    playerMode === 'embed'
+                      ? 'bg-white text-gray-900 shadow-xs'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  通常再生
+                </button>
+                <button
+                  onClick={() => handlePlayerModeChange('stream')}
+                  className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    playerMode === 'stream'
+                      ? 'bg-white text-gray-900 shadow-xs'
+                      : 'text-gray-500 hover:text-gray-900'
+                  }`}
+                >
+                  <Radio size={12} className="text-red-500 animate-pulse" />
+                  ストリーム (1080p)
+                </button>
+              </div>
+
               <motion.button 
-                onClick={handleDownload}
+                onClick={handleOpenDownloadModal}
                 whileTap={{ scale: 0.92 }}
-                title="動画をダウンロード"
+                title="高画質動画・音声別ダウンロード"
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
                 <Download size={15} />
@@ -2079,6 +2352,134 @@ export default function VideoPlayer({
                 <p className="text-sm text-gray-500 text-center p-4">チャンネル情報を読み込めませんでした。</p>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Download Quality Selector Modal */}
+      {downloadModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Download className="text-blue-600 animate-bounce" size={20} />
+                <h3 className="text-base font-bold text-gray-900">動画・音声をダウンロード</h3>
+              </div>
+              <button 
+                onClick={() => setDownloadModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-lg font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs font-bold text-gray-900 line-clamp-1 bg-gray-50 p-2 rounded-lg">
+              {dlTitle || activeVideo.title}
+            </p>
+
+            {dlLoading ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                <span className="text-xs font-semibold text-gray-500">ダウンロード可能なファイル形式を取得中...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4 overflow-y-auto max-h-[60vh] pr-1">
+                {/* 🎥 動画セクション */}
+                <div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                    <span>🎥</span>
+                    <span>動画 (映像付き形式)</span>
+                  </h4>
+                  <div className="flex flex-col gap-1.5">
+                    {/* Normal Combined standard format (like 360p) */}
+                    {dlFormats.map((f: any, idx: number) => {
+                      const sizeStr = f.contentLength ? `(${(parseInt(f.contentLength, 10) / (1024 * 1024)).toFixed(1)} MB)` : '';
+                      return (
+                        <div key={`form-${f.itag}-${idx}`} className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-xs border border-gray-100">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="font-bold text-gray-900 flex items-center gap-1.5">
+                              <span>{f.qualityLabel || '360p'}</span>
+                              <span className="bg-emerald-100 text-emerald-800 text-[9px] px-1 rounded font-bold">映像＋音声</span>
+                            </span>
+                            <span className="text-[10px] text-gray-500 font-mono">Format: MP4 (Combined) • {sizeStr}</span>
+                          </div>
+                          <a
+                            href={f.url || `/api/download-proxy?videoId=${videoId}&formatId=${f.itag}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-bold shadow-2xs hover:shadow-sm transition-all"
+                          >
+                            ダウンロード
+                          </a>
+                        </div>
+                      );
+                    })}
+
+                    {/* Adaptive Video only formats (1080p, 720p) */}
+                    {dlAdaptiveFormats
+                      .filter((f: any) => f.mimeType?.includes('video'))
+                      .map((f: any, idx: number) => {
+                        const sizeStr = f.contentLength ? `(${(parseInt(f.contentLength, 10) / (1024 * 1024)).toFixed(1)} MB)` : '';
+                        const label = f.qualityLabel || 'Adaptive Video';
+                        return (
+                          <div key={`adapt-${f.itag}-${idx}`} className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-xs border border-gray-100">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold text-gray-900 flex items-center gap-1.5">
+                                <span>{label}</span>
+                                <span className="bg-amber-100 text-amber-800 text-[9px] px-1 rounded font-bold">映像のみ / No Audio</span>
+                              </span>
+                              <span className="text-[10px] text-gray-500 font-mono">Format: {f.mimeType?.split(';')[0]?.replace('video/', '')?.toUpperCase() || 'MP4'} • {sizeStr}</span>
+                            </div>
+                            <a
+                              href={f.url || `/api/download-proxy?videoId=${videoId}&formatId=${f.itag}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3.5 py-1.5 bg-gray-800 hover:bg-black text-white rounded-full text-xs font-bold shadow-2xs hover:shadow-sm transition-all"
+                            >
+                              ダウンロード
+                            </a>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* 🎵 音声セクション */}
+                <div>
+                  <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-2 border-b border-gray-100 pb-1 flex items-center gap-1.5">
+                    <span>🎵</span>
+                    <span>音声のみ (オーディオ形式)</span>
+                  </h4>
+                  <div className="flex flex-col gap-1.5">
+                    {dlAdaptiveFormats
+                      .filter((f: any) => f.mimeType?.includes('audio'))
+                      .map((f: any, idx: number) => {
+                        const sizeStr = f.contentLength ? `(${(parseInt(f.contentLength, 10) / (1024 * 1024)).toFixed(1)} MB)` : '';
+                        const isM4A = f.mimeType?.includes('mp4');
+                        return (
+                          <div key={`audio-${f.itag}-${idx}`} className="flex items-center justify-between p-2.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-xs border border-gray-100">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold text-gray-900 flex items-center gap-1.5">
+                                <span>{isM4A ? '高音質オーディオ (M4A / AAC)' : '高音質オーディオ (WebM / Opus)'}</span>
+                                <span className="bg-blue-100 text-blue-800 text-[9px] px-1 rounded font-bold">音声のみ</span>
+                              </span>
+                              <span className="text-[10px] text-gray-500 font-mono">Format: {isM4A ? 'M4A' : 'WEBM'} • {sizeStr}</span>
+                            </div>
+                            <a
+                              href={f.url || `/api/download-proxy?videoId=${videoId}&formatId=${f.itag}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full text-xs font-bold shadow-2xs hover:shadow-sm transition-all"
+                            >
+                              ダウンロード
+                            </a>
+                          </div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
