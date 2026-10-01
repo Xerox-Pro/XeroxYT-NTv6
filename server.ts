@@ -5264,4 +5264,8 @@ async function startServer() {
 }
 
 const appPromise = startServer();
-export default appPromise;
+export { appPromise };
+export default async (req: any, res: any) => {
+  const app = await appPromise;
+  return app(req, res);
+};
