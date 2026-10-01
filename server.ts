@@ -531,6 +531,12 @@ async function startServer() {
         maxAge: 30 * 24 * 60 * 60 * 1000,
         sameSite: "lax",
       });
+      // Set legitimate browser session cookie to prove this is a real browser visit
+      res.cookie("legit_browser_session", "1", {
+        path: "/",
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
+      });
       return next();
     }
 
@@ -539,11 +545,78 @@ async function startServer() {
       return next();
     }
 
-    // Exclude config endpoint (used by legitimate frontend to bootstrap)
-    if (p === "/api/config") {
-      return next();
+    // 1. Block common scripting/scraping user agents
+    const userAgent = (req.headers["user-agent"] || "").toLowerCase();
+    const isScriptOrScraper = /curl|wget|python|requests|postman|insomnia|axios|got|node-fetch|urllib|httpclient|java|go-http-client/i.test(userAgent);
+    if (isScriptOrScraper) {
+      return res.status(403).json({
+        error: "Access Forbidden: External automated tools are not allowed.",
+        message: "外部サービスやスクリプトによる自動アクセスはブロックされています。"
+      });
     }
 
+    // 2. Referer and Origin validation
+    const referer = req.headers["referer"];
+    const origin = req.headers["origin"];
+    const host = req.headers["host"] || "";
+
+    if (referer) {
+      try {
+        const refUrl = new URL(referer);
+        const refHost = refUrl.host;
+        const isLegitReferer = 
+          refHost === host || 
+          refHost.includes("localhost") || 
+          refHost.includes("127.0.0.1") || 
+          refHost.endsWith(".run.app") || 
+          refHost.endsWith(".google.com");
+          
+        if (!isLegitReferer) {
+          return res.status(403).json({
+            error: "Access Forbidden: External website referer is blocked.",
+            message: "外部サイトからのリクエストは許可されていません。"
+          });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid referer header." });
+      }
+    }
+
+    if (origin) {
+      try {
+        const origUrl = new URL(origin);
+        const origHost = origUrl.host;
+        const isLegitOrigin = 
+          origHost === host || 
+          origHost.includes("localhost") || 
+          origHost.includes("127.0.0.1") || 
+          origHost.endsWith(".run.app") || 
+          origHost.endsWith(".google.com");
+          
+        if (!isLegitOrigin) {
+          return res.status(403).json({
+            error: "Access Forbidden: External website origin is blocked.",
+            message: "外部のオリジンからのリクエストは許可されていません。"
+          });
+        }
+      } catch (e) {
+        return res.status(400).json({ error: "Invalid origin header." });
+      }
+    }
+
+    // 3. Legit session cookie validation (except config, but config is validated by referer/origin above)
+    if (p !== "/api/config") {
+      const cookieHeader = req.headers["cookie"] || "";
+      const hasLegitSession = /(?:^|;\s*)legit_browser_session=1/.test(cookieHeader);
+      if (!hasLegitSession) {
+        return res.status(403).json({
+          error: "Access Forbidden: Legit browser session required.",
+          message: "サイトを直接ブラウザで開いてからご利用ください（外部APIリクエストはすべてブロックされています）。"
+        });
+      }
+    }
+
+    // 4. API key verification
     const expectedKey = getExpectedApiKey();
     const clientKey = extractApiKey(req);
 
@@ -3515,6 +3588,7 @@ async function startServer() {
     currentPage: number;
     feed: any;
     pages: Map<number, any[]>;
+    threads: Map<string, any>;
     hasMore: boolean;
     lastAccess: number;
   }
@@ -3566,6 +3640,12 @@ async function startServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
+
+        const replyCount = 
+          (typeof c.reply_count === "number" ? c.reply_count : parseInt(c.reply_count, 10)) ||
+          (typeof item.reply_count === "number" ? item.reply_count : parseInt(item.reply_count, 10)) ||
+          0;
+
         comments.push({
           id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
@@ -3578,6 +3658,7 @@ async function startServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
+          replyCount: isNaN(replyCount) ? 0 : replyCount,
         });
       }
     }
@@ -3637,9 +3718,18 @@ async function startServer() {
           currentPage: 1,
           feed: commentsData,
           pages: new Map([[1, initialComments]]),
+          threads: new Map(),
           hasMore: Boolean(commentsData?.has_continuation),
           lastAccess: now,
         };
+        if (commentsData?.contents) {
+          for (const thread of commentsData.contents) {
+            const commentId = thread.comment?.comment_id || thread.comment?.id || thread.id;
+            if (commentId) {
+              session.threads.set(commentId, thread);
+            }
+          }
+        }
         commentsSessions.set(sessionKey, session);
       }
 
@@ -3651,6 +3741,15 @@ async function startServer() {
           const nextComments = parseCommentsList(session.feed?.contents || []);
           session.pages.set(session.currentPage, nextComments);
           session.hasMore = Boolean(session.feed?.has_continuation);
+
+          if (session.feed?.contents) {
+            for (const thread of session.feed.contents) {
+              const commentId = thread.comment?.comment_id || thread.comment?.id || thread.id;
+              if (commentId) {
+                session.threads.set(commentId, thread);
+              }
+            }
+          }
         }
       }
 
@@ -3670,6 +3769,64 @@ async function startServer() {
     } catch (err) {
       console.error("Comments fetch error:", err);
       return res.json({ page, comments: [], hasMore: false });
+    }
+  });
+
+  // コメント返信取得 API（YouTubei.js の getReplies による取得）
+  app.get("/api/video/:id/comments/:commentId/replies", async (req, res) => {
+    const videoId = req.params.id;
+    const commentId = req.params.commentId;
+    const sort = ((req.query.sort as string) || "top").toLowerCase() === "newest" ? "newest" : "top";
+
+    try {
+      const sessionKey = `${videoId}:${sort}`;
+      let session = commentsSessions.get(sessionKey);
+
+      // セッションがない、またはスレッドがキャッシュにない場合は初期化して1ページ目から探す
+      if (!session) {
+        const youtube = await getYt();
+        const sortBy = sort === "newest" ? "NEWEST_FIRST" : "TOP_COMMENTS";
+        let commentsData = await youtube.getComments(videoId, sortBy);
+        let initialComments = parseCommentsList(commentsData?.contents || []);
+        session = {
+          videoId,
+          sort,
+          currentPage: 1,
+          feed: commentsData,
+          pages: new Map([[1, initialComments]]),
+          threads: new Map(),
+          hasMore: Boolean(commentsData?.has_continuation),
+          lastAccess: Date.now(),
+        };
+        if (commentsData?.contents) {
+          for (const thread of commentsData.contents) {
+            const cid = thread.comment?.comment_id || thread.comment?.id || thread.id;
+            if (cid) {
+              session.threads.set(cid, thread);
+            }
+          }
+        }
+        commentsSessions.set(sessionKey, session);
+      }
+
+      let thread = session.threads.get(commentId);
+      if (!thread) {
+        // スレッドが見つからない場合は空配列を返す
+        return res.json({ replies: [] });
+      }
+
+      if (typeof thread.getReplies !== "function") {
+        return res.json({ replies: [] });
+      }
+
+      const repliesData = await thread.getReplies();
+      const rawReplies = repliesData?.contents || [];
+      const replies = parseCommentsList(rawReplies);
+
+      return res.json({ replies });
+    } catch (err) {
+      console.error("Replies fetch error:", err);
+      return res.json({ replies: [] });
     }
   });
 
