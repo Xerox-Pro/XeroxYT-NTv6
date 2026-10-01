@@ -11,6 +11,7 @@
         "@tailwindcss/typography": "^0.5.20",
         "axios": "^1.19.0",
         "clsx": "^2.1.1",
+        "detect-incognito": "^1.0.0",
         "dotenv": "^17.2.3",
         "express": "^4.21.2",
         "idb-keyval": "^6.3.0",
@@ -615,6 +616,8 @@
     "dequal": ["dequal@2.0.3", "", {}, "sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA=="],
 
     "destroy": ["destroy@1.2.0", "", {}, ""],
+
+    "detect-incognito": ["detect-incognito@1.0.0", "", {}, "sha512-o/58BwX8VdQJFICJlgwLchBw/0js1tWDYe/ygOZhyuMw5pviIkOseH+IYPeR8iceU36KPJyDDm93iRhnH9mIEg=="],
 
     "detect-libc": ["detect-libc@2.1.2", "", {}, "sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ=="],
 

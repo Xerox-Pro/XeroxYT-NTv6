@@ -21,11 +21,12 @@ import LicensePage from './components/LicensePage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
+import { SearchFilters, SearchFilterState, DEFAULT_SEARCH_FILTERS } from './components/SearchFilters';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON, parseYouTubeUrl } from './utils';
+import { fetchJSON, parseYouTubeUrl, detectIncognito } from './utils';
 
 declare global {
   interface Window {
@@ -41,6 +42,15 @@ export default function MainApp() {
   const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
+  const [searchFilters, setSearchFilters] = useState<SearchFilterState>(DEFAULT_SEARCH_FILTERS);
+  const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isIncognitoMode, setIsIncognitoMode] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    detectIncognito().then((res) => {
+      setIsIncognitoMode(res);
+    });
+  }, []);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
@@ -775,11 +785,12 @@ export default function MainApp() {
     }
   };
 
-  // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得)
+  // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得 & フィルター対応)
   const fetchSearch = async (
     q: string,
     pageNum: number = 1,
-    append: boolean = false
+    append: boolean = false,
+    filters: SearchFilterState = searchFilters
   ) => {
     if (append) {
       setLoadingMore(true);
@@ -794,7 +805,17 @@ export default function MainApp() {
     setError('');
 
     try {
-      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
+      const filterParams = new URLSearchParams({
+        q,
+        page: String(pageNum),
+        type: filters.type,
+        sortBy: filters.sortBy,
+        uploadDate: filters.uploadDate,
+        duration: filters.duration,
+        features: filters.features.join(','),
+      });
+
+      const data = await fetchJSON(`/api/search?${filterParams.toString()}`);
       const newVideos: Video[] = Array.isArray(data) ? data : (data.videos || []);
       const newChannels: SearchChannel[] = Array.isArray(data) ? [] : (data.channels || []);
 
@@ -973,6 +994,14 @@ export default function MainApp() {
     }
   };
 
+  if (isIncognitoMode === true) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-white text-black font-mono text-xl p-4 selection:bg-gray-200">
+        erorr
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
       <TopProgressBar isLoading={loading || loadingMore} />
@@ -1128,11 +1157,20 @@ export default function MainApp() {
                     onSelectChannel={(id) => handleSelectChannel(id)}
                   />
 
-                  {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
-                    <h2 className="text-lg font-bold text-gray-900 tracking-tight">
+                  {/* 検索ヘッダー ＆ フィルター */}
+                  <div className="mb-6">
+                    <h2 className="text-lg font-bold text-gray-900 tracking-tight mb-3">
                       "{searchQuery}" の検索結果
                     </h2>
+                    <SearchFilters
+                      filters={searchFilters}
+                      onChange={(newFilters) => {
+                        setSearchFilters(newFilters);
+                        fetchSearch(searchQuery, 1, false, newFilters);
+                      }}
+                      isOpen={isFilterPanelOpen}
+                      onToggleOpen={() => setIsFilterPanelOpen(!isFilterPanelOpen)}
+                    />
                   </div>
                 </>
               )}

@@ -1,33 +1,24 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "server.ts",
-      "use": "@vercel/node"
-    },
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "functions": {
+    "api/index.ts": {
+      "memory": 2048,
+      "maxDuration": 15
     }
-  ],
-  "routes": [
+  },
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/server.ts"
+      "source": "/api/(.*)",
+      "destination": "/api"
     },
     {
-      "src": "/(stream|360|edu|scratch-edu)/(.*)",
-      "dest": "/server.ts"
+      "source": "/(stream|360|edu|scratch-edu)/(.*)",
+      "destination": "/api"
     },
     {
-      "handle": "filesystem"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ],
   "headers": [
@@ -60,4 +51,3 @@
     }
   ]
 }
-
