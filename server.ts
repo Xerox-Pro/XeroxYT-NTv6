@@ -570,9 +570,9 @@ async function startServer() {
 
   // --- Daily Quotas & Rate Limiting System (Protect Vercel Serverless CPU & Bandwidth) ---
   const DAILY_VIDEO_LIMIT = Infinity; // 視聴制限は完全に解除（無制限）
-  const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "100", 10));
-  const DAILY_TOTAL_LIMIT = Math.max(1, parseInt(process.env.DAILY_TOTAL_LIMIT || "600", 10));
-  const BURST_LIMIT_PER_MINUTE = Math.max(1, parseInt(process.env.BURST_LIMIT_PER_MINUTE || "80", 10));
+  const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "80", 10));
+  const DAILY_TOTAL_LIMIT = Math.max(1, parseInt(process.env.DAILY_TOTAL_LIMIT || "450", 10));
+  const BURST_LIMIT_PER_MINUTE = Math.max(1, parseInt(process.env.BURST_LIMIT_PER_MINUTE || "45", 10));
   const USAGE_SECRET = process.env.LIMIT_SECRET || "xerox-daily-limit-secret-salt-2026";
 
   interface ClientDailyRecord {
@@ -778,7 +778,8 @@ async function startServer() {
       p === "/api/usage" ||
       p === "/api/health" ||
       p === "/api/edukey" ||
-      p === "/api/limits/reset"
+      p === "/api/limits/reset" ||
+      p === "/api/suggestions"
     ) {
       return next();
     }
@@ -866,10 +867,13 @@ async function startServer() {
     res.setHeader("X-Daily-Usage-Token", token);
     res.setHeader("X-Client-Id", clientId);
 
-    // クッキーが未設定の場合、シークレットモード/サンドボックス対応のためCookieを設定
-    const cookieHeader = req.headers["cookie"] || "";
-    if (!cookieHeader.includes("xerox_client_uuid=") && clientId && !clientId.includes(".")) {
-      res.setHeader("Set-Cookie", `xerox_client_uuid=${clientId}; Path=/; Max-Age=31536000; SameSite=Lax`);
+    // ※ GETリクエストでSet-Cookieを付与するとVercel Edge CDNキャッシュ（s-maxage）がMISS/BYPASSされるため、
+    //   公開GETリクエストでは付与せず、状態変更または明示的な認証/制限エンドポイントのみで付与
+    if (req.method !== "GET" || p.startsWith("/api/limits") || p.startsWith("/api/auth")) {
+      const cookieHeader = req.headers["cookie"] || "";
+      if (!cookieHeader.includes("xerox_client_uuid=") && clientId && !clientId.includes(".")) {
+        res.setHeader("Set-Cookie", `xerox_client_uuid=${clientId}; Path=/; Max-Age=31536000; SameSite=Lax`);
+      }
     }
 
     res.setHeader(
@@ -1028,18 +1032,20 @@ async function startServer() {
   // --- Persistent User Profile Database (Sandbox & Incognito Safe) ---
   const DATA_DIR = path.join(process.cwd(), "data");
   const PROFILES_FILE = path.join(DATA_DIR, "user_profiles.json");
+  const TMP_PROFILES_FILE = path.join("/tmp", "user_profiles.json");
 
   try {
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
     }
   } catch (e) {
-    console.warn("Could not create data dir:", e);
+    // EROFS on read-only environments (e.g. Vercel Serverless Function) is expected
   }
 
   const userProfilesMap = new Map<string, any>();
   const ipToClientMap = new Map<string, string>();
 
+  // 1. ローカルディスクからの読み込み
   try {
     if (fs.existsSync(PROFILES_FILE)) {
       const raw = fs.readFileSync(PROFILES_FILE, "utf-8");
@@ -1052,7 +1058,23 @@ async function startServer() {
       }
     }
   } catch (e) {
-    console.warn("Could not load user profiles from disk:", e);
+    console.warn("Could not load user profiles from PROFILES_FILE:", e);
+  }
+
+  // 2. /tmp からの追加読み込み (サーバーレス環境での再起動またぎ復元)
+  try {
+    if (fs.existsSync(TMP_PROFILES_FILE)) {
+      const raw = fs.readFileSync(TMP_PROFILES_FILE, "utf-8");
+      const loaded = JSON.parse(raw);
+      for (const [id, prof] of Object.entries(loaded)) {
+        userProfilesMap.set(id, { ...(userProfilesMap.get(id) || {}), ...(prof as any) });
+        if ((prof as any)?.ip) {
+          ipToClientMap.set((prof as any).ip, id);
+        }
+      }
+    }
+  } catch (e) {
+    // ignore
   }
 
   let profileDiskSaveTimeout: NodeJS.Timeout | null = null;
@@ -1065,18 +1087,59 @@ async function startServer() {
         for (const [k, v] of userProfilesMap.entries()) {
           obj[k] = v;
         }
-        fs.writeFileSync(PROFILES_FILE, JSON.stringify(obj, null, 2), "utf-8");
+        const jsonContent = JSON.stringify(obj, null, 2);
+
+        // ローカルデータの書き込みを優先実行
+        try {
+          if (!fs.existsSync(DATA_DIR)) {
+            fs.mkdirSync(DATA_DIR, { recursive: true });
+          }
+          fs.writeFileSync(PROFILES_FILE, jsonContent, "utf-8");
+        } catch (localErr: any) {
+          // Vercel Serverless Function環境などの読み取り専用FS (EROFS) の場合は /tmp に退避書き込み
+          if (localErr?.code === 'EROFS' || localErr?.code === 'EACCES') {
+            try {
+              fs.writeFileSync(TMP_PROFILES_FILE, jsonContent, "utf-8");
+            } catch (tmpErr) {
+              console.warn("Could not save to /tmp:", tmpErr);
+            }
+          } else {
+            console.warn("Local profile write warning:", localErr.message);
+          }
+        }
       } catch (err) {
-        console.error("Failed to write user profiles to disk:", err);
+        console.error("Failed to serialize user profiles for disk:", err);
       }
-    }, 400);
+    }, 2000);
   }
+
+  // クライアントごとの同期リクエスト制限 (レートリミット & スロットリング)
+  const syncSaveThrottleMap = new Map<string, { lastTime: number; count: number; windowStart: number }>();
 
   app.post("/api/sync/save", async (req, res) => {
     const rawId = req.body.clientId || req.body.credentialId || getClientIdentifier(req) || "";
     const clientId = String(rawId).trim();
     const data = req.body.data;
     if (!clientId || !data) return res.status(400).json({ error: "Missing clientId or data" });
+
+    const now = Date.now();
+    const throttle = syncSaveThrottleMap.get(clientId) || { lastTime: 0, count: 0, windowStart: now };
+
+    // 1分間のリクエスト回数制限 (最大20回/分)
+    if (now - throttle.windowStart > 60000) {
+      throttle.count = 0;
+      throttle.windowStart = now;
+    }
+    throttle.count++;
+    if (throttle.count > 20) {
+      res.setHeader("Retry-After", "30");
+      return res.status(429).json({ error: "同期リクエストが多すぎます。少し時間をおいてください。" });
+    }
+
+    // 短時間の過剰なディスク書き込みを抑止 (直近2.5秒以内の呼び出しはメモリ更新のみ行い成功応答)
+    const isRapid = (now - throttle.lastTime < 2500);
+    throttle.lastTime = now;
+    syncSaveThrottleMap.set(clientId, throttle);
 
     const clientIp = getClientIdentifier(req);
     const existing = userProfilesMap.get(clientId) || {};
@@ -1085,7 +1148,7 @@ async function startServer() {
       ...data,
       clientId,
       ip: clientIp,
-      updatedAt: Date.now()
+      updatedAt: now
     };
 
     userProfilesMap.set(clientId, updated);
@@ -1093,6 +1156,11 @@ async function startServer() {
       ipToClientMap.set(clientIp, clientId);
     }
     scheduleSaveProfilesToDisk();
+
+    if (isRapid) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.json({ success: true, clientId, throttled: true });
+    }
 
     // Background optional sync to GitHub if configured
     if (process.env.GITHUB_TOKEN && process.env.GITHUB_USERNAME && process.env.GITHUB_REPO) {
@@ -4059,6 +4127,247 @@ async function startServer() {
     } catch (err) {
       console.error("Related videos fetch error:", err);
       return res.json({ page, videos: [], hasMore: false });
+    }
+  });
+
+  // --- ショート動画レコメンド API（過去の視聴履歴の関連動画・ショートに基づくおすすめ） ---
+  app.all(["/api/shorts/recommendations", "/api/shorts/feed"], express.json({ limit: "5mb" }), async (req, res) => {
+    try {
+      const page = Math.max(1, parseInt((req.query.page as string) || (req.body?.page as string) || "1", 10));
+      const limit = Math.max(5, Math.min(30, parseInt((req.query.limit as string) || (req.body?.limit as string) || "15", 10)));
+      
+      // クライアントから渡された履歴（またはクエリ）
+      let historyItems: Array<{ videoId: string; title?: string; author?: string; authorId?: string }> = [];
+      if (Array.isArray(req.body?.history)) {
+        historyItems = req.body.history;
+      } else if (typeof req.query.history === "string") {
+        const ids = req.query.history.split(",").map((s: string) => s.trim()).filter(Boolean);
+        historyItems = ids.map((id: string) => ({ videoId: id }));
+      }
+
+      // 有効な視聴履歴（最新順に最大8件）
+      const validHistory = historyItems
+        .filter((h) => h && h.videoId && typeof h.videoId === "string" && h.videoId.length >= 8)
+        .slice(0, 8);
+
+      const youtube = await getYt();
+      const allShorts: any[] = [];
+      const seenVideoIds = new Set<string>();
+
+      // 1. 視聴履歴がある場合: 各履歴動画の関連ショート・チャンネルショートを抽出
+      if (validHistory.length > 0) {
+        // 並列取得（各動画から関連ショートを収集）
+        await Promise.all(
+          validHistory.map(async (hist) => {
+            const hCacheKey = `shorts:rel:${hist.videoId}`;
+            const cachedRel = getFromMemoryCache<any[]>(hCacheKey);
+            if (cachedRel && cachedRel.length > 0) {
+              for (const s of cachedRel) {
+                if (!seenVideoIds.has(s.videoId)) {
+                  seenVideoIds.add(s.videoId);
+                  allShorts.push({
+                    ...s,
+                    basedOn: {
+                      videoId: hist.videoId,
+                      title: hist.title || "過去に見た動画",
+                      author: hist.author || "",
+                    },
+                  });
+                }
+              }
+              return;
+            }
+
+            const itemShorts: any[] = [];
+
+            // A. 視聴動画の詳細情報から watch_next_feed 内のショート棚を抽出
+            try {
+              const info = await youtube.getInfo(hist.videoId).catch(() => null);
+              if (info && Array.isArray(info.watch_next_feed)) {
+                for (const feedItem of info.watch_next_feed) {
+                  const subItems = feedItem?.contents || feedItem?.items || (Array.isArray(feedItem) ? feedItem : []);
+                  for (const sub of subItems) {
+                    if (sub && (sub.type === "ShortsLockupView" || sub.type === "ReelItem")) {
+                      const vId = sub.on_tap_endpoint?.payload?.videoId ||
+                        (typeof sub.entity_id === "string" ? sub.entity_id.replace("shorts-shelf-item-", "") : "") ||
+                        sub.id || sub.videoId;
+                      if (vId && !seenVideoIds.has(vId) && vId !== hist.videoId) {
+                        seenVideoIds.add(vId);
+                        const sObj = {
+                          videoId: vId,
+                          title: sub.overlay_metadata?.primary_text?.text || sub.title?.text || sub.accessibility_text || "ショート動画",
+                          author: sub.author?.name || hist.author || "クリエイター",
+                          authorId: sub.author?.id || hist.authorId,
+                          authorAvatar: sub.author?.thumbnails?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(sub.author?.name || hist.author || "C")}&background=random&color=fff`,
+                          thumbnailUrl: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
+                          viewText: sub.overlay_metadata?.secondary_text?.text || "おすすめ",
+                          viewCount: 0,
+                          likeCount: "高評価",
+                          commentCount: "コメント",
+                          basedOn: {
+                            videoId: hist.videoId,
+                            title: hist.title || "過去に見た動画",
+                            author: hist.author || "",
+                          },
+                        };
+                        itemShorts.push(sObj);
+                        allShorts.push(sObj);
+                      }
+                    }
+                  }
+                }
+              }
+            } catch {}
+
+            // B. チャンネルのショート一覧を取得 (authorIdがある場合)
+            if (itemShorts.length < 3 && hist.authorId) {
+              try {
+                const channel = await youtube.getChannel(hist.authorId).catch(() => null);
+                if (channel && typeof channel.getShorts === "function") {
+                  const chShorts = await channel.getShorts().catch(() => null);
+                  if (chShorts && Array.isArray(chShorts.videos)) {
+                    for (const v of chShorts.videos.slice(0, 5)) {
+                      const vId = v.on_tap_endpoint?.payload?.videoId ||
+                        (typeof v.entity_id === "string" ? v.entity_id.replace("shorts-shelf-item-", "") : "") ||
+                        v.id || v.videoId;
+                      if (vId && !seenVideoIds.has(vId) && vId !== hist.videoId) {
+                        seenVideoIds.add(vId);
+                        const sObj = {
+                          videoId: vId,
+                          title: v.overlay_metadata?.primary_text?.text || v.title?.text || v.accessibility_text || "ショート動画",
+                          author: hist.author || channel.title || "クリエイター",
+                          authorId: hist.authorId,
+                          authorAvatar: channel.metadata?.avatar?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(hist.author || "C")}&background=random&color=fff`,
+                          thumbnailUrl: `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`,
+                          viewText: v.overlay_metadata?.secondary_text?.text || "おすすめ",
+                          viewCount: 0,
+                          likeCount: "高評価",
+                          commentCount: "コメント",
+                          basedOn: {
+                            videoId: hist.videoId,
+                            title: hist.title || "過去に見た動画",
+                            author: hist.author || "",
+                          },
+                        };
+                        itemShorts.push(sObj);
+                        allShorts.push(sObj);
+                      }
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            // C. 関連キーワード #shorts 検索
+            if (itemShorts.length < 3) {
+              try {
+                const queryText = (hist.author || hist.title || "").replace(/[#＃]/g, "").trim().slice(0, 40);
+                if (queryText) {
+                  const sRes = await youtube.search(`${queryText} #shorts`, { type: "video" }).catch(() => null);
+                  if (sRes && Array.isArray(sRes.videos)) {
+                    const shortVids = sRes.videos.filter((v: any) => 
+                      (v.duration?.seconds && v.duration.seconds <= 90) || 
+                      (typeof v.title?.text === "string" && v.title.text.toLowerCase().includes("short"))
+                    );
+                    for (const v of shortVids.slice(0, 4)) {
+                      if (v && v.id && !seenVideoIds.has(v.id) && v.id !== hist.videoId) {
+                        seenVideoIds.add(v.id);
+                        const sObj = {
+                          videoId: v.id,
+                          title: v.title?.text || "ショート動画",
+                          author: v.author?.name || hist.author || "クリエイター",
+                          authorId: v.author?.id,
+                          authorAvatar: v.author?.thumbnails?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(v.author?.name || "C")}&background=random&color=fff`,
+                          thumbnailUrl: v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`,
+                          viewText: v.views?.text || (v.duration?.text ? `${v.duration.text}` : "おすすめ"),
+                          viewCount: 0,
+                          likeCount: "高評価",
+                          commentCount: "コメント",
+                          basedOn: {
+                            videoId: hist.videoId,
+                            title: hist.title || "過去に見た動画",
+                            author: hist.author || "",
+                          },
+                        };
+                        itemShorts.push(sObj);
+                        allShorts.push(sObj);
+                      }
+                    }
+                  }
+                }
+              } catch {}
+            }
+
+            if (itemShorts.length > 0) {
+              setToMemoryCache(hCacheKey, itemShorts, 20 * 60 * 1000);
+            }
+          })
+        );
+      }
+
+      // 2. 履歴が空、または件数が足りない場合: トレンド・人気のショートで補完
+      if (allShorts.length < 15) {
+        const trendingCacheKey = `shorts:trending:page:${page}`;
+        let trendingShorts = getFromMemoryCache<any[]>(trendingCacheKey);
+        if (!trendingShorts || trendingShorts.length === 0) {
+          trendingShorts = [];
+          const queries = ["#shorts 日本 おすすめ", "#shorts バズ", "#shorts 面白い", "#shorts 人気 2026"];
+          const q = queries[(page - 1) % queries.length];
+          try {
+            const trRes = await youtube.search(q, { type: "video" }).catch(() => null);
+            if (trRes && Array.isArray(trRes.videos)) {
+              for (const v of trRes.videos) {
+                if (v && v.id && !seenVideoIds.has(v.id)) {
+                  const isShort = (v.duration?.seconds && v.duration.seconds <= 120) || 
+                    (typeof v.title?.text === "string" && v.title.text.toLowerCase().includes("short")) ||
+                    !v.duration?.seconds;
+                  if (isShort) {
+                    seenVideoIds.add(v.id);
+                    trendingShorts.push({
+                      videoId: v.id,
+                      title: v.title?.text || v.title || "おすすめショート",
+                      author: v.author?.name || v.author?.text || "人気クリエイター",
+                      authorId: v.author?.id,
+                      authorAvatar: v.author?.thumbnails?.[0]?.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(v.author?.name || "P")}&background=random&color=fff`,
+                      thumbnailUrl: v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`,
+                      viewText: v.views?.text || (v.duration?.text ? `${v.duration.text}` : "おすすめ"),
+                      viewCount: 0,
+                      likeCount: "高評価",
+                      commentCount: "コメント",
+                    });
+                  }
+                }
+              }
+            }
+          } catch {}
+          if (trendingShorts.length > 0) {
+            setToMemoryCache(trendingCacheKey, trendingShorts, 30 * 60 * 1000);
+          }
+        }
+
+        for (const ts of trendingShorts) {
+          if (!seenVideoIds.has(ts.videoId)) {
+            seenVideoIds.add(ts.videoId);
+            allShorts.push(ts);
+          }
+        }
+      }
+
+      // ページネーション処理
+      const startIndex = (page - 1) * limit;
+      const paginatedShorts = allShorts.slice(startIndex, startIndex + limit);
+
+      res.setHeader("Cache-Control", "public, s-maxage=300, stale-while-revalidate=86400");
+      return res.json({
+        shorts: paginatedShorts.length > 0 ? paginatedShorts : allShorts.slice(0, limit),
+        page,
+        total: allShorts.length,
+        hasMore: true,
+        basedOnHistoryCount: validHistory.length,
+      });
+    } catch (err) {
+      console.error("[Shorts Recommendations Error]:", err);
+      return res.status(500).json({ error: "Failed to load shorts recommendations", shorts: [], hasMore: false });
     }
   });
 

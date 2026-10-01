@@ -667,6 +667,8 @@ export default function VideoPlayer({
   const [relatedPage, setRelatedPage] = useState(1);
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const [loadingMoreRelated, setLoadingMoreRelated] = useState(false);
+  const isFetchingCommentsRef = useRef(false);
+  const isFetchingRelatedRef = useRef(false);
   const relatedEndRef = useRef<HTMLDivElement>(null);
 
   // Live Chat state
@@ -1173,7 +1175,8 @@ export default function VideoPlayer({
 
   // コメントの次ページ自動取得 (無限スクロール)
   const loadMoreComments = useCallback(async () => {
-    if (loadingComments || loadingMoreComments || !hasMoreComments || !videoId) return;
+    if (isFetchingCommentsRef.current || loadingComments || loadingMoreComments || !hasMoreComments || !videoId) return;
+    isFetchingCommentsRef.current = true;
     setLoadingMoreComments(true);
     try {
       const nextPage = commentPage + 1;
@@ -1194,13 +1197,15 @@ export default function VideoPlayer({
       console.error('Failed to load more comments', err);
       setHasMoreComments(false);
     } finally {
+      isFetchingCommentsRef.current = false;
       setLoadingMoreComments(false);
     }
   }, [loadingComments, loadingMoreComments, hasMoreComments, videoId, commentPage, commentSort]);
 
   // 関連動画の次ページ自動取得 (無限スクロール)
   const loadMoreRelated = useCallback(async () => {
-    if (loadingMoreRelated || !hasMoreRelated || !videoId) return;
+    if (isFetchingRelatedRef.current || loadingMoreRelated || !hasMoreRelated || !videoId) return;
+    isFetchingRelatedRef.current = true;
     setLoadingMoreRelated(true);
     try {
       const nextPage = relatedPage + 1;
@@ -1221,60 +1226,73 @@ export default function VideoPlayer({
       console.error('Failed to load more related videos', err);
       setHasMoreRelated(false);
     } finally {
+      isFetchingRelatedRef.current = false;
       setLoadingMoreRelated(false);
     }
   }, [loadingMoreRelated, hasMoreRelated, videoId, relatedPage, relatedFilter]);
 
-  // コメントの自動無限スクロール監視 (IntersectionObserver & スクロールフォールバック)
+  // コメントの自動無限スクロール監視 (IntersectionObserver優先、未対応環境のみスクロールフォールバック)
   useEffect(() => {
     const target = commentsEndRef.current;
     if (!target || !hasMoreComments || loadingComments || loadingMoreComments) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        loadMoreComments();
-      }
-    }, { rootMargin: '600px' });
-    observer.observe(target);
+    
+    if (typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreComments();
+        }
+      }, { rootMargin: '600px' });
+      observer.observe(target);
+      return () => observer.disconnect();
+    }
 
+    let ticking = false;
     const handleWindowScroll = () => {
-      if (!commentsEndRef.current || !hasMoreComments || loadingComments || loadingMoreComments) return;
-      const rect = commentsEndRef.current.getBoundingClientRect();
-      if (rect.top <= window.innerHeight + 600) {
-        loadMoreComments();
-      }
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        if (!commentsEndRef.current || !hasMoreComments || loadingComments || loadingMoreComments) return;
+        const rect = commentsEndRef.current.getBoundingClientRect();
+        if (rect.top <= window.innerHeight + 600) {
+          loadMoreComments();
+        }
+      });
     };
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('scroll', handleWindowScroll);
-    };
+    return () => window.removeEventListener('scroll', handleWindowScroll);
   }, [loadMoreComments, hasMoreComments, loadingComments, loadingMoreComments]);
 
-  // 関連動画の自動無限スクロール監視 (IntersectionObserver & スクロールフォールバック)
+  // 関連動画の自動無限スクロール監視 (IntersectionObserver優先、未対応環境のみスクロールフォールバック)
   useEffect(() => {
     const target = relatedEndRef.current;
     if (!target || !hasMoreRelated || loadingMoreRelated) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        loadMoreRelated();
-      }
-    }, { rootMargin: '600px' });
-    observer.observe(target);
+    
+    if (typeof IntersectionObserver !== 'undefined') {
+      const observer = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          loadMoreRelated();
+        }
+      }, { rootMargin: '600px' });
+      observer.observe(target);
+      return () => observer.disconnect();
+    }
 
+    let ticking = false;
     const handleWindowScroll = () => {
-      if (!relatedEndRef.current || !hasMoreRelated || loadingMoreRelated) return;
-      const rect = relatedEndRef.current.getBoundingClientRect();
-      if (rect.top <= window.innerHeight + 600) {
-        loadMoreRelated();
-      }
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        if (!relatedEndRef.current || !hasMoreRelated || loadingMoreRelated) return;
+        const rect = relatedEndRef.current.getBoundingClientRect();
+        if (rect.top <= window.innerHeight + 600) {
+          loadMoreRelated();
+        }
+      });
     };
     window.addEventListener('scroll', handleWindowScroll, { passive: true });
-
-    return () => {
-      observer.disconnect();
-      window.removeEventListener('scroll', handleWindowScroll);
-    };
+    return () => window.removeEventListener('scroll', handleWindowScroll);
   }, [loadMoreRelated, hasMoreRelated, loadingMoreRelated]);
 
   // Initialize live chat

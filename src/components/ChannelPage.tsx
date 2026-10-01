@@ -44,6 +44,7 @@ export default function ChannelPage({
   const [videoPage, setVideoPage] = useState(1);
   const [shortPage, setShortPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
+  const loadingMoreRef = useRef(false);
   const [hasMoreVideos, setHasMoreVideos] = useState(true);
   const [hasMoreShorts, setHasMoreShorts] = useState(true);
 
@@ -100,10 +101,11 @@ export default function ChannelPage({
 
   // Load next page of videos or shorts
   const loadMore = useCallback(async () => {
-    if (loadingMore || !channelData) return;
+    if (loadingMoreRef.current || loadingMore || !channelData) return;
     const targetChannelParam = channelData.id || channelId || channelData.title;
 
     if (activeTab === 'videos' && hasMoreVideos) {
+      loadingMoreRef.current = true;
       setLoadingMore(true);
       try {
         const nextPage = videoPage + 1;
@@ -123,9 +125,11 @@ export default function ChannelPage({
         console.error('Failed to load more videos', e);
         setHasMoreVideos(false);
       } finally {
+        loadingMoreRef.current = false;
         setLoadingMore(false);
       }
     } else if (activeTab === 'shorts' && hasMoreShorts) {
+      loadingMoreRef.current = true;
       setLoadingMore(true);
       try {
         const nextPage = shortPage + 1;
@@ -145,24 +149,31 @@ export default function ChannelPage({
         console.error('Failed to load more shorts', e);
         setHasMoreShorts(false);
       } finally {
+        loadingMoreRef.current = false;
         setLoadingMore(false);
       }
     }
   }, [activeTab, loadingMore, channelData, videoPage, shortPage, hasMoreVideos, hasMoreShorts, channelId, videoSort]);
 
-  // Infinite scroll event listener
+  // Infinite scroll event listener with animation frame throttling
   useEffect(() => {
+    let ticking = false;
     const handleScroll = () => {
       if (activeTab !== 'videos' && activeTab !== 'shorts') return;
-      const scrollPosition = window.innerHeight + window.scrollY;
-      const threshold = document.documentElement.offsetHeight - 400;
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        ticking = false;
+        const scrollPosition = window.innerHeight + window.scrollY;
+        const threshold = document.documentElement.offsetHeight - 400;
 
-      if (scrollPosition >= threshold) {
-        loadMore();
-      }
+        if (scrollPosition >= threshold) {
+          loadMore();
+        }
+      });
     };
 
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, [activeTab, loadMore]);
 

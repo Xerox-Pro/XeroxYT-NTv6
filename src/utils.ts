@@ -295,148 +295,184 @@ function hasValidContent(data: any): boolean {
   return true;
 }
 
+// 同一リクエストの「二重発火（Double Fetching）」防止用 Promiseマップ & インメモリキャッシュ
+const inFlightRequests = new Map<string, Promise<any>>();
+const clientMemoryCache = new Map<string, { data: any; expiry: number }>();
+
 export async function fetchJSON(url: string, options?: RequestInit) {
-  try {
-    const isGet = !options || !options.method || options.method === 'GET';
-    const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
-    const isTimeSensitive = 
-      url.includes('/sync/') || 
-      url.includes('/auth/') || 
-      url.includes('/stream') || 
-      url.includes('/download-proxy');
+  const isGet = !options || !options.method || options.method === 'GET';
+  const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
+  const isTimeSensitive = 
+    url.includes('/sync/') || 
+    url.includes('/auth/') || 
+    url.includes('/stream') || 
+    url.includes('/download-proxy');
 
-    const isVideoReq = (url.startsWith('/api/video/') && !url.includes('/comments') && !url.includes('/related')) || url.startsWith('/stream') || url.startsWith('/edu');
-    const isSearchReq = url.startsWith('/api/search');
-    
-    // Check IndexedDB cache for GET requests
-    if (isGet && isApiCall && !isTimeSensitive) {
-      try {
-        const cached = await get(url);
-        const ttl = getCacheTTL(url);
-        if (cached && cached.timestamp && (Date.now() - cached.timestamp < ttl) && hasValidContent(cached.data)) {
-          if (isVideoReq) incrementClientUsage('video');
-          else if (isSearchReq) incrementClientUsage('search');
-          else incrementClientUsage('total');
-          return cached.data;
-        }
-      } catch (e) {
-        console.warn('Cache read error:', e);
-      }
+  const dedupeKey = isGet ? url : null;
+
+  // 1. 同一URLのインメモリキャッシュ即時判定
+  if (isGet && isApiCall && !isTimeSensitive) {
+    const mem = clientMemoryCache.get(url);
+    if (mem && mem.expiry > Date.now() && hasValidContent(mem.data)) {
+      return mem.data;
     }
-
-    const reqOptions = { ...options };
-    const finalHeaders = new Headers(reqOptions.headers || {});
-    const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
-    if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
-      finalHeaders.set('x-youtube-credentials', ytCreds);
-    }
-
-    // Attach client id and usage token for rate limiting
-    if (isApiCall) {
-      url = appendApiKey(url);
-      const apiKey = getApiKey();
-      if (apiKey && !finalHeaders.has('x-api-key')) {
-        finalHeaders.set('x-api-key', apiKey);
-      }
-      if (!finalHeaders.has('x-client-id')) {
-        finalHeaders.set('x-client-id', getClientUUID());
-      }
-      const usageToken = safeStorage.getItem('xerox_usage_token');
-      if (usageToken && !finalHeaders.has('x-usage-token')) {
-        finalHeaders.set('x-usage-token', usageToken);
-      }
-      const localUsage = getClientUsage();
-      if (!finalHeaders.has('x-client-usage')) {
-        finalHeaders.set('x-client-usage', `${localUsage.day}|${localUsage.videos}|${localUsage.searches}|${localUsage.total}`);
-      }
-    }
-    reqOptions.headers = finalHeaders;
-
-    const res = await fetch(url, reqOptions);
-    const contentType = res.headers.get('content-type');
-
-    if (isApiCall) {
-      if (isVideoReq) incrementClientUsage('video');
-      else if (isSearchReq) incrementClientUsage('search');
-      else incrementClientUsage('total');
-    }
-
-    // Save usage token from response
-    const newUsageToken = res.headers.get('x-daily-usage-token');
-    if (newUsageToken) {
-      try {
-        safeStorage.setItem('xerox_usage_token', newUsageToken);
-      } catch {}
-    }
-    
-    if (!res.ok) {
-      let errorMessage = `サーバーエラー (${res.status}): ${url} へのリクエストに失敗しました`;
-      let errorData: any = {};
-      if (contentType && contentType.includes('application/json')) {
-        errorData = await res.json().catch(() => ({}));
-        errorMessage = errorData.error || errorData.message || errorMessage;
-      } else {
-        const text = await res.text().catch(() => '');
-        if (text.includes('A server error')) {
-          errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
-        } else if (text) {
-          errorMessage += `\n詳細: ${text.substring(0, 100)}`;
-        }
-      }
-
-      if (res.status === 429) {
-        // Daily limit or burst limit exceeded (handled internally)
-        const limitErr = new Error(errorMessage) as any;
-        limitErr.isDailyLimit = true;
-        limitErr.status = 429;
-        limitErr.limitData = errorData;
-        throw limitErr;
-      }
-
-      if (res.status === 401 && url.startsWith('/api/user/')) {
-        console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
-        safeStorage.removeItem('xerox_youtube_credentials');
-        safeStorage.removeItem('xerox_user_info');
-      }
-
-      throw new Error(errorMessage);
-    }
-
-    if (!contentType || !contentType.includes('application/json')) {
-      throw new Error('サーバーから不正なレスポンスが返されました（JSONではありません）');
-    }
-
-    const data = await res.json();
-    
-    // Save to IndexedDB cache (only if valid content)
-    if (isGet && isApiCall && !isTimeSensitive && hasValidContent(data)) {
-      try {
-        await set(url, { timestamp: Date.now(), data });
-      } catch (e) {
-        console.warn('Cache write error:', e);
-      }
-    }
-
-    return data;
-  } catch (err: any) {
-    if (err.message && err.message.includes('Unexpected token')) {
-      throw new Error('サーバーからの応答を解析できませんでした。');
-    }
-    
-    // Fallback to cache if network fails and cache exists (Offline mode)
-    const isGet = !options || !options.method || options.method === 'GET';
-    if (isGet) {
-       try {
-         const cached = await get(url);
-         if (cached && hasValidContent(cached.data)) {
-           return cached.data;
-         }
-       } catch (e) {
-         // ignore
-       }
-    }
-    throw err;
   }
+
+  // 2. 実行中の同一リクエストがあればそのPromiseを共有（二重発火完全排除）
+  if (dedupeKey && inFlightRequests.has(dedupeKey)) {
+    return inFlightRequests.get(dedupeKey)!;
+  }
+
+  const executionPromise = (async () => {
+    try {
+      const isVideoReq = (url.startsWith('/api/video/') && !url.includes('/comments') && !url.includes('/related')) || url.startsWith('/stream') || url.startsWith('/edu');
+      const isSearchReq = url.startsWith('/api/search');
+      
+      // Check IndexedDB cache for GET requests
+      if (isGet && isApiCall && !isTimeSensitive) {
+        try {
+          const cached = await get(url);
+          const ttl = getCacheTTL(url);
+          if (cached && cached.timestamp && (Date.now() - cached.timestamp < ttl) && hasValidContent(cached.data)) {
+            clientMemoryCache.set(url, { data: cached.data, expiry: Date.now() + Math.min(ttl, 120_000) });
+            if (isVideoReq) incrementClientUsage('video');
+            else if (isSearchReq) incrementClientUsage('search');
+            else incrementClientUsage('total');
+            return cached.data;
+          }
+        } catch (e) {
+          console.warn('Cache read error:', e);
+        }
+      }
+
+      const reqOptions = { ...options };
+      const finalHeaders = new Headers(reqOptions.headers || {});
+      const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
+      if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {
+        finalHeaders.set('x-youtube-credentials', ytCreds);
+      }
+
+      // Attach client id and usage token for rate limiting
+      if (isApiCall) {
+        url = appendApiKey(url);
+        const apiKey = getApiKey();
+        if (apiKey && !finalHeaders.has('x-api-key')) {
+          finalHeaders.set('x-api-key', apiKey);
+        }
+        if (!finalHeaders.has('x-client-id')) {
+          finalHeaders.set('x-client-id', getClientUUID());
+        }
+        const usageToken = safeStorage.getItem('xerox_usage_token');
+        if (usageToken && !finalHeaders.has('x-usage-token')) {
+          finalHeaders.set('x-usage-token', usageToken);
+        }
+        // 公開GETリクエスト以外（状態更新時や制限確認時）にのみ詳細ローカル使用量を付与
+        if (!isGet || isTimeSensitive) {
+          const localUsage = getClientUsage();
+          if (!finalHeaders.has('x-client-usage')) {
+            finalHeaders.set('x-client-usage', `${localUsage.day}|${localUsage.videos}|${localUsage.searches}|${localUsage.total}`);
+          }
+        }
+      }
+      reqOptions.headers = finalHeaders;
+
+      const res = await fetch(url, reqOptions);
+      const contentType = res.headers.get('content-type');
+
+      if (isApiCall) {
+        if (isVideoReq) incrementClientUsage('video');
+        else if (isSearchReq) incrementClientUsage('search');
+        else incrementClientUsage('total');
+      }
+
+      // Save usage token from response
+      const newUsageToken = res.headers.get('x-daily-usage-token');
+      if (newUsageToken) {
+        try {
+          safeStorage.setItem('xerox_usage_token', newUsageToken);
+        } catch {}
+      }
+      
+      if (!res.ok) {
+        let errorMessage = `サーバーエラー (${res.status}): ${url} へのリクエストに失敗しました`;
+        let errorData: any = {};
+        if (contentType && contentType.includes('application/json')) {
+          errorData = await res.json().catch(() => ({}));
+          errorMessage = errorData.error || errorData.message || errorMessage;
+        } else {
+          const text = await res.text().catch(() => '');
+          if (text.includes('A server error')) {
+            errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
+          } else if (text) {
+            errorMessage += `\n詳細: ${text.substring(0, 100)}`;
+          }
+        }
+
+        if (res.status === 429) {
+          // Daily limit or burst limit exceeded (handled internally)
+          const limitErr = new Error(errorMessage) as any;
+          limitErr.isDailyLimit = true;
+          limitErr.status = 429;
+          limitErr.limitData = errorData;
+          throw limitErr;
+        }
+
+        if (res.status === 401 && url.startsWith('/api/user/')) {
+          console.warn('[Auth] Session expired or unauthorized. Clearing stored credentials.');
+          safeStorage.removeItem('xerox_youtube_credentials');
+          safeStorage.removeItem('xerox_user_info');
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('サーバーから不正なレスポンスが返されました（JSONではありません）');
+      }
+
+      const data = await res.json();
+      
+      // Save to memory cache & IndexedDB cache (only if valid content)
+      if (isGet && isApiCall && !isTimeSensitive && hasValidContent(data)) {
+        const ttl = getCacheTTL(url);
+        clientMemoryCache.set(url, { data, expiry: Date.now() + Math.min(ttl, 120_000) });
+        try {
+          await set(url, { timestamp: Date.now(), data });
+        } catch (e) {
+          console.warn('Cache write error:', e);
+        }
+      }
+
+      return data;
+    } catch (err: any) {
+      if (err.message && err.message.includes('Unexpected token')) {
+        throw new Error('サーバーからの応答を解析できませんでした。');
+      }
+      
+      // Fallback to cache if network fails and cache exists (Offline mode)
+      const isGet = !options || !options.method || options.method === 'GET';
+      if (isGet) {
+         try {
+           const cached = await get(url);
+           if (cached && hasValidContent(cached.data)) {
+             return cached.data;
+           }
+         } catch (e) {
+           // ignore
+         }
+      }
+      throw err;
+    }
+  })();
+
+  if (dedupeKey) {
+    inFlightRequests.set(dedupeKey, executionPromise);
+    executionPromise.finally(() => {
+      inFlightRequests.delete(dedupeKey);
+    });
+  }
+
+  return executionPromise;
 }
 
 export type DetectedYouTubeType = 'video' | 'short' | 'channel';

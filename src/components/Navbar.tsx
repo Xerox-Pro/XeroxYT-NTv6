@@ -15,6 +15,8 @@ interface NavbarProps {
   initialSearchQuery: string;
 }
 
+const clientSuggestionCache = new Map<string, string[]>();
+
 export default function Navbar({ 
   onSearch, 
   onHome, 
@@ -57,6 +59,8 @@ export default function Navbar({
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const isComposingRef = useRef(false);
+  const suggestionAbortCtrlRef = useRef<AbortController | null>(null);
 
 
   // 入力値からのURL自動検知
@@ -241,7 +245,7 @@ export default function Navbar({
     safeStorage.removeItem('xerox_yt_search_history');
   };
 
-  // サジェスト取得 (デバウンス)
+  // サジェスト取得 (350ms デバウンス & IME入力中スキップ & キャッシュ & 自動中断)
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed || parseYouTubeUrl(trimmed)) {
@@ -249,21 +253,43 @@ export default function Navbar({
       return;
     }
 
+    const lower = trimmed.toLowerCase();
+    if (clientSuggestionCache.has(lower)) {
+      setSuggestions(clientSuggestionCache.get(lower)!);
+      return;
+    }
+
     const timer = setTimeout(async () => {
+      // 日本語の変換中（IME確定前）はリクエストを送らない
+      if (isComposingRef.current) return;
+
+      if (suggestionAbortCtrlRef.current) {
+        suggestionAbortCtrlRef.current.abort();
+      }
+      const abortCtrl = new AbortController();
+      suggestionAbortCtrlRef.current = abortCtrl;
+
       try {
-        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(trimmed)}`);
+        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(trimmed)}`, {
+          signal: abortCtrl.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
+            clientSuggestionCache.set(lower, data);
             setSuggestions(data);
           }
         }
-      } catch (err) {
-        console.warn('Failed to fetch suggestions', err);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.warn('Failed to fetch suggestions', err);
+        }
       }
-    }, 150);
+    }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [query]);
 
   // ドロップダウンに表示する項目の生成
@@ -415,6 +441,13 @@ export default function Navbar({
                   setQuery(e.target.value);
                   setSelectedIndex(-1);
                   if (!isSearchFocused) setIsSearchFocused(true);
+                }}
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
+                }}
+                onCompositionEnd={(e) => {
+                  isComposingRef.current = false;
+                  setQuery(e.currentTarget.value);
                 }}
                 onPaste={handlePaste}
                 onFocus={() => setIsSearchFocused(true)}

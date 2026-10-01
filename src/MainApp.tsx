@@ -18,6 +18,7 @@ import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import LicensePage from './components/LicensePage';
+import ShortsPage from './components/ShortsPage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
@@ -39,7 +40,8 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const [view, setView] = useState<'home' | 'shorts' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const [activeShortId, setActiveShortId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -81,12 +83,11 @@ export default function MainApp() {
     if (path === '/') {
       setView('home');
       fetchRecommendations(1, false);
-    } else if (path.startsWith('/shorts/')) {
+    } else if (path === '/shorts' || path.startsWith('/shorts/')) {
       const parts = path.split('/');
       const shortId = parts[2]?.split('?')[0];
-      if (shortId) {
-        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
-      }
+      setActiveShortId(shortId || null);
+      setView('shorts');
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -274,33 +275,44 @@ export default function MainApp() {
 
   const [isSyncing, setIsSyncing] = useState(false);
   const skipNextSync = useRef(false);
+  const initialSyncFinishedRef = useRef(false);
+  const lastSyncedPayloadHashRef = useRef('');
   const syncDebounceTimer = useRef<NodeJS.Timeout | null>(null);
 
   const performServerSync = (data: any) => {
-    if (skipNextSync.current) return;
+    if (!initialSyncFinishedRef.current || skipNextSync.current) return;
     if (syncDebounceTimer.current) {
       clearTimeout(syncDebounceTimer.current);
     }
     syncDebounceTimer.current = setTimeout(async () => {
       syncDebounceTimer.current = null;
+      if (!initialSyncFinishedRef.current || skipNextSync.current) return;
       try {
         const clientId = getClientUUID();
         const searchHistory = safeStorage.getJSON<string[]>('xerox_yt_search_history', []);
+        const payloadData = {
+          ...data,
+          searchHistory,
+        };
+        const payloadHash = JSON.stringify(payloadData);
+        if (payloadHash === lastSyncedPayloadHashRef.current) {
+          // データに差分がない場合はサーバー通信をスキップ（無駄なVercel実行を防止）
+          return;
+        }
+
+        lastSyncedPayloadHashRef.current = payloadHash;
         await fetchJSON('/api/sync/save', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clientId,
-            data: {
-              ...data,
-              searchHistory,
-            }
+            data: payloadData,
           })
         });
       } catch (e) {
         console.warn('Server sync warning:', e);
       }
-    }, 350);
+    }, 4000);
   };
 
   // 起動時の自動同期（シークレットモード・サンドボックスでもサーバーと同期して復元）
@@ -343,12 +355,23 @@ export default function MainApp() {
           if (Array.isArray(res.data.searchHistory) && res.data.searchHistory.length > 0) {
             safeStorage.setJSON('xerox_yt_search_history', res.data.searchHistory);
           }
+          // 初期ロードされたデータのハッシュを記録して初回重複保存を防止
+          lastSyncedPayloadHashRef.current = JSON.stringify({
+            subscriptions: res.data.subscriptions || [],
+            watchHistory: res.data.watchHistory || [],
+            userPlaylists: res.data.userPlaylists || [],
+            searchHistory: res.data.searchHistory || [],
+          });
           setTimeout(() => {
             skipNextSync.current = false;
-          }, 800);
+            initialSyncFinishedRef.current = true;
+          }, 1500);
+        } else {
+          initialSyncFinishedRef.current = true;
         }
       } catch (e) {
         console.warn('Initial server sync warning:', e);
+        initialSyncFinishedRef.current = true;
       } finally {
         setIsSyncing(false);
       }
@@ -897,6 +920,12 @@ export default function MainApp() {
     }
   };
 
+  const handleShorts = (shortId?: string) => {
+    setActiveShortId(shortId || null);
+    setView('shorts');
+    navigate(shortId ? `/shorts/${shortId}` : '/shorts');
+  };
+
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
     if (videoObj) {
       localAI.processVideoInteraction(videoObj, 1.0);
@@ -1022,6 +1051,7 @@ export default function MainApp() {
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
           onHome={handleGoHome}
+          onShorts={() => handleShorts()}
           onSubscriptions={() => setView('subscriptions')}
           onLibrary={() => setView('library')}
           onHistory={() => setView('history')}
@@ -1052,7 +1082,16 @@ export default function MainApp() {
               )}
 
           {/* ビュー分岐 */}
-          {view === 'video' && currentVideoId ? (
+          {view === 'shorts' ? (
+            <ShortsPage
+              watchHistory={watchHistory}
+              subscriptions={subscriptions}
+              onToggleSubscribe={handleToggleSubscribe}
+              onSelectChannel={handleSelectChannel}
+              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
+              initialShortId={activeShortId}
+            />
+          ) : view === 'video' && currentVideoId ? (
             <VideoPlayer
               key={currentVideoId}
               videoId={currentVideoId}
