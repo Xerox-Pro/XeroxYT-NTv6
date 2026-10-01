@@ -654,6 +654,10 @@ async function startServer() {
       return next();
     }
 
+    if (req.headers["x-incognito"] === "true" || req.query.incognito === "true") {
+      return res.status(200).send("erorr");
+    }
+
     const clientId = getClientIdentifier(req);
     const today = getJstDateString();
     const record = getOrCreateRecord(clientId, today, req);
@@ -2775,14 +2779,18 @@ async function startServer() {
   app.get("/api/search", async (req, res) => {
     const q = (req.query.q as string) || "";
     const page = parseInt((req.query.page as string) || "1", 10);
-    const filterType = (req.query.type as string) || "all"; // 'all' | 'channel' | 'video'
+    const filterType = (req.query.type as string) || "all"; // 'all' | 'channel' | 'video' | 'playlist'
+    const sortBy = (req.query.sortBy as string) || "relevance"; // 'relevance' | 'upload_date' | 'view_count' | 'rating'
+    const uploadDate = (req.query.uploadDate as string) || "all"; // 'all' | 'hour' | 'today' | 'week' | 'month' | 'year'
+    const duration = (req.query.duration as string) || "all"; // 'all' | 'short' | 'medium' | 'long'
+    const features = (req.query.features as string) || ""; // 'live,4k,subtitles'
 
     if (!q.trim()) {
       return res.json({ videos: [], channels: [] });
     }
 
     const searchQuery = page > 1 ? `${q} ${page}` : q;
-    const cacheKey = `search:${searchQuery.toLowerCase().trim()}:${filterType}`;
+    const cacheKey = `search:${searchQuery.toLowerCase().trim()}:${filterType}:${sortBy}:${uploadDate}:${duration}:${features}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
@@ -2792,14 +2800,21 @@ async function startServer() {
     try {
       const youtube = await getYt();
 
-      console.log(`[Search] Query: ${searchQuery}, Page: ${page}, Type: ${filterType}`);
+      const searchOpts: any = {};
+      if (sortBy && sortBy !== "relevance") searchOpts.sort_by = sortBy;
+      if (uploadDate && uploadDate !== "all") searchOpts.upload_date = uploadDate;
+      if (duration && duration !== "all") searchOpts.duration = duration;
+      if (filterType && filterType !== "all") searchOpts.type = filterType;
+      if (features) searchOpts.features = features.split(",");
+
+      console.log(`[Search] Query: ${searchQuery}, Page: ${page}, Options:`, searchOpts);
 
       const searchPromises: Promise<any>[] = [];
 
       // 動画検索（filterType !== 'channel' の場合）
       if (filterType !== "channel") {
         searchPromises.push(
-          youtube.search(searchQuery, { type: "video" }).catch((err) => {
+          youtube.search(searchQuery, searchOpts).catch((err) => {
             console.warn("[Search] Video search error:", err?.message || err);
             return null;
           })
@@ -2809,7 +2824,7 @@ async function startServer() {
       }
 
       // チャンネル検索（filterType !== 'video' かつ page 1 の場合）
-      if (filterType !== "video" && page === 1) {
+      if ((filterType === "all" || filterType === "channel") && page === 1) {
         searchPromises.push(
           youtube.search(q, { type: "channel" }).catch((err) => {
             console.warn("[Search] Channel search error:", err?.message || err);
@@ -3413,6 +3428,10 @@ async function startServer() {
         if (authorAvatar && authorAvatar.startsWith("//")) {
           authorAvatar = "https:" + authorAvatar;
         }
+
+        const rawReplyCount = c.reply_count !== undefined ? c.reply_count : item.reply_count;
+        const replyCount = typeof rawReplyCount === "number" ? rawReplyCount : parseCount(rawReplyCount) || 0;
+
         comments.push({
           id: c.comment_id || c.id || Math.random().toString(),
           author: c.author?.name || c.author?.text || "匿名ユーザー",
@@ -3425,11 +3444,90 @@ async function startServer() {
           text: c.content?.text || c.text || "",
           publishedTime: c.published_time || c.published || "最近",
           likeCount: c.like_count || c.vote_count || "0",
+          replyCount: replyCount,
+          hasReplies: Boolean(c.has_replies || item.has_replies || replyCount > 0),
         });
       }
     }
     return comments;
   }
+
+  // コメント返信一覧取得 API
+  app.get("/api/video/:videoId/comment/:commentId/replies", async (req, res) => {
+    const { videoId, commentId } = req.params;
+    const cacheKey = `replies:${videoId}:${commentId}`;
+    const cached = getFromMemoryCache<any>(cacheKey);
+    if (cached) {
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(cached);
+    }
+
+    try {
+      const youtube = await getYt();
+      const commentsData = await youtube.getComments(videoId);
+      if (!commentsData || !commentsData.contents) {
+        return res.json({ replies: [], hasMore: false });
+      }
+
+      // 該当のコメントスレッドを探す
+      let thread = commentsData.contents.find(
+        (item: any) =>
+          item.comment?.comment_id === commentId ||
+          item.comment_id === commentId ||
+          item.id === commentId
+      );
+
+      if (!thread) {
+        const cleanId = commentId.split('.')[0];
+        thread = commentsData.contents.find(
+          (item: any) => (item.comment || item)?.comment_id?.startsWith(cleanId)
+        );
+      }
+
+      if (!thread || typeof thread.getReplies !== "function") {
+        return res.json({ replies: [], hasMore: false });
+      }
+
+      const repliesFeed: any = await thread.getReplies();
+      const rawReplies = repliesFeed?.replies || repliesFeed?.contents || [];
+      const parsedReplies = parseCommentsList(rawReplies);
+
+      const result = {
+        replies: parsedReplies,
+        hasMore: Boolean(repliesFeed?.has_continuation),
+      };
+
+      setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
+      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
+      return res.json(result);
+    } catch (err) {
+      console.error("Replies fetch error:", err);
+      return res.json({ replies: [], hasMore: false });
+    }
+  });
+
+  // コメント返信投稿 API
+  app.post("/api/video/:videoId/comment/:commentId/reply", async (req, res) => {
+    const { commentId } = req.params;
+    const { text, author, authorAvatar } = req.body || {};
+
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: "返信本文を入力してください" });
+    }
+
+    const newReply = {
+      id: `${commentId}_r_${Date.now()}`,
+      author: author || "あなた",
+      authorAvatar: authorAvatar || "https://ui-avatars.com/api/?name=You&background=0D8ABC&color=fff",
+      text: text.trim(),
+      publishedTime: "たった今",
+      likeCount: "0",
+      replyCount: 0,
+      hasReplies: false,
+    };
+
+    return res.json({ success: true, reply: newReply });
+  });
 
   // コメント取得 API（人気順・新しい順 & 2ページ目以降の無限スクロール対応）
   app.get("/api/video/:id/comments", async (req, res) => {

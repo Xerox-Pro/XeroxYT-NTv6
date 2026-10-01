@@ -3,6 +3,8 @@
  * Analyzes user behavior and video metadata without external API calls.
  */
 
+import { safeStorage } from '../services/safeStorage';
+
 export interface InterestProfile {
   keywords: Record<string, number>; // Keyword -> Score
   categories: Record<string, number>; // Category ID -> Score
@@ -23,7 +25,7 @@ export class LocalIntelligence {
 
   private loadProfile(): InterestProfile {
     try {
-      const saved = localStorage.getItem('xerox_local_ai_profile');
+      const saved = safeStorage.getItem('xerox_local_ai_profile');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
@@ -43,7 +45,7 @@ export class LocalIntelligence {
 
   private saveProfile() {
     this.profile.lastUpdated = Date.now();
-    localStorage.setItem('xerox_local_ai_profile', JSON.stringify(this.profile));
+    safeStorage.setItem('xerox_local_ai_profile', JSON.stringify(this.profile));
   }
 
   /**

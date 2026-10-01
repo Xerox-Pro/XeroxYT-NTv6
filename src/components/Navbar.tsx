@@ -675,6 +675,16 @@ export default function Navbar({
       {/* 右側 */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <PWAInstallButton />
+        <button
+          onClick={() => {
+            sessionStorage.setItem('xerox_incognito_mode', 'true');
+            window.location.reload();
+          }}
+          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
+          title="シークレットモードにする"
+        >
+          シークレットモード
+        </button>
         <Link
           to="/aistudio"
           className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"

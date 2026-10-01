@@ -15,18 +15,106 @@ import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
 interface CommentItemProps {
   comment: Comment;
+  videoId: string;
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, videoId, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
-  // 3行以上または長いテキストの判定
+  const [showReplyInput, setShowReplyInput] = useState(false);
+  const [replyText, setReplyText] = useState('');
+  const [isSubmittingReply, setIsSubmittingReply] = useState(false);
+  const [isRepliesExpanded, setIsRepliesExpanded] = useState(false);
+  const [replies, setReplies] = useState<Comment[]>(comment.replies || []);
+  const [loadingReplies, setLoadingReplies] = useState(false);
+  const [hasLoadedReplies, setHasLoadedReplies] = useState(Boolean(comment.replies && comment.replies.length > 0));
+  const [likes, setLikes] = useState<number>(() => {
+    if (typeof comment.likeCount === 'number') return comment.likeCount;
+    return parseInt(String(comment.likeCount || 0).replace(/,/g, ''), 10) || 0;
+  });
+  const [isLiked, setIsLiked] = useState(false);
+  const [isDisliked, setIsDisliked] = useState(false);
+  const [replyCount, setReplyCount] = useState<number>(comment.replyCount || 0);
+
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
 
+  const handleToggleReplies = async () => {
+    if (!isRepliesExpanded) {
+      setIsRepliesExpanded(true);
+      if (!hasLoadedReplies && videoId) {
+        setLoadingReplies(true);
+        try {
+          const res = await fetchJSON(`/api/video/${encodeURIComponent(videoId)}/comment/${encodeURIComponent(comment.id)}/replies`);
+          if (res && Array.isArray(res.replies)) {
+            setReplies(res.replies);
+            setHasLoadedReplies(true);
+            if (res.replies.length > replyCount) {
+              setReplyCount(res.replies.length);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to load comment replies:", e);
+        } finally {
+          setLoadingReplies(false);
+        }
+      }
+    } else {
+      setIsRepliesExpanded(false);
+    }
+  };
+
+  const handleSendReply = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!replyText.trim() || isSubmittingReply) return;
+
+    setIsSubmittingReply(true);
+    try {
+      const res = await fetch(`/api/video/${encodeURIComponent(videoId)}/comment/${encodeURIComponent(comment.id)}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: replyText, author: 'あなた' })
+      });
+      const data = await res.json();
+      if (data && data.reply) {
+        setReplies(prev => [...prev, data.reply]);
+        setReplyCount(prev => prev + 1);
+        setReplyText('');
+        setShowReplyInput(false);
+        setIsRepliesExpanded(true);
+      }
+    } catch (e) {
+      console.error("Reply error:", e);
+    } finally {
+      setIsSubmittingReply(false);
+    }
+  };
+
+  const handleLike = () => {
+    if (isLiked) {
+      setIsLiked(false);
+      setLikes(prev => prev - 1);
+    } else {
+      setIsLiked(true);
+      if (isDisliked) setIsDisliked(false);
+      setLikes(prev => prev + 1);
+    }
+  };
+
+  const handleDislike = () => {
+    if (isDisliked) {
+      setIsDisliked(false);
+    } else {
+      setIsDisliked(true);
+      if (isLiked) {
+        setIsLiked(false);
+        setLikes(prev => prev - 1);
+      }
+    }
+  };
+
   return (
-    <div className="flex items-start gap-3 text-sm">
+    <div className="flex items-start gap-3 text-sm group/comment">
       <button 
         onClick={() => onSelectChannel(comment.authorId || comment.author)} 
         className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
@@ -65,19 +153,144 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) =
         )}
 
         <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
-            <ThumbsUp size={14} />
-            <span>{comment.likeCount}</span>
+          <button 
+            onClick={handleLike}
+            className={`flex items-center gap-1 font-semibold transition-colors cursor-pointer ${
+              isLiked ? 'text-blue-600 font-bold' : 'hover:text-gray-900'
+            }`}
+          >
+            <ThumbsUp size={14} className={isLiked ? 'fill-blue-600' : ''} />
+            <span>{likes > 0 ? likes : ''}</span>
           </button>
-          <button className="hover:text-gray-900">
-            <ThumbsDown size={14} />
+          <button 
+            onClick={handleDislike}
+            className={`transition-colors cursor-pointer ${
+              isDisliked ? 'text-blue-600' : 'hover:text-gray-900'
+            }`}
+          >
+            <ThumbsDown size={14} className={isDisliked ? 'fill-blue-600' : ''} />
           </button>
-          <button className="hover:text-gray-900 font-semibold">返信</button>
+          <button 
+            onClick={() => setShowReplyInput(!showReplyInput)} 
+            className="hover:text-gray-900 font-semibold px-2 py-0.5 rounded-full hover:bg-gray-100 transition-colors cursor-pointer"
+          >
+            返信
+          </button>
         </div>
+
+        {/* 返信入力フォーム */}
+        {showReplyInput && (
+          <form onSubmit={handleSendReply} className="flex gap-2.5 mt-3 pt-2">
+            <Avatar name="自分" className="w-7 h-7 text-xs shrink-0 border border-gray-300" />
+            <div className="flex-1 flex flex-col gap-2">
+              <input
+                type="text"
+                autoFocus
+                value={replyText}
+                onChange={(e) => setReplyText(e.target.value)}
+                placeholder={`${comment.author} さんに返信...`}
+                className="w-full border-b border-gray-300 focus:border-gray-900 outline-none py-1 text-xs bg-transparent text-gray-900 placeholder-gray-500"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReplyInput(false);
+                    setReplyText('');
+                  }}
+                  className="px-3 py-1 text-[11px] font-bold text-gray-600 hover:bg-gray-100 rounded-full cursor-pointer"
+                >
+                  キャンセル
+                </button>
+                <button
+                  type="submit"
+                  disabled={!replyText.trim() || isSubmittingReply}
+                  className="px-3.5 py-1 text-[11px] font-bold bg-blue-600 hover:bg-blue-700 disabled:bg-gray-200 disabled:text-gray-400 text-white rounded-full transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+                >
+                  {isSubmittingReply ? <Loader2 size={12} className="animate-spin" /> : <Send size={11} />}
+                  <span>返信</span>
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+
+        {/* YouTube スタイル 返信展開ボタン */}
+        {(replyCount > 0 || replies.length > 0) && (
+          <div className="mt-2">
+            <button
+              onClick={handleToggleReplies}
+              className="flex items-center gap-2 text-xs font-bold text-blue-600 hover:bg-blue-50 px-3 py-1.5 rounded-full transition-colors cursor-pointer self-start"
+            >
+              {isRepliesExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              <span>{isRepliesExpanded ? '返信を非表示' : `返信 ${replyCount > 0 ? `${replyCount} 件` : ''}`}</span>
+            </button>
+
+            {/* 返信スレッドリスト */}
+            {isRepliesExpanded && (
+              <div className="mt-3 pl-4 border-l-2 border-gray-200 flex flex-col gap-4">
+                {loadingReplies && (
+                  <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
+                    <Loader2 size={14} className="animate-spin text-blue-600" />
+                    <span>返信を読み込み中...</span>
+                  </div>
+                )}
+
+                {replies.map((replyItem) => (
+                  <div key={replyItem.id} className="flex items-start gap-2.5 text-xs">
+                    <button 
+                      onClick={() => onSelectChannel(replyItem.authorId || replyItem.author)}
+                      className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85"
+                    >
+                      <Avatar 
+                        src={replyItem.authorAvatar} 
+                        name={replyItem.author} 
+                        channelId={replyItem.authorId}
+                        className="w-7 h-7 text-[10px]" 
+                      />
+                    </button>
+                    <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => onSelectChannel(replyItem.authorId || replyItem.author)} 
+                          className="font-bold text-gray-900 text-xs hover:underline cursor-pointer truncate"
+                        >
+                          {replyItem.author}
+                        </button>
+                        <span className="text-[10px] text-gray-500">{replyItem.publishedTime}</span>
+                      </div>
+                      <p className="text-gray-800 text-xs leading-relaxed whitespace-pre-wrap break-words">
+                        {replyItem.text}
+                      </p>
+                      <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+                        <button className="flex items-center gap-1 hover:text-gray-900 font-semibold cursor-pointer">
+                          <ThumbsUp size={12} />
+                          <span>{replyItem.likeCount || ''}</span>
+                        </button>
+                        <button className="hover:text-gray-900 cursor-pointer">
+                          <ThumbsDown size={12} />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            setShowReplyInput(true);
+                            setReplyText(`@${replyItem.author} `);
+                          }}
+                          className="hover:text-gray-900 font-semibold cursor-pointer"
+                        >
+                          返信
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
 
 interface LiveChatMessage {
   id: string;
@@ -1505,6 +1718,7 @@ export default function VideoPlayer({
                   <CommentItem 
                     key={comment.id} 
                     comment={comment} 
+                    videoId={videoId}
                     onSelectChannel={onSelectChannel} 
                   />
                 ))}
