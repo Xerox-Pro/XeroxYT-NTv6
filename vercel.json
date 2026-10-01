@@ -3,7 +3,7 @@
   "outputDirectory": "dist",
   "functions": {
     "api/index.ts": {
-      "memory": 512,
+      "memory": 2048,
       "maxDuration": 15
     }
   },
