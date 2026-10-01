@@ -18,7 +18,6 @@ import LibraryPage from './components/LibraryPage';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import LicensePage from './components/LicensePage';
-import ShortsPage from './components/ShortsPage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
@@ -26,8 +25,7 @@ import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo,
 import { localAI } from './lib/intelligence';
 import { Loader2, AlertCircle, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON, parseYouTubeUrl, getClientUUID } from './utils';
-import { safeStorage } from './services/safeStorage';
+import { fetchJSON, parseYouTubeUrl } from './utils';
 
 declare global {
   interface Window {
@@ -40,8 +38,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'shorts' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
-  const [activeShortId, setActiveShortId] = useState<string | null>(null);
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -55,17 +52,32 @@ export default function MainApp() {
   
   // Cache for static video/channel data
   const [videoCache, setVideoCache] = useState<Record<string, Video | ShortVideo>>(() => {
-    return safeStorage.getJSON<Record<string, Video | ShortVideo>>('xerox_video_cache', {});
+    try {
+      const saved = localStorage.getItem('xerox_video_cache');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
   });
 
   // AI Analysis Cache
   const [aiInterests, setAiInterests] = useState<string[]>(() => {
-    return safeStorage.getJSON<string[]>('xerox_ai_interests', []);
+    try {
+      const saved = localStorage.getItem('xerox_ai_interests');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // Auth state
   const [userInfo, setUserInfo] = useState<UserInfo | null>(() => {
-    return safeStorage.getJSON<UserInfo | null>('xerox_user_info', null);
+    try {
+      const saved = localStorage.getItem('xerox_user_info');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
 
   const [loading, setLoading] = useState(true);
@@ -83,11 +95,12 @@ export default function MainApp() {
     if (path === '/') {
       setView('home');
       fetchRecommendations(1, false);
-    } else if (path === '/shorts' || path.startsWith('/shorts/')) {
+    } else if (path.startsWith('/shorts/')) {
       const parts = path.split('/');
       const shortId = parts[2]?.split('?')[0];
-      setActiveShortId(shortId || null);
-      setView('shorts');
+      if (shortId) {
+        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
+      }
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -186,22 +199,37 @@ export default function MainApp() {
   const [currentPlaylistQueue, setCurrentPlaylistQueue] = useState<Video[]>([]);
   const [playlistQueueIndex, setPlaylistQueueIndex] = useState<number>(-1);
 
-  // Subscriptions state saved in safeStorage
+  // Subscriptions state saved in LocalStorage
   const [subscriptions, setSubscriptions] = useState<ChannelSubscription[]>(() => {
-    return safeStorage.getJSON<ChannelSubscription[]>('xerox_subscriptions', []);
+    try {
+      const saved = localStorage.getItem('xerox_subscriptions');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
-  // Watch history saved in safeStorage
+  // Watch history
   const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => {
-    return safeStorage.getJSON<WatchHistoryItem[]>('xerox_watch_history', []);
+    try {
+      const saved = localStorage.getItem('xerox_watch_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   const [youtubeHistory, setYoutubeHistory] = useState<WatchHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
-  // User Playlists saved in safeStorage
+  // User Playlists saved in LocalStorage
   const [playlists, setPlaylists] = useState<UserPlaylist[]>(() => {
-    return safeStorage.getJSON<UserPlaylist[]>('xerox_user_playlists', []);
+    try {
+      const saved = localStorage.getItem('xerox_user_playlists');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
   });
 
   // YouTube Authenticated Features State
@@ -212,7 +240,7 @@ export default function MainApp() {
   const [showNotificationsMenu, setShowNotificationsMenu] = useState<boolean>(false);
 
   const fetchYoutubeAuthData = async () => {
-    const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
+    const ytCreds = localStorage.getItem('xerox_youtube_credentials');
     if (!ytCreds) return;
 
     try {
@@ -228,7 +256,7 @@ export default function MainApp() {
             bannerUrl: channelInfo.bannerUrl,
             picture: channelInfo.avatar || prev.picture
           };
-          safeStorage.setJSON('xerox_user_info', updated);
+          localStorage.setItem('xerox_user_info', JSON.stringify(updated));
           return updated;
         });
       }
@@ -273,41 +301,45 @@ export default function MainApp() {
     }
   };
 
-  // 他タブ/ウィンドウ間のリアルタイム同期リスナー（ローカルストレージベース）
-  useEffect(() => {
-    const unsubscribe = safeStorage.onSync((key, value) => {
-      if (key === 'xerox_watch_history' && value) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            setWatchHistory(parsed);
-          }
-        } catch {}
-      } else if (key === 'xerox_subscriptions' && value) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            setSubscriptions(parsed);
-          }
-        } catch {}
-      } else if (key === 'xerox_user_playlists' && value) {
-        try {
-          const parsed = JSON.parse(value);
-          if (Array.isArray(parsed)) {
-            setPlaylists(parsed);
-          }
-        } catch {}
-      }
-    });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const skipNextSync = useRef(false);
 
-    return () => {
-      unsubscribe();
+  useEffect(() => {
+    const initSync = async () => {
+      const credentialId = localStorage.getItem('webauthn_credential_id');
+      if (credentialId) {
+        setUserInfo({ 
+          name: 'Sync User', 
+          email: 'Logged in with TouchID',
+          avatar: `https://ui-avatars.com/api/?name=User&background=random`
+        });
+        setIsSyncing(true);
+        try {
+          const res = await fetchJSON('/api/sync/load', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ credentialId })
+          });
+          if (res.data) {
+            skipNextSync.current = true;
+            if (res.data.subscriptions) setSubscriptions(res.data.subscriptions);
+            if (res.data.watchHistory) setWatchHistory(res.data.watchHistory);
+            if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
+            setTimeout(() => { skipNextSync.current = false; }, 1000);
+          }
+        } catch (e) {
+          console.error('Initial sync failed', e);
+        } finally {
+          setIsSyncing(false);
+        }
+      }
     };
+    initSync();
   }, []);
 
   useEffect(() => {
     if (view === 'history') {
-      const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
+      const ytCreds = localStorage.getItem('xerox_youtube_credentials');
       if (ytCreds && userInfo) {
         setLoadingHistory(true);
         fetchJSON('/api/user/history')
@@ -334,17 +366,45 @@ export default function MainApp() {
     }
   }, [view, userInfo]);
 
-  // ローカルストレージ（ブラウザ内）への即時保存のみ行い、無駄なサーバー通信を根絶
+  const performServerSync = async (data: any) => {
+    const credentialId = localStorage.getItem('webauthn_credential_id');
+    if (!credentialId || skipNextSync.current) return;
+    try {
+      await fetchJSON('/api/sync/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credentialId, data })
+      });
+    } catch (e) {
+      console.error('Failed to sync to server', e);
+    }
+  };
+
   useEffect(() => {
-    safeStorage.setJSON('xerox_subscriptions', subscriptions);
+    try {
+      localStorage.setItem('xerox_subscriptions', JSON.stringify(subscriptions));
+    } catch (e) {
+      console.error(e);
+    }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [subscriptions]);
 
   useEffect(() => {
-    safeStorage.setJSON('xerox_watch_history', watchHistory);
+    try {
+      localStorage.setItem('xerox_watch_history', JSON.stringify(watchHistory));
+    } catch (e) {
+      console.error(e);
+    }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [watchHistory]);
 
   useEffect(() => {
-    safeStorage.setJSON('xerox_user_playlists', playlists);
+    try {
+      localStorage.setItem('xerox_user_playlists', JSON.stringify(playlists));
+    } catch (e) {
+      console.error(e);
+    }
+    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [playlists]);
 
   // 閲覧履歴（通常動画）記録
@@ -439,18 +499,18 @@ export default function MainApp() {
 
   useEffect(() => {
     if (userInfo) {
-      safeStorage.setJSON('xerox_user_info', userInfo);
+      localStorage.setItem('xerox_user_info', JSON.stringify(userInfo));
     } else {
-      safeStorage.removeItem('xerox_user_info');
+      localStorage.removeItem('xerox_user_info');
     }
   }, [userInfo]);
 
   useEffect(() => {
-    safeStorage.setJSON('xerox_video_cache', videoCache);
+    localStorage.setItem('xerox_video_cache', JSON.stringify(videoCache));
   }, [videoCache]);
 
   useEffect(() => {
-    safeStorage.setJSON('xerox_ai_interests', aiInterests);
+    localStorage.setItem('xerox_ai_interests', JSON.stringify(aiInterests));
   }, [aiInterests]);
 
   const updateCache = (videos: (Video | ShortVideo)[]) => {
@@ -520,9 +580,9 @@ export default function MainApp() {
             picture: res.user.picture || `https://ui-avatars.com/api/?name=${encodeURIComponent(res.user.name)}&background=random`
           };
           setUserInfo(uInfo);
-          safeStorage.setJSON('xerox_user_info', uInfo);
+          localStorage.setItem('xerox_user_info', JSON.stringify(uInfo));
           if (res.credentials) {
-            safeStorage.setJSON('xerox_youtube_credentials', res.credentials);
+            localStorage.setItem('xerox_youtube_credentials', JSON.stringify(res.credentials));
           }
           setAuthFlow(null);
           setIsPolling(false);
@@ -572,7 +632,7 @@ export default function MainApp() {
 
   useEffect(() => {
     const initYtAuth = async () => {
-      const ytCreds = safeStorage.getItem('xerox_youtube_credentials');
+      const ytCreds = localStorage.getItem('xerox_youtube_credentials');
       if (ytCreds && userInfo) {
         // Sync subscribed channels on load
         try {
@@ -599,9 +659,9 @@ export default function MainApp() {
     try {
       await fetchJSON('/api/auth/logout', { method: 'POST' }).catch(() => {});
     } catch {}
-    safeStorage.removeItem('xerox_youtube_credentials');
-    safeStorage.removeItem('xerox_user_info');
-    safeStorage.removeItem('webauthn_credential_id');
+    localStorage.removeItem('xerox_youtube_credentials');
+    localStorage.removeItem('xerox_user_info');
+    localStorage.removeItem('webauthn_credential_id');
     setUserInfo(null);
     setSubscriptions([]);
     setWatchHistory([]);
@@ -704,34 +764,8 @@ export default function MainApp() {
       setHasMore(finalData.length > 0);
     } catch (err: any) {
       if (currentReqId !== recommendationRequestIdRef.current) return;
-      console.warn('[Recs] Primary recommendations fetch failed, trying automatic fallback:', err);
-      
-      // 自動フォールバック: trending動画またはキャッシュから復旧
-      try {
-        const fallbackTrending = await fetchJSON('/api/trending');
-        if (Array.isArray(fallbackTrending) && fallbackTrending.length > 0) {
-          updateCache(fallbackTrending);
-          if (!append) {
-            setVideos(fallbackTrending);
-            setHasMore(true);
-            setError('');
-            return;
-          }
-        }
-      } catch (fbErr) {
-        console.warn('[Recs] Secondary fallback failed:', fbErr);
-      }
-
-      // キャッシュ動画が存在する場合はそれを表示
-      const cachedVideos = Object.values(videoCache).filter((v): v is Video => (v as any).type === 'video' || !(v as any).type);
-      if (cachedVideos.length > 0 && !append) {
-        setVideos(cachedVideos.slice(0, 30));
-        setHasMore(false);
-        setError('');
-        return;
-      }
-
-      if (!append) setError('動画の読み込みに失敗しました。再読み込みをお試しください。');
+      console.error(err);
+      if (!append) setError(err.message || 'エラーが発生しました');
     } finally {
       if (currentReqId === recommendationRequestIdRef.current) {
         setLoading(false);
@@ -832,12 +866,6 @@ export default function MainApp() {
     } else {
       navigate(`/results?search_query=${encodeURIComponent(category)}`);
     }
-  };
-
-  const handleShorts = (shortId?: string) => {
-    setActiveShortId(shortId || null);
-    setView('shorts');
-    navigate(shortId ? `/shorts/${shortId}` : '/shorts');
   };
 
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
@@ -965,7 +993,6 @@ export default function MainApp() {
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
           onHome={handleGoHome}
-          onShorts={() => handleShorts()}
           onSubscriptions={() => setView('subscriptions')}
           onLibrary={() => setView('library')}
           onHistory={() => setView('history')}
@@ -996,16 +1023,7 @@ export default function MainApp() {
               )}
 
           {/* ビュー分岐 */}
-          {view === 'shorts' ? (
-            <ShortsPage
-              watchHistory={watchHistory}
-              subscriptions={subscriptions}
-              onToggleSubscribe={handleToggleSubscribe}
-              onSelectChannel={handleSelectChannel}
-              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
-              initialShortId={activeShortId}
-            />
-          ) : view === 'video' && currentVideoId ? (
+          {view === 'video' && currentVideoId ? (
             <VideoPlayer
               key={currentVideoId}
               videoId={currentVideoId}
@@ -1061,25 +1079,20 @@ export default function MainApp() {
               </div>
             ) : (
               <HistoryPage
-                history={safeStorage.getItem('xerox_youtube_credentials') ? youtubeHistory : watchHistory}
+                history={localStorage.getItem('xerox_youtube_credentials') ? youtubeHistory : watchHistory}
                 onVideoSelect={(id) => handleVideoSelect(id)}
                 onClearHistory={() => {
-                  if (safeStorage.getItem('xerox_youtube_credentials')) {
+                  if (localStorage.getItem('xerox_youtube_credentials')) {
                     setYoutubeHistory([]);
                   } else {
                     setWatchHistory([]);
-                    safeStorage.removeItem('xerox_watch_history');
                   }
                 }}
                 onRemoveHistoryItem={(id) => {
-                  if (safeStorage.getItem('xerox_youtube_credentials')) {
+                  if (localStorage.getItem('xerox_youtube_credentials')) {
                     setYoutubeHistory(prev => prev.filter(i => i.videoId !== id));
                   } else {
-                    setWatchHistory(prev => {
-                      const updated = prev.filter(i => i.videoId !== id);
-                      safeStorage.setJSON('xerox_watch_history', updated);
-                      return updated;
-                    });
+                    setWatchHistory(prev => prev.filter(i => i.videoId !== id));
                   }
                 }}
                 onSelectChannel={handleSelectChannel}

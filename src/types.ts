@@ -62,17 +62,9 @@ export interface ShortVideo {
   author: string;
   authorId?: string;
   authorAvatar?: string;
-  thumbnailUrl?: string;
   viewCount?: number;
-  viewText?: string;
   likeCount?: string | number;
   commentCount?: string | number;
-  duration?: number;
-  basedOn?: {
-    videoId: string;
-    title: string;
-    author?: string;
-  };
 }
 
 export interface Comment {
@@ -83,11 +75,6 @@ export interface Comment {
   text: string;
   publishedTime: string;
   likeCount: string | number;
-  replyCount?: number;
-  hasReplies?: boolean;
-  isHearted?: boolean;
-  authorIsChannelOwner?: boolean;
-  replies?: Comment[];
 }
 
 export interface Playlist {
