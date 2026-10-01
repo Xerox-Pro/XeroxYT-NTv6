@@ -1,19 +1,16 @@
-import appPromise from "../server";
+import appHandler from "../server.ts";
 
 export default async function handler(req: any, res: any) {
   try {
-    const app = await appPromise;
-    return app(req, res);
+    return await appHandler(req, res);
   } catch (err: any) {
-    console.error("[Vercel Serverless Handler Error]:", err);
-    if (!res.headersSent) {
-      res.status(200).json({
-        error: err?.message || "Internal Server Error",
-        videos: [],
-        results: [],
-        success: false,
+    console.error("[Vercel Serverless Function Error]", err);
+    if (res && !res.headersSent) {
+      res.setHeader("Content-Type", "application/json");
+      return res.status(200).json({
+        error: "Serverless execution recovered",
+        message: err.message || String(err),
       });
     }
   }
 }
-
