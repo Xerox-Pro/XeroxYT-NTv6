@@ -21,11 +21,13 @@ import LicensePage from './components/LicensePage';
 import AddToPlaylistModal from './components/AddToPlaylistModal';
 import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
+import ShortsPage from './components/ShortsPage';
+import ShortsShelf from './components/ShortsShelf';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
-import { Loader2, AlertCircle, User } from 'lucide-react';
+import { Loader2, AlertCircle, User, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON, parseYouTubeUrl } from './utils';
+import { fetchJSON, parseYouTubeUrl, formatNumberJP } from './utils';
 
 declare global {
   interface Window {
@@ -38,11 +40,13 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'shorts'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
+  const [searchTab, setSearchTab] = useState<'all' | 'video' | 'shorts' | 'channel'>('all');
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [videos, setVideos] = useState<Video[]>([]);
+  const [homeShorts, setHomeShorts] = useState<Video[]>([]);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string | null>(null);
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
@@ -95,12 +99,8 @@ export default function MainApp() {
     if (path === '/') {
       setView('home');
       fetchRecommendations(1, false);
-    } else if (path.startsWith('/shorts/')) {
-      const parts = path.split('/');
-      const shortId = parts[2]?.split('?')[0];
-      if (shortId) {
-        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
-      }
+    } else if (path === '/shorts' || path.startsWith('/shorts/')) {
+      setView('shorts');
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -719,6 +719,10 @@ export default function MainApp() {
         publicData = result.videos;
       }
       
+      if (result && Array.isArray(result.shorts) && result.shorts.length > 0) {
+        setHomeShorts(result.shorts);
+      }
+      
       // AIの分析結果を保存
       if (result && result.aiKeywords && result.aiKeywords.length > 0) {
         setAiInterests(result.aiKeywords);
@@ -775,11 +779,12 @@ export default function MainApp() {
     }
   };
 
-  // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得)
+  // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得 & ショートタブ対応)
   const fetchSearch = async (
     q: string,
     pageNum: number = 1,
-    append: boolean = false
+    append: boolean = false,
+    targetTab: 'all' | 'video' | 'shorts' | 'channel' = searchTab
   ) => {
     if (append) {
       setLoadingMore(true);
@@ -794,7 +799,8 @@ export default function MainApp() {
     setError('');
 
     try {
-      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
+      const typeParam = targetTab === 'shorts' ? '&type=shorts' : targetTab === 'video' ? '&type=video' : targetTab === 'channel' ? '&type=channel' : '';
+      const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}${typeParam}`);
       const newVideos: Video[] = Array.isArray(data) ? data : (data.videos || []);
       const newChannels: SearchChannel[] = Array.isArray(data) ? [] : (data.channels || []);
 
@@ -824,6 +830,12 @@ export default function MainApp() {
     }
   };
 
+  const handleSearchTabChange = (tab: 'all' | 'video' | 'shorts' | 'channel') => {
+    setSearchTab(tab);
+    setPage(1);
+    fetchSearch(searchQuery, 1, false, tab);
+  };
+
   // 無限スクロール検知
   const handleScroll = useCallback(() => {
     if (view !== 'home' && view !== 'search') return;
@@ -842,10 +854,10 @@ export default function MainApp() {
       if (view === 'home') {
         fetchRecommendations(nextPage, true);
       } else if (view === 'search') {
-        fetchSearch(searchQuery, nextPage, true);
+        fetchSearch(searchQuery, nextPage, true, searchTab);
       }
     }
-  }, [view, loading, loadingMore, hasMore, page, searchQuery]);
+  }, [view, loading, loadingMore, hasMore, page, searchQuery, searchTab]);
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
@@ -1098,6 +1110,13 @@ export default function MainApp() {
                 onSelectChannel={handleSelectChannel}
               />
             )
+          ) : view === 'shorts' ? (
+            <ShortsPage
+              subscriptions={subscriptions}
+              onToggleSubscribe={handleToggleSubscribe}
+              onRecordHistory={handleRecordHistory}
+              onSelectChannel={handleSelectChannel}
+            />
           ) : view === 'debug' ? (
             <DebugAPI />
           ) : view === 'license' ? (
@@ -1110,7 +1129,7 @@ export default function MainApp() {
               <p className="text-sm font-medium max-w-md">{error}</p>
               <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                 <button
-                  onClick={() => view === 'search' ? fetchSearch(searchQuery) : fetchRecommendations(1)}
+                  onClick={() => view === 'search' ? fetchSearch(searchQuery, 1, false, searchTab) : fetchRecommendations(1)}
                   className="px-4 py-2 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-800 transition-colors"
                 >
                   再読み込み
@@ -1129,16 +1148,39 @@ export default function MainApp() {
                   />
 
                   {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
+                  <div className="mb-4 border-b border-gray-100 pb-3 flex flex-col gap-3">
                     <h2 className="text-lg font-bold text-gray-900 tracking-tight">
                       "{searchQuery}" の検索結果
                     </h2>
+
+                    {/* 検索フィルタータブ（ショート動画タブ対応） */}
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+                      {[
+                        { id: 'all' as const, label: 'すべて' },
+                        { id: 'video' as const, label: '動画' },
+                        { id: 'shorts' as const, label: 'ショート', icon: <Zap size={13} fill="currentColor" className="text-red-600" /> },
+                        { id: 'channel' as const, label: 'チャンネル' },
+                      ].map((tab) => (
+                        <button
+                          key={tab.id}
+                          onClick={() => handleSearchTabChange(tab.id)}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 select-none ${
+                            searchTab === tab.id
+                              ? 'bg-gray-900 text-white shadow-xs'
+                              : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                          }`}
+                        >
+                          {tab.icon}
+                          <span>{tab.label}</span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </>
               )}
 
               {/* チャンネル結果（YouTube同様に動画と同じ一覧の先頭に統合表示） */}
-              {view === 'search' && searchChannels.length > 0 && (
+              {view === 'search' && searchTab !== 'shorts' && searchChannels.length > 0 && (
                 <div className="flex flex-col divide-y divide-gray-100 border-b border-gray-200 pb-6 mb-8">
                   {searchChannels.slice(0, 3).map((channel) => (
                     <SearchChannelCard
@@ -1150,28 +1192,68 @@ export default function MainApp() {
                 </div>
               )}
 
-              {/* 動画リスト */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-                {videos.map((video, idx) => (
-                  <div key={`${video.videoId}-${idx}`} className="relative group">
-                    <VideoCard
-                      video={video}
-                      onClick={() => handleVideoSelect(video.videoId, video)}
-                      onSelectChannel={handleSelectChannel}
-                    />
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPlaylistModalVideo(video);
-                      }}
-                      className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
-                      title="再生リストに保存"
+              {/* ホームの場合：ショートのおすすめシェルフ */}
+              {view === 'home' && homeShorts.length > 0 && (
+                <ShortsShelf shorts={homeShorts} />
+              )}
+
+              {/* 検索ショートタブの場合：9:16縦型ショートカードグリッド */}
+              {view === 'search' && searchTab === 'shorts' ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {videos.map((short) => (
+                    <div
+                      key={short.videoId}
+                      onClick={() => navigate(`/shorts/${short.videoId}`)}
+                      className="group cursor-pointer flex flex-col gap-2 select-none"
                     >
-                      + 保存
-                    </button>
-                  </div>
-                ))}
-              </div>
+                      <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
+                        <img
+                          src={
+                            short.videoThumbnails?.[0]?.url ||
+                            `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`
+                          }
+                          alt={short.title}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <div className="absolute top-2 right-2 bg-black/60 backdrop-blur-xs p-1 rounded-md text-white">
+                          <Zap size={12} fill="white" className="text-white" />
+                        </div>
+                        <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/85 via-black/40 to-transparent text-white">
+                          <p className="text-xs font-bold line-clamp-2 leading-snug drop-shadow-xs">
+                            {short.title}
+                          </p>
+                          <span className="text-[10px] text-gray-300 mt-1 block">
+                            {formatNumberJP(short.viewCount || 0)}回視聴
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                /* 通常動画グリッド */
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+                  {videos.map((video, idx) => (
+                    <div key={`${video.videoId}-${idx}`} className="relative group">
+                      <VideoCard
+                        video={video}
+                        onClick={() => handleVideoSelect(video.videoId, video)}
+                        onSelectChannel={handleSelectChannel}
+                      />
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setPlaylistModalVideo(video);
+                        }}
+                        className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
+                        title="再生リストに保存"
+                      >
+                        + 保存
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {/* 検索結果が動画もチャンネルもない場合 */}
               {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (

@@ -257,7 +257,10 @@ export default function Navbar({
     }
   };
 
-  // サジェスト取得 (デバウンス)
+// サジェストのクライアント側メモリキャッシュ
+const suggestionsClientCache = new Map<string, string[]>();
+
+  // サジェスト取得 (デバウンス 350ms & AbortController & メモリキャッシュ)
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed || parseYouTubeUrl(trimmed)) {
@@ -265,21 +268,36 @@ export default function Navbar({
       return;
     }
 
+    const lower = trimmed.toLowerCase();
+    if (suggestionsClientCache.has(lower)) {
+      setSuggestions(suggestionsClientCache.get(lower)!);
+      return;
+    }
+
+    const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(trimmed)}`);
+        const res = await fetch(`/api/suggestions?q=${encodeURIComponent(trimmed)}`, {
+          signal: controller.signal,
+        });
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
+            suggestionsClientCache.set(lower, data);
             setSuggestions(data);
           }
         }
-      } catch (err) {
-        console.warn('Failed to fetch suggestions', err);
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.warn('Failed to fetch suggestions', err);
+        }
       }
-    }, 150);
+    }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [query]);
 
   // ドロップダウンに表示する項目の生成
