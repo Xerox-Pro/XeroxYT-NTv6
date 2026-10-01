@@ -43,7 +43,7 @@ async function getYt() {
 
   ytInstancePromise = (async () => {
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 2;
 
     while (attempts < maxAttempts) {
       try {
@@ -74,7 +74,7 @@ async function getYt() {
           ytInstancePromise = null;
           throw err;
         }
-        await new Promise((r) => setTimeout(r, 2000));
+        await new Promise((r) => setTimeout(r, 500));
       }
     }
     throw new Error("Failed to initialize YT after multiple attempts");
@@ -433,7 +433,7 @@ const decryptData = (encryptedData: any) => {
   return JSON.parse(decrypted);
 };
 
-async function startServer() {
+function createServer() {
   const app = express();
 
   // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
@@ -787,7 +787,7 @@ async function startServer() {
     for (const [k, v] of memoryCache.entries()) {
       if (v.expires <= now) memoryCache.delete(k);
     }
-  }, 5 * 60 * 1000);
+  }, 5 * 60 * 1000).unref?.();
 
   const handleStreamRequest = async (req: express.Request, res: express.Response) => {
     try {
@@ -5051,26 +5051,51 @@ async function startServer() {
     }
   });
 
-  // 500 Error Handler
-  app.use((err: any, req: any, res: any, next: any) => {
-    console.error("[Fatal Error]", err);
-    if (res.headersSent) {
-      return next(err);
-    }
-    res.status(500).json({
-      error: "サーバー内部でエラーが発生しました。",
-      message: err.message,
-    });
-  });
+  // --- AI Studio API ---
+  app.post(
+    "/api/aistudio/chat",
+    express.json({ limit: "50mb" }),
+    async (req, res) => {
+      try {
+        const { messages, systemInstruction, temperature, model } = req.body;
 
-  if (process.env.NODE_ENV !== "production") {
-    const { createServer: createViteServer } = await import("vite");
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
+        const selectedModel = model || "gemini-3.5-flash-lite";
+        const response = await genAI.models.generateContent({
+          model: selectedModel,
+          contents: messages,
+          config: {
+            systemInstruction,
+            temperature: temperature || 0.7,
+          },
+        });
+
+        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
+        return res.json({ text: response.text });
+      } catch (e: any) {
+        console.error("[AI Studio] Error calling Gemini API:", e);
+        res.status(500).json({ error: e.message || String(e) });
+      }
+    },
+  );
+
+  const isVercel = Boolean(process.env.VERCEL || process.env.NOW_REGION);
+  const isProduction = process.env.NODE_ENV === "production" || isVercel;
+
+  if (!isProduction && !isVercel) {
+    import("vite")
+      .then(({ createServer: createViteServer }) => {
+        return createViteServer({
+          server: { middlewareMode: true },
+          appType: "spa",
+        });
+      })
+      .then((vite) => {
+        app.use(vite.middlewares);
+      })
+      .catch((err) => {
+        console.warn("[Server] Vite middleware load skipped:", err.message);
+      });
+  } else if (!isVercel) {
     const distPath = path.join(process.cwd(), "dist");
 
     // Service Worker やマニフェスト、HTMLはキャッシュさせず、サイト変更を即時検知できるようにする
@@ -5095,43 +5120,28 @@ async function startServer() {
     });
   }
 
-  // --- AI Studio API ---
-  app.post(
-    "/api/aistudio/chat",
-    express.json({ limit: "50mb" }),
-    async (req, res) => {
-      try {
-        const { messages, systemInstruction, temperature, model } = req.body;
-
-        const selectedModel = model || "gemini-3.5-flash-lite";
-        const response = await genAI.models.generateContent({
-          model: selectedModel,
-          contents: messages,
-          config: {
-            systemInstruction,
-            temperature: temperature || 0.7,
-          },
-        });
-
-        res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
-    return res.json({ text: response.text });
-      } catch (e) {
-        console.error("[AI Studio] Error calling Gemini API:", e);
-        res.status(500).json({ error: e.message || String(e) });
-      }
-    },
-  );
-
-  // ---------------------
-
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-    // Warm up YouTube client
-    getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+  // 500 Error Handler
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("[Fatal Error]", err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    res.status(500).json({
+      error: "サーバー内部でエラーが発生しました。",
+      message: err.message,
+    });
   });
+
+  if (!isVercel) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
+      // Warm up YouTube client
+      getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+    });
+  }
 
   return app;
 }
 
-const appPromise = startServer();
-export default appPromise;
+const app = createServer();
+export default app;
