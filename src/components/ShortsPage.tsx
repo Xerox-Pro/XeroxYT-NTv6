@@ -184,7 +184,7 @@ export default function ShortsPage({
       } else if (e.key === 'ArrowUp' || e.key === 'k') {
         e.preventDefault();
         scrollToIndex(activeIndex - 1);
-      } else if (e.key === ' ' || e.key === 'k') {
+      } else if (e.key === ' ') {
         e.preventDefault();
         togglePlayPause();
       } else if (e.key === 'm' || e.key === 'M') {
@@ -196,6 +196,53 @@ export default function ShortsPage({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeIndex, shorts.length]);
+
+  // 4. マウスホイールによる縦スクロール切り替え
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let wheelTimeout: NodeJS.Timeout | null = null;
+    const handleWheel = (e: WheelEvent) => {
+      // コメントドロワー内部スクロール時はショート送りを行わない
+      if ((e.target as HTMLElement)?.closest('.comment-drawer-content')) return;
+
+      if (Math.abs(e.deltaY) > 20) {
+        e.preventDefault();
+        if (wheelTimeout) return;
+        wheelTimeout = setTimeout(() => {
+          wheelTimeout = null;
+        }, 400);
+
+        if (e.deltaY > 0) {
+          scrollToIndex(activeIndex + 1);
+        } else {
+          scrollToIndex(activeIndex - 1);
+        }
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [activeIndex, shorts.length]);
+
+  const touchStartY = useRef(0);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartY.current = e.touches[0].clientY;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    const touchEndY = e.changedTouches[0].clientY;
+    const diff = touchStartY.current - touchEndY;
+    if (Math.abs(diff) > 40) {
+      if (diff > 0) {
+        scrollToIndex(activeIndex + 1);
+      } else {
+        scrollToIndex(activeIndex - 1);
+      }
+    }
+  };
 
   // 指定インデックスへスムーズスクロール
   const scrollToIndex = (index: number) => {
@@ -391,6 +438,8 @@ export default function ShortsPage({
           {/* メインリールコンテナ (縦スクロール・スナップスクロール) */}
           <div
             ref={containerRef}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
             className="relative w-full h-full overflow-y-scroll snap-y snap-mandatory no-scrollbar flex flex-col items-center"
           >
             {shorts.map((short, index) => {

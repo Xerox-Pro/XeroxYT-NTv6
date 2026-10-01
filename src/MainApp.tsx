@@ -24,9 +24,9 @@ import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
-import { Loader2, AlertCircle, User } from 'lucide-react';
+import { Loader2, AlertCircle, User, Zap, ChevronRight } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { fetchJSON, parseYouTubeUrl, getClientUUID } from './utils';
+import { fetchJSON, parseYouTubeUrl, getClientUUID, formatNumberJP } from './utils';
 import { safeStorage } from './services/safeStorage';
 
 declare global {
@@ -42,6 +42,7 @@ export default function MainApp() {
 
   const [view, setView] = useState<'home' | 'shorts' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [activeShortId, setActiveShortId] = useState<string | null>(null);
+  const [homeShorts, setHomeShorts] = useState<ShortVideo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -346,6 +347,30 @@ export default function MainApp() {
   useEffect(() => {
     safeStorage.setJSON('xerox_user_playlists', playlists);
   }, [playlists]);
+
+  // ホーム画面表示時、過去の視聴履歴からショートレコメンドを取得
+  useEffect(() => {
+    if (view === 'home') {
+      const historyPayload = (watchHistory || []).slice(0, 8).map((h) => ({
+        videoId: h.videoId,
+        title: h.title,
+        author: h.author,
+        authorId: (h as any).authorId,
+      }));
+
+      fetchJSON('/api/shorts/recommendations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ history: historyPayload, limit: 12 }),
+      })
+        .then((res) => {
+          if (Array.isArray(res?.shorts) && res.shorts.length > 0) {
+            setHomeShorts(res.shorts);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [view, watchHistory.length]);
 
   // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {
@@ -797,6 +822,11 @@ export default function MainApp() {
   };
 
   const handleSelectCategory = (category: string) => {
+    setSelectedCategory(category);
+    if (category === 'ショート') {
+      handleShorts();
+      return;
+    }
     if (!category || category === 'すべて' || category === 'あなたへのおすすめ') {
       if (location.pathname !== '/') {
         navigate('/');
@@ -986,6 +1016,7 @@ export default function MainApp() {
               playlistId={currentPlaylistId || undefined}
               initialVideo={videoCache[currentVideoId] || undefined}
               onVideoSelect={(id, v) => handleVideoSelect(id, v)}
+              onShortSelect={(shortId) => handleShorts(shortId)}
               onSelectChannel={handleSelectChannel}
               subscriptions={subscriptions}
               onToggleSubscribe={handleToggleSubscribe}
@@ -1108,6 +1139,65 @@ export default function MainApp() {
                       onSelectChannel={handleSelectChannel}
                     />
                   ))}
+                </div>
+              )}
+
+              {/* ホーム画面専用: YouTube風ショート動画シェルフ */}
+              {view === 'home' && homeShorts.length > 0 && (
+                <div className="mb-10 pt-1 pb-6 border-b border-gray-100">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-red-600 flex items-center justify-center text-white shadow-xs">
+                        <Zap size={16} className="fill-white" />
+                      </div>
+                      <h2 className="text-lg font-bold text-gray-900 tracking-tight flex items-center gap-2">
+                        ショート
+                      </h2>
+                    </div>
+                    <button
+                      onClick={() => handleShorts()}
+                      className="text-xs font-bold text-red-600 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      すべて見る
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
+                    {homeShorts.slice(0, 6).map((short) => (
+                      <div
+                        key={short.videoId}
+                        onClick={() => handleShorts(short.videoId)}
+                        className="group/short cursor-pointer flex flex-col"
+                      >
+                        <div className="relative aspect-[9/16] rounded-xl overflow-hidden bg-gray-900 shadow-xs transition-transform duration-200 group-hover/short:scale-[1.02] group-hover/short:shadow-md">
+                          <img
+                            src={short.thumbnailUrl || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
+                            alt={short.title}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-transparent opacity-80 group-hover/short:opacity-95 transition-opacity" />
+                          
+                          {/* Shorts red logo badge */}
+                          <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/60 backdrop-blur-xs flex items-center gap-1 text-[10px] text-white font-bold">
+                            <Zap size={10} className="fill-red-500 text-red-500" />
+                            <span>Shorts</span>
+                          </div>
+
+                          {/* View count and title at bottom */}
+                          <div className="absolute bottom-2.5 left-2.5 right-2.5 text-white">
+                            <p className="text-xs font-bold line-clamp-2 leading-snug drop-shadow-sm mb-1 group-hover/short:text-red-200 transition-colors">
+                              {short.title}
+                            </p>
+                            <p className="text-[11px] text-gray-300 font-medium truncate">
+                              {short.viewText || (short.viewCount ? `${formatNumberJP(short.viewCount)}回視聴` : short.author)}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
 

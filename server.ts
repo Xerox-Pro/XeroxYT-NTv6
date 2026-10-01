@@ -807,16 +807,11 @@ async function startServer() {
     }
   }, 10 * 60 * 1000).unref?.();
 
-  // 利用制限・ステータス確認エンドポイント
+  // 利用制限・ステータス確認エンドポイント（完全無制限）
   app.get(["/api/limits", "/api/usage"], (req, res) => {
     const clientId = getClientIdentifier(req);
     const today = getJstDateString();
-    const record = getOrCreateRecord(clientId, today, req);
-    const isVideoLimited = false; // 視聴制限は完全に解除
-    const isSearchLimited = record.searches >= DAILY_SEARCH_LIMIT;
-    const isTotalLimited = record.total >= DAILY_TOTAL_LIMIT;
-
-    const token = signUsage(clientId, today, record.videos, record.searches, record.total);
+    const token = signUsage(clientId, today, 0, 0, 0);
     res.setHeader("X-Daily-Usage-Token", token);
     res.setHeader(
       "Access-Control-Expose-Headers",
@@ -825,25 +820,13 @@ async function startServer() {
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
     return res.json({
       token,
-      videos: {
-        used: record.videos,
-        limit: 999999,
-        remaining: 999999,
-      },
-      searches: {
-        used: record.searches,
-        limit: DAILY_SEARCH_LIMIT,
-        remaining: Math.max(0, DAILY_SEARCH_LIMIT - record.searches),
-      },
-      total: {
-        used: record.total,
-        limit: DAILY_TOTAL_LIMIT,
-        remaining: Math.max(0, DAILY_TOTAL_LIMIT - record.total),
-      },
+      videos: { used: 0, limit: 999999, remaining: 999999 },
+      searches: { used: 0, limit: 999999, remaining: 999999 },
+      total: { used: 0, limit: 999999, remaining: 999999 },
       resetAt: getNextJstMidnightIso(),
       resetSeconds: getSecondsUntilJstMidnight(),
-      isLimited: isSearchLimited || isTotalLimited,
-      limitedType: isSearchLimited ? "search" : isTotalLimited ? "total" : null,
+      isLimited: false,
+      limitedType: null,
     });
   });
 
@@ -854,125 +837,21 @@ async function startServer() {
     dailyQuotaMap.delete(`${clientId}:${today}`);
     const token = signUsage(clientId, today, 0, 0, 0);
     res.setHeader("X-Daily-Usage-Token", token);
-    return res.json({ success: true, message: "Limits reset successfully for client" });
+    return res.json({ success: true, message: "Limits reset successfully" });
   });
 
-  // --- Daily Quotas & Rate Limiting Enforcement Middleware ---
+  // --- No-restriction Middleware ---
   app.use((req, res, next) => {
     const p = req.path;
-    // 静的ファイルや除外エンドポイントはスルー
-    if (
-      !p.startsWith("/api/") &&
-      !p.startsWith("/stream") &&
-      !p.startsWith("/edu") &&
-      !p.startsWith("/360") &&
-      !p.startsWith("/scratch-edu")
-    ) {
-      return next();
-    }
-
-    if (
-      p === "/api/limits" ||
-      p === "/api/usage" ||
-      p === "/api/health" ||
-      p === "/api/edukey" ||
-      p === "/api/limits/reset" ||
-      p === "/api/suggestions"
-    ) {
-      return next();
-    }
-
     const clientId = getClientIdentifier(req);
     const today = getJstDateString();
-    const record = getOrCreateRecord(clientId, today, req);
-    const now = Date.now();
+    const token = signUsage(clientId, today, 0, 0, 0);
 
-    // 1. バースト保護 (短時間のアクセス集中を防止: 1分間)
-    if (now - record.burstWindowStart > 60000) {
-      record.burstCount = 0;
-      record.burstWindowStart = now;
-    }
-    record.burstCount++;
-    if (record.burstCount > BURST_LIMIT_PER_MINUTE) {
-      res.setHeader("Retry-After", "60");
-      return res.status(429).json({
-        error: "短時間のアクセスが集中しています。サーバー負荷保護のため、1分ほど待ってから再試行してください。",
-        code: "BURST_LIMIT_EXCEEDED",
-        type: "burst",
-        retryAfter: 60,
-      });
-    }
-
-    // 2. 1日の総リクエスト上限チェック
-    if (record.total >= DAILY_TOTAL_LIMIT) {
-      res.setHeader("Retry-After", String(getSecondsUntilJstMidnight()));
-      return res.status(429).json({
-        error: `本日の総合リクエスト上限（${DAILY_TOTAL_LIMIT}回）に達しました。Vercelサーバー負荷保護のため、明日午前0時(JST)のリセットまでお待ちください。`,
-        code: "DAILY_TOTAL_LIMIT_EXCEEDED",
-        type: "total",
-        limit: DAILY_TOTAL_LIMIT,
-        used: record.total,
-        remaining: 0,
-        resetAt: getNextJstMidnightIso(),
-        resetSeconds: getSecondsUntilJstMidnight(),
-      });
-    }
-
-    // 3. 動画視聴リクエスト判定 (/api/video/:id, /stream/*, /edu/*, etc.)
-    const isVideoViewRequest = (
-      (p.startsWith("/api/video/") && !p.includes("/comments") && !p.includes("/related")) ||
-      p.startsWith("/stream/") ||
-      p.startsWith("/api/stream/") ||
-      p.startsWith("/360/") ||
-      p.startsWith("/api/360/") ||
-      p.startsWith("/edu/") ||
-      p.startsWith("/api/edu/") ||
-      p.startsWith("/scratch-edu/") ||
-      p.startsWith("/api/scratch-edu/")
-    );
-
-    if (isVideoViewRequest) {
-      record.videos++;
-    }
-
-    // 4. 検索リクエスト判定 (/api/search, /api/search/channels)
-    const isSearchRequest = p === "/api/search" || p === "/api/search/channels";
-    if (isSearchRequest) {
-      if (record.searches >= DAILY_SEARCH_LIMIT) {
-        res.setHeader("Retry-After", String(getSecondsUntilJstMidnight()));
-        return res.status(429).json({
-          error: `本日の検索リクエスト上限（${DAILY_SEARCH_LIMIT}回）に達しました。Vercelサーバー負荷保護のため、明日午前0時(JST)のリセットまでお待ちください。`,
-          code: "DAILY_SEARCH_LIMIT_EXCEEDED",
-          type: "search",
-          limit: DAILY_SEARCH_LIMIT,
-          used: record.searches,
-          remaining: 0,
-          resetAt: getNextJstMidnightIso(),
-          resetSeconds: getSecondsUntilJstMidnight(),
-        });
-      }
-      record.searches++;
-    }
-
-    // 総リクエスト数をインクリメント
-    record.total++;
-
-    // レスポンスヘッダーに残り利用枠と署名トークンを付与 (動画視聴は無制限)
-    const token = signUsage(clientId, today, record.videos, record.searches, record.total);
     res.setHeader("X-RateLimit-Videos-Remaining", "999999");
-    res.setHeader("X-RateLimit-Searches-Remaining", String(Math.max(0, DAILY_SEARCH_LIMIT - record.searches)));
-    res.setHeader("X-RateLimit-Reset-Seconds", String(getSecondsUntilJstMidnight()));
+    res.setHeader("X-RateLimit-Searches-Remaining", "999999");
+    res.setHeader("X-RateLimit-Reset-Seconds", "86400");
     res.setHeader("X-Daily-Usage-Token", token);
     res.setHeader("X-Client-Id", clientId);
-
-    // ※ GETリクエストでSet-Cookieを付与するとVercel Edge CDNキャッシュ（s-maxage）がMISS/BYPASSされるため、
-    //   公開GETリクエストでは付与せず、状態変更または明示的な認証/制限エンドポイントのみで付与
-    if (req.method !== "GET" || p.startsWith("/api/limits") || p.startsWith("/api/auth")) {
-      const cookieHeader = req.headers["cookie"] || "";
-      if (!cookieHeader.includes("xerox_client_uuid=") && clientId && !clientId.includes(".")) {
-        res.setHeader("Set-Cookie", `xerox_client_uuid=${clientId}; Path=/; Max-Age=31536000; SameSite=Lax`);
-      }
-    }
 
     res.setHeader(
       "Access-Control-Expose-Headers",

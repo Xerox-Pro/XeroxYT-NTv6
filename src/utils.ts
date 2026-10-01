@@ -393,27 +393,16 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       }
       
       if (!res.ok) {
-        let errorMessage = `サーバーエラー (${res.status}): ${url} へのリクエストに失敗しました`;
+        let errorMessage = `リクエストエラー (${res.status})`;
         let errorData: any = {};
         if (contentType && contentType.includes('application/json')) {
           errorData = await res.json().catch(() => ({}));
           errorMessage = errorData.error || errorData.message || errorMessage;
         } else {
           const text = await res.text().catch(() => '');
-          if (text.includes('A server error')) {
-            errorMessage = 'サーバーが混み合っているか、タイムアウトしました。しばらく待ってから再試行してください。';
-          } else if (text) {
-            errorMessage += `\n詳細: ${text.substring(0, 100)}`;
+          if (text) {
+            errorMessage += `: ${text.substring(0, 100)}`;
           }
-        }
-
-        if (res.status === 429) {
-          // Daily limit or burst limit exceeded (handled internally)
-          const limitErr = new Error(errorMessage) as any;
-          limitErr.isDailyLimit = true;
-          limitErr.status = 429;
-          limitErr.limitData = errorData;
-          throw limitErr;
         }
 
         if (res.status === 401 && url.startsWith('/api/user/')) {

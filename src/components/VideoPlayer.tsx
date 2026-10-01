@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
   Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
-  AlertTriangle, Heart, CornerDownRight
+  AlertTriangle, Heart, CornerDownRight, Zap
 } from 'lucide-react';
 import Avatar from './Avatar';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
@@ -455,6 +455,7 @@ interface VideoPlayerProps {
   playlistId?: string;
   initialVideo?: Video | ShortVideo;
   onVideoSelect: (id: string, video?: Video) => void;
+  onShortSelect?: (shortId: string) => void;
   onSelectChannel: (channelIdOrName: string) => void;
   subscriptions: ChannelSubscription[];
   onToggleSubscribe: (channel: ChannelSubscription) => void;
@@ -469,6 +470,7 @@ export default function VideoPlayer({
   playlistId,
   initialVideo,
   onVideoSelect,
+  onShortSelect,
   onSelectChannel,
   subscriptions,
   onToggleSubscribe,
@@ -478,6 +480,7 @@ export default function VideoPlayer({
   watchHistory = []
 }: VideoPlayerProps) {
   const [videoData, setVideoData] = useState<Video | null>(null);
+  const [relatedShorts, setRelatedShorts] = useState<ShortVideo[]>([]);
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -1092,6 +1095,22 @@ export default function VideoPlayer({
                   });
                   setRelatedPage(2);
                   setHasMoreRelated(res2.hasMore !== undefined ? res2.hasMore : true);
+                }
+              })
+              .catch(() => {});
+
+            // 関連ショート動画の取得
+            fetchJSON('/api/shorts/recommendations', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                history: [{ videoId, title: data.title, author: data.author, authorId: data.authorId }],
+                limit: 6,
+              }),
+            })
+              .then((sRes) => {
+                if (Array.isArray(sRes?.shorts) && sRes.shorts.length > 0) {
+                  setRelatedShorts(sRes.shorts);
                 }
               })
               .catch(() => {});
@@ -1995,6 +2014,45 @@ export default function VideoPlayer({
                 </button>
               ))}
             </div>
+
+            {/* ショート動画シェルフ (YouTube同様に関連動画一覧の上部に表示) */}
+            {relatedShorts.length > 0 && (
+              <div className="py-2.5 px-3 bg-gray-50/80 rounded-xl border border-gray-100 mb-1">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    <Zap size={14} className="fill-red-600 text-red-600" />
+                    <span className="text-xs font-bold text-gray-900 tracking-tight">ショート</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  {relatedShorts.slice(0, 3).map((short) => (
+                    <div
+                      key={short.videoId}
+                      onClick={() => onShortSelect ? onShortSelect(short.videoId) : onVideoSelect(short.videoId)}
+                      className="group/short cursor-pointer flex flex-col"
+                    >
+                      <div className="relative aspect-[9/16] rounded-lg overflow-hidden bg-gray-900 shadow-2xs group-hover/short:scale-102 transition-transform">
+                        <img
+                          src={short.thumbnailUrl || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
+                          alt={short.title}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80" />
+                        <div className="absolute bottom-1.5 left-1.5 right-1.5 text-white">
+                          <p className="text-[10px] font-bold line-clamp-2 leading-tight drop-shadow-xs">
+                            {short.title}
+                          </p>
+                          <p className="text-[9px] text-gray-300 truncate mt-0.5">
+                            {short.viewText || (short.viewCount ? `${formatNumberJP(short.viewCount)}回` : short.author)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (

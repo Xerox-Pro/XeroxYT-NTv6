@@ -10,6 +10,7 @@ interface CategoryBarProps {
 
 const staticCategories = [
   'すべて',
+  'ショート',
   '音楽',
   'ゲーム',
   'アニメ',
