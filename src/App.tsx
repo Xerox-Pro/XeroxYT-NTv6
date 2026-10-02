@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Routes, Route } from 'react-router-dom';
-import { detectIncognito } from 'detectincognitojs';
+import { isPrivateMode } from './utils/detectPrivate';
 import MainApp from './MainApp';
 import AIStudio from './components/AIStudio';
 import PWAUpdateIndicator from './components/PWAUpdateIndicator';
@@ -9,9 +9,9 @@ export default function App() {
   const [isPrivate, setIsPrivate] = useState<boolean | null>(null);
 
   useEffect(() => {
-    detectIncognito()
+    isPrivateMode()
       .then((result) => {
-        setIsPrivate(result.isPrivate);
+        setIsPrivate(result);
       })
       .catch(() => {
         setIsPrivate(false);
