@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Send, Paperclip, X, Sparkles, Loader2, Bot, User, Trash2, Plus, MessageSquare, Menu, PanelLeftClose, PanelLeft } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 interface FileData {
   file: File;
@@ -418,7 +417,7 @@ export default function AIStudio() {
                     {/* Text Content */}
                     <div className={`prose max-w-none ${msg.role === 'user' ? 'text-white' : 'text-gray-800'}`}>
                       {msg.role === 'model' ? (
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.parts.find(p => p.text)?.text || ''}</ReactMarkdown>
+                        <ReactMarkdown>{msg.parts.find(p => p.text)?.text || ''}</ReactMarkdown>
                       ) : (
                         <div className="whitespace-pre-wrap leading-relaxed">{msg.parts.find(p => p.text)?.text || ''}</div>
                       )}

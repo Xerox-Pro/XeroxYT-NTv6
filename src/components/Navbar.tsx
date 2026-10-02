@@ -257,19 +257,11 @@ export default function Navbar({
     }
   };
 
-  // サジェストのフロントエンドキャッシュ
-  const suggestionsCache = useRef<Record<string, string[]>>({});
-
   // サジェスト取得 (デバウンス)
   useEffect(() => {
     const trimmed = query.trim();
     if (!trimmed || parseYouTubeUrl(trimmed)) {
       setSuggestions([]);
-      return;
-    }
-
-    if (suggestionsCache.current[trimmed]) {
-      setSuggestions(suggestionsCache.current[trimmed]);
       return;
     }
 
@@ -279,14 +271,13 @@ export default function Navbar({
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data)) {
-            suggestionsCache.current[trimmed] = data;
             setSuggestions(data);
           }
         }
       } catch (err) {
         console.warn('Failed to fetch suggestions', err);
       }
-    }, 550);
+    }, 150);
 
     return () => clearTimeout(timer);
   }, [query]);

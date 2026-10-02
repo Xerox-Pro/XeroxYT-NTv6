@@ -20,42 +20,6 @@
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="shortcut icon" href="/favicon.ico" />
-    <script>
-      (async function() {
-        // Allow Google AI Studio Preview and embedded testing frames
-        if (window.self !== window.top) return;
-
-        function triggerPrivateError() {
-          window.__is_private_browsing__ = true;
-          document.open();
-          document.write('erorr(Private browsing is not available)');
-          document.close();
-          if (window.stop) window.stop();
-        }
-        try {
-          if (navigator.storage && navigator.storage.estimate) {
-            var est = await navigator.storage.estimate();
-            if (est.quota && est.quota < 130 * 1024 * 1024) {
-              triggerPrivateError();
-              return;
-            }
-          }
-          if ('webkitRequestFileSystem' in window) {
-            window.webkitRequestFileSystem(window.TEMPORARY, 100, function() {}, function() {
-              triggerPrivateError();
-            });
-          }
-          if (navigator.userAgent.indexOf('Firefox') !== -1) {
-            var db = indexedDB.open('test_firefox_pbm');
-            db.onerror = function() { triggerPrivateError(); };
-          }
-          if (/Safari/.test(navigator.userAgent) && !/Chrome/.test(navigator.userAgent)) {
-            var k = '__pvt_test__';
-            try { localStorage.setItem(k, '1'); localStorage.removeItem(k); } catch(e) { triggerPrivateError(); }
-          }
-        } catch(e) {}
-      })();
-    </script>
     <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
