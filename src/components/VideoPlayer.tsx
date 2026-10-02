@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
+import { Video, Comment, CommentReply, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON, isDailyVideoLimitReached } from '../utils';
 import { localAI } from '../lib/intelligence';
 import { 
@@ -12,18 +13,47 @@ import {
 } from 'lucide-react';
 import Avatar from './Avatar';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
+import ShortsShelf from './ShortsShelf';
 
 interface CommentItemProps {
   comment: Comment;
+  videoId?: string;
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
-const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
+const CommentItem: React.FC<CommentItemProps> = ({ comment, videoId, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [showReplies, setShowReplies] = useState(false);
+  const [replies, setReplies] = useState<CommentReply[]>(comment.replies || []);
+  const [loadingReplies, setLoadingReplies] = useState(false);
+  const [hasLoadedReplies, setHasLoadedReplies] = useState(false);
   
   // 3行以上または長いテキストの判定
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
+
+  const toggleReplies = async () => {
+    if (showReplies) {
+      setShowReplies(false);
+      return;
+    }
+
+    setShowReplies(true);
+    if (!hasLoadedReplies && videoId) {
+      setLoadingReplies(true);
+      try {
+        const res = await fetchJSON(`/api/video/${videoId}/comment/${encodeURIComponent(comment.id)}/replies`);
+        if (res && Array.isArray(res.replies)) {
+          setReplies(res.replies);
+          setHasLoadedReplies(true);
+        }
+      } catch (err) {
+        console.error('Failed to fetch replies:', err);
+      } finally {
+        setLoadingReplies(false);
+      }
+    }
+  };
 
   return (
     <div className="flex items-start gap-3 text-sm">
@@ -65,19 +95,87 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) =
         )}
 
         <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
+          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold cursor-pointer">
             <ThumbsUp size={14} />
             <span>{comment.likeCount}</span>
           </button>
-          <button className="hover:text-gray-900">
+          <button className="hover:text-gray-900 cursor-pointer">
             <ThumbsDown size={14} />
           </button>
-          <button className="hover:text-gray-900 font-semibold">返信</button>
         </div>
+
+        {/* 返信トグルボタン (YouTube公式スタイル) */}
+        {(comment.hasReplies || (comment.replyCount && comment.replyCount > 0)) && (
+          <button
+            type="button"
+            onClick={toggleReplies}
+            className="flex items-center gap-1.5 mt-1.5 text-blue-600 hover:text-blue-700 active:bg-blue-50 px-2 py-1 -ml-2 rounded-full font-bold text-xs w-fit cursor-pointer transition-colors"
+          >
+            {showReplies ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            <span>
+              {showReplies
+                ? '返信を非表示'
+                : `${comment.replyCount ? `${comment.replyCount}件の` : ''}返信`}
+            </span>
+          </button>
+        )}
+
+        {/* 返信一覧 */}
+        {showReplies && (
+          <div className="flex flex-col gap-3 mt-2 pl-4 border-l-2 border-gray-100">
+            {loadingReplies ? (
+              <div className="flex items-center gap-2 text-xs text-gray-400 py-1.5">
+                <Loader2 size={13} className="animate-spin text-blue-600" />
+                <span>返信を読み込み中...</span>
+              </div>
+            ) : replies.length === 0 ? (
+              <p className="text-xs text-gray-400 py-1">返信はありません</p>
+            ) : (
+              replies.map((reply) => (
+                <div key={reply.id} className="flex items-start gap-2.5 text-xs">
+                  <button
+                    onClick={() => onSelectChannel(reply.authorId || reply.author)}
+                    className="shrink-0 mt-0.5 cursor-pointer hover:opacity-85"
+                  >
+                    <Avatar
+                      src={reply.authorAvatar}
+                      name={reply.author}
+                      channelId={reply.authorId}
+                      className="w-7 h-7 text-[10px]"
+                    />
+                  </button>
+                  <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => onSelectChannel(reply.authorId || reply.author)}
+                        className="font-bold text-gray-900 text-[11px] hover:underline cursor-pointer truncate"
+                      >
+                        {reply.author}
+                      </button>
+                      <span className="text-[10px] text-gray-400">{reply.publishedTime}</span>
+                    </div>
+                    <p className="text-gray-800 leading-relaxed whitespace-pre-wrap break-words text-xs">
+                      {reply.text}
+                    </p>
+                    <div className="flex items-center gap-3 mt-1 text-[11px] text-gray-500">
+                      <button className="flex items-center gap-1 hover:text-gray-900">
+                        <ThumbsUp size={12} />
+                        <span>{reply.likeCount}</span>
+                      </button>
+                      <button className="hover:text-gray-900">
+                        <ThumbsDown size={12} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
 
 interface LiveChatMessage {
   id: string;
@@ -119,6 +217,7 @@ export default function VideoPlayer({
   onCacheVideo,
   watchHistory = []
 }: VideoPlayerProps) {
+  const navigate = useNavigate();
   const [videoData, setVideoData] = useState<Video | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -1505,6 +1604,7 @@ export default function VideoPlayer({
                   <CommentItem 
                     key={comment.id} 
                     comment={comment} 
+                    videoId={videoId}
                     onSelectChannel={onSelectChannel} 
                   />
                 ))}
@@ -1651,6 +1751,16 @@ export default function VideoPlayer({
                 </button>
               ))}
             </div>
+
+            {/* ショート動画おすすめ枠 (公式YouTubeの関連動画列Shorts枠) */}
+            {activeVideo?.recommendedShorts && activeVideo.recommendedShorts.length > 0 && (
+              <ShortsShelf
+                shorts={activeVideo.recommendedShorts}
+                title="ショート"
+                onSelectShort={(sId) => navigate(`/shorts/${sId}`)}
+                compact={true}
+              />
+            )}
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (

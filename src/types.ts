@@ -24,6 +24,7 @@ export interface Video {
   subCount?: number;
   likeCount?: number;
   recommendedVideos?: Video[];
+  recommendedShorts?: ShortVideo[];
   isLive?: boolean;
   liveViewerCount?: number;
   isPremiere?: boolean;
@@ -65,6 +66,17 @@ export interface ShortVideo {
   viewCount?: number;
   likeCount?: string | number;
   commentCount?: string | number;
+  videoThumbnails?: VideoThumbnail[];
+}
+
+export interface CommentReply {
+  id: string;
+  author: string;
+  authorId?: string;
+  authorAvatar?: string;
+  text: string;
+  publishedTime: string;
+  likeCount: string | number;
 }
 
 export interface Comment {
@@ -75,6 +87,9 @@ export interface Comment {
   text: string;
   publishedTime: string;
   likeCount: string | number;
+  replyCount?: number;
+  hasReplies?: boolean;
+  replies?: CommentReply[];
 }
 
 export interface Playlist {
