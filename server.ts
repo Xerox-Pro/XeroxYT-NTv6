@@ -439,7 +439,11 @@ async function startServer() {
   // --- Google AI Studio Preview & External API Protection ---
   app.use((req, res, next) => {
     // 1. Google AI Studio Preview & Iframe Allow
-    res.removeHeader("X-Frame-Options");
+    try {
+      if (typeof res.removeHeader === "function") {
+        res.removeHeader("X-Frame-Options");
+      }
+    } catch {}
     res.setHeader(
       "Content-Security-Policy",
       "frame-ancestors 'self' https://aistudio.google.com https://*.aistudio.google.com https://*.google.com https://*.googleusercontent.com https://*.google.dev https://*.run.app;"
@@ -5117,14 +5121,14 @@ async function startServer() {
     });
   });
 
-  if (process.env.NODE_ENV !== "production") {
+  if (!process.env.VERCEL && process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
     const distPath = path.join(process.cwd(), "dist");
 
     // Service Worker やマニフェスト、HTMLはキャッシュさせず、サイト変更を即時検知できるようにする
@@ -5178,11 +5182,13 @@ async function startServer() {
 
   // ---------------------
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
-    // Warm up YouTube client
-    getYt().catch((err) => console.error("Initial YT warmup failed:", err));
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
+      // Warm up YouTube client
+      getYt().catch((err) => console.error("Initial YT warmup failed:", err));
+    });
+  }
 
   return app;
 }
