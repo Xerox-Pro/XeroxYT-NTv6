@@ -75,7 +75,6 @@ export interface Comment {
   text: string;
   publishedTime: string;
   likeCount: string | number;
-  replies?: Comment[];
 }
 
 export interface Playlist {

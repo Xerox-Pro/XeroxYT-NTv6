@@ -20,124 +20,61 @@ interface CommentItemProps {
 
 const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [showReplies, setShowReplies] = useState(false);
   
   // 3行以上または長いテキストの判定
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
 
-  const replies = comment.replies || [];
-
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-start gap-3 text-sm">
-        <button 
-          onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-          className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
-          title={`${comment.author}のチャンネルを開く`}
-        >
-          <Avatar 
-            src={comment.authorAvatar} 
-            name={comment.author} 
-            channelId={comment.authorId}
-            className="w-9 h-9 text-xs shadow-xs" 
-          />
-        </button>
-        <div className="flex flex-col gap-1 flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={() => onSelectChannel(comment.authorId || comment.author)} 
-              className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
-            >
-              {comment.author}
-            </button>
-            <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
-          </div>
-          
-          <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
-            {comment.text}
-          </p>
+    <div className="flex items-start gap-3 text-sm">
+      <button 
+        onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+        className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
+        title={`${comment.author}のチャンネルを開く`}
+      >
+        <Avatar 
+          src={comment.authorAvatar} 
+          name={comment.author} 
+          channelId={comment.authorId}
+          className="w-9 h-9 text-xs shadow-xs" 
+        />
+      </button>
+      <div className="flex flex-col gap-1 flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+            className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
+          >
+            {comment.author}
+          </button>
+          <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
+        </div>
+        
+        <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
+          {comment.text}
+        </p>
 
-          {isLong && (
-            <button
-              type="button"
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
-            >
-              {isExpanded ? '一部を表示' : '続きを読む'}
-            </button>
-          )}
+        {isLong && (
+          <button
+            type="button"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="text-xs font-semibold text-gray-600 hover:text-gray-900 self-start mt-0.5 hover:underline cursor-pointer"
+          >
+            {isExpanded ? '一部を表示' : '続きを読む'}
+          </button>
+        )}
 
-          <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
-            <button className="flex items-center gap-1 hover:text-gray-900 font-semibold cursor-pointer">
-              <ThumbsUp size={14} />
-              <span>{comment.likeCount}</span>
-            </button>
-            <button className="hover:text-gray-900 cursor-pointer">
-              <ThumbsDown size={14} />
-            </button>
-            <button className="hover:text-gray-900 font-semibold cursor-pointer">返信</button>
-          </div>
+        <div className="flex items-center gap-4 mt-1 text-xs text-gray-500">
+          <button className="flex items-center gap-1 hover:text-gray-900 font-semibold">
+            <ThumbsUp size={14} />
+            <span>{comment.likeCount}</span>
+          </button>
+          <button className="hover:text-gray-900">
+            <ThumbsDown size={14} />
+          </button>
+          <button className="hover:text-gray-900 font-semibold">返信</button>
         </div>
       </div>
-
-      {/* Replies UI */}
-      {replies.length > 0 && (
-        <div className="pl-12 flex flex-col gap-2">
-          <button
-            onClick={() => setShowReplies(!showReplies)}
-            className="flex items-center gap-1.5 text-xs font-bold text-blue-600 hover:text-blue-500 cursor-pointer self-start select-none py-1"
-          >
-            {showReplies ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-            <span>
-              {showReplies ? '返信を非表示' : `返信 ${replies.length} 件を表示`}
-            </span>
-          </button>
-
-          {showReplies && (
-            <div className="flex flex-col gap-4 mt-2 border-l-2 border-gray-100 pl-4">
-              {replies.map((reply) => (
-                <div key={reply.id} className="flex items-start gap-3 text-xs">
-                  <button
-                    onClick={() => onSelectChannel(reply.authorId || reply.author)}
-                    className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
-                  >
-                    <Avatar
-                      src={reply.authorAvatar}
-                      name={reply.author}
-                      channelId={reply.authorId}
-                      className="w-7 h-7 text-[10px] shadow-xs"
-                    />
-                  </button>
-                  <div className="flex flex-col gap-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => onSelectChannel(reply.authorId || reply.author)}
-                        className="font-bold text-gray-900 text-[11px] hover:underline cursor-pointer text-left truncate"
-                      >
-                        {reply.author}
-                      </button>
-                      <span className="text-[10px] text-gray-500 shrink-0">{reply.publishedTime}</span>
-                    </div>
-                    <p className="text-gray-800 text-xs font-normal leading-relaxed whitespace-pre-wrap break-words">
-                      {reply.text}
-                    </p>
-                    <div className="flex items-center gap-3 mt-1 text-[10px] text-gray-500">
-                      <button className="flex items-center gap-1 hover:text-gray-900 font-semibold cursor-pointer">
-                        <ThumbsUp size={12} />
-                        <span>{reply.likeCount}</span>
-                      </button>
-                      <button className="hover:text-gray-900 cursor-pointer">
-                        <ThumbsDown size={12} />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -159,7 +96,7 @@ interface VideoPlayerProps {
   videoId: string;
   playlistId?: string;
   initialVideo?: Video | ShortVideo;
-  onVideoSelect: (id: string, video?: Video, isShort?: boolean) => void;
+  onVideoSelect: (id: string, video?: Video) => void;
   onSelectChannel: (channelIdOrName: string) => void;
   subscriptions: ChannelSubscription[];
   onToggleSubscribe: (channel: ChannelSubscription) => void;
@@ -197,7 +134,6 @@ export default function VideoPlayer({
   const [isDisliked, setIsDisliked] = useState(false);
   const [likeCountDelta, setLikeCountDelta] = useState(0);
   const [copiedToast, setCopiedToast] = useState(false);
-  const [relatedShorts, setRelatedShorts] = useState<any[]>([]);
 
   const initialThumbnails = initialVideo && 'videoThumbnails' in initialVideo ? initialVideo.videoThumbnails : undefined;
   const initialDesc = initialVideo && 'description' in initialVideo ? initialVideo.description : undefined;
@@ -771,16 +707,6 @@ export default function VideoPlayer({
     setRelatedPage(1);
     setHasMoreRelated(false);
     setRelatedVideos([]);
-
-    // Fetch related shorts
-    const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).filter(Boolean).join(',');
-    fetchJSON(`/api/shorts/recommendations?historyIds=${encodeURIComponent(historyIds)}`)
-      .then((shorts) => {
-        if (Array.isArray(shorts)) {
-          setRelatedShorts(shorts);
-        }
-      })
-      .catch(() => {});
 
     const isPlayerOnlyMode = isDailyVideoLimitReached();
 
@@ -1728,85 +1654,49 @@ export default function VideoPlayer({
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (
-              <React.Fragment key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`}>
-                <div 
-                  className="flex gap-2.5 group cursor-pointer"
-                  onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
-                >
-                  <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                    <img 
-                      src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
-                      alt={recVideo.title}
-                      className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
-                    />
-                    <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded font-medium flex items-center gap-1">
+              <div 
+                key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
+                className="flex gap-2.5 group cursor-pointer"
+                onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
+              >
+                <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
+                  <img 
+                    src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
+                    alt={recVideo.title}
+                    className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute bottom-1 right-1 bg-black/80 text-white text-[10px] px-1 rounded font-medium flex items-center gap-1">
+                    {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
+                      <ListMusic size={10} />
+                    ) : (
+                      formatDuration(recVideo.lengthSeconds)
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-col gap-0.5 overflow-hidden py-0.5 pr-1 flex-1">
+                  <h4 className="font-semibold text-gray-900 leading-snug line-clamp-2 text-xs group-hover:text-blue-600 transition-colors">
+                    {recVideo.title}
+                  </h4>
+                  <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
+                    <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
+                    <div className="flex items-center gap-1">
                       {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
-                        <ListMusic size={10} />
-                      ) : (
-                        formatDuration(recVideo.lengthSeconds)
+                        <span className="text-red-600 font-bold uppercase text-[9px] bg-red-50 px-1 rounded border border-red-100">
+                          {recVideo.type === 'mix' ? 'MIX' : 'PLAYLIST'}
+                        </span>
+                      ) : recVideo.viewCount > 0 ? (
+                        <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
+                      ) : null}
+                      {recVideo.publishedText && (
+                        <>
+                          {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
+                          <span>{recVideo.publishedText}</span>
+                        </>
                       )}
                     </div>
                   </div>
-                  <div className="flex flex-col gap-0.5 overflow-hidden py-0.5 pr-1 flex-1">
-                    <h4 className="font-semibold text-gray-900 leading-snug line-clamp-2 text-xs group-hover:text-blue-600 transition-colors">
-                      {recVideo.title}
-                    </h4>
-                    <div className="flex flex-col text-[11px] text-gray-500 mt-1 font-normal">
-                      <span className="truncate hover:text-gray-900 font-medium text-gray-700">{recVideo.author || 'チャンネル'}</span>
-                      <div className="flex items-center gap-1">
-                        {recVideo.type === 'mix' || recVideo.type === 'playlist' ? (
-                          <span className="text-red-600 font-bold uppercase text-[9px] bg-red-50 px-1 rounded border border-red-100">
-                            {recVideo.type === 'mix' ? 'MIX' : 'PLAYLIST'}
-                          </span>
-                        ) : recVideo.viewCount > 0 ? (
-                          <span>{formatNumberJP(recVideo.viewCount)}回視聴</span>
-                        ) : null}
-                        {recVideo.publishedText && (
-                          <>
-                            {recVideo.viewCount > 0 && <span className="text-[8px] opacity-50">•</span>}
-                            <span>{recVideo.publishedText}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
                 </div>
-
-                {/* 関連動画の3つ目の後にショートのおすすめを表示 */}
-                {idx === 2 && relatedShorts.length > 0 && (
-                  <div className="py-4 border-y border-gray-100 my-3 bg-gray-50/50 rounded-xl px-2.5">
-                    <div className="flex items-center gap-1.5 mb-2.5">
-                      <span className="text-red-600 font-bold select-none text-xs">⚡</span>
-                      <h4 className="text-xs font-extrabold text-gray-900">Shorts</h4>
-                    </div>
-                    <div className="flex gap-3 overflow-x-auto no-scrollbar scroll-smooth pb-1">
-                      {relatedShorts.slice(0, 10).map((short) => (
-                        <div 
-                          key={short.videoId}
-                          onClick={() => onVideoSelect(short.videoId, short, true)}
-                          className="w-[110px] shrink-0 group cursor-pointer"
-                        >
-                          <div className="aspect-[9/16] rounded-xl overflow-hidden bg-black relative border border-gray-150 shadow-xs">
-                            <img 
-                              src={short.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${short.videoId}/hqdefault.jpg`}
-                              alt={short.title}
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-x-0 bottom-0 p-2 bg-gradient-to-t from-black/85 via-black/25 to-transparent text-white">
-                              <p className="text-[10px] font-bold line-clamp-2 leading-tight">
-                                {short.title}
-                              </p>
-                              <span className="text-[8px] text-gray-300 font-medium mt-0.5 block">
-                                {short.viewCount ? `${formatNumberJP(short.viewCount)}回` : 'Shorts'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </React.Fragment>
+              </div>
             ))}
 
             {/* 関連動画自動無限スクロール監視要素 & ローディング表示 */}

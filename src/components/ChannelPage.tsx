@@ -12,7 +12,7 @@ import { formatNumberJP, formatDuration, fetchJSON } from '../utils';
 
 interface ChannelPageProps {
   channelId: string;
-  onVideoSelect: (videoId: string, isShort?: boolean, channelId?: string) => void;
+  onVideoSelect: (videoId: string) => void;
   subscriptions: ChannelSubscription[];
   onToggleSubscribe: (channel: ChannelSubscription) => void;
   onSelectChannel: (channelIdOrName: string) => void;
@@ -385,7 +385,7 @@ export default function ChannelPage({
                   {shortList.slice(0, 6).map((short) => (
                     <div
                       key={short.videoId}
-                      onClick={() => onVideoSelect(short.videoId, true, channelId)}
+                      onClick={() => onVideoSelect(short.videoId)}
                       className="group cursor-pointer flex flex-col gap-2"
                     >
                       <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
@@ -484,7 +484,7 @@ export default function ChannelPage({
               {shortList.map((short) => (
                 <div
                   key={short.videoId}
-                  onClick={() => onVideoSelect(short.videoId, true, channelId)}
+                  onClick={() => onVideoSelect(short.videoId)}
                   className="group cursor-pointer flex flex-col gap-2"
                 >
                   <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
