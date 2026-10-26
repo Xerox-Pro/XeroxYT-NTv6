@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import Navbar from './components/Navbar';
+import AIStudio from './components/AIStudio';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
 import VideoCard from './components/VideoCard';
@@ -38,7 +39,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'aistudio'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -129,6 +130,8 @@ export default function MainApp() {
       setView('history');
     } else if (path === '/debug/api') {
       setView('debug');
+    } else if (path === '/aistudio') {
+      setView('aistudio');
     } else if (path === '/license') {
       setView('license');
     }
@@ -993,9 +996,9 @@ export default function MainApp() {
           onClose={() => setIsSidebarOpen(false)}
           currentView={view}
           onHome={handleGoHome}
-          onSubscriptions={() => setView('subscriptions')}
-          onLibrary={() => setView('library')}
-          onHistory={() => setView('history')}
+          onSubscriptions={() => navigate('/feed/subscriptions')}
+          onLibrary={() => navigate('/feed/library')}
+          onHistory={() => navigate('/feed/history')}
           subscriptions={subscriptions}
           onSelectChannel={handleSelectChannel}
           onDebugAPI={() => navigate('/debug/api')}
@@ -1005,6 +1008,48 @@ export default function MainApp() {
         <main
           className="flex-1 transition-all duration-200 min-w-0"
         >
+          {/* Keep the same player mounted when navigating, preserving iframe playback. */}
+          {currentVideoId && (
+            <section
+              aria-label={view === 'video' ? '動画プレイヤー' : 'ミニプレイヤー'}
+              className={view === 'video' ? 'w-full' : 'persistent-mini-player'}
+            >
+              <VideoPlayer
+                key={currentVideoId}
+                videoId={currentVideoId}
+                isMini={view !== 'video'}
+                playlistId={currentPlaylistId || undefined}
+                initialVideo={videoCache[currentVideoId] || undefined}
+                onVideoSelect={(id, v) => handleVideoSelect(id, v)}
+                onSelectChannel={handleSelectChannel}
+                subscriptions={subscriptions}
+                onToggleSubscribe={handleToggleSubscribe}
+                onRecordHistory={handleRecordHistory}
+                onOpenAddToPlaylist={(video) => setPlaylistModalVideo(video)}
+                onCacheVideo={(v) => updateCache([v])}
+                watchHistory={watchHistory}
+              />
+              {view !== 'video' && (
+                <div className="flex items-center justify-between gap-2 bg-white p-2">
+                  <button
+                    type="button"
+                    className="rounded-lg px-3 py-2 text-sm font-bold hover:bg-gray-100 focus-visible:outline-2"
+                    onClick={() => navigate(`/watch?v=${encodeURIComponent(currentVideoId)}${currentPlaylistId ? `&list=${encodeURIComponent(currentPlaylistId)}` : ''}`)}
+                  >
+                    動画ページに戻る
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="ミニプレイヤーを閉じて再生を終了"
+                    className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2"
+                    onClick={() => { setCurrentVideoId(null); setCurrentPlaylistId(null); }}
+                  >
+                    閉じる
+                  </button>
+                </div>
+              )}
+            </section>
+          )}
           <AnimatePresence mode="wait">
             <motion.div
               key={view}
@@ -1023,21 +1068,8 @@ export default function MainApp() {
               )}
 
           {/* ビュー分岐 */}
-          {view === 'video' && currentVideoId ? (
-            <VideoPlayer
-              key={currentVideoId}
-              videoId={currentVideoId}
-              playlistId={currentPlaylistId || undefined}
-              initialVideo={videoCache[currentVideoId] || undefined}
-              onVideoSelect={(id, v) => handleVideoSelect(id, v)}
-              onSelectChannel={handleSelectChannel}
-              subscriptions={subscriptions}
-              onToggleSubscribe={handleToggleSubscribe}
-              onRecordHistory={handleRecordHistory}
-              onOpenAddToPlaylist={(video) => setPlaylistModalVideo(video)}
-              onCacheVideo={(v) => updateCache([v])}
-              watchHistory={watchHistory}
-            />
+          {view === 'video' ? null : view === 'aistudio' ? (
+            <AIStudio />
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
               channelId={selectedChannelId}
@@ -1064,7 +1096,7 @@ export default function MainApp() {
               onReorderPlaylistVideo={handleReorderPlaylistVideo}
               onStartPlaylistPlay={handleStartPlaylistPlay}
               onVideoSelect={(id) => handleVideoSelect(id)}
-              onNavigateToHistory={() => setView('history')}
+              onNavigateToHistory={() => navigate('/feed/history')}
               onImportYouTubePlaylist={handleImportYouTubePlaylist}
               onUpdatePlaylistInfo={handleUpdatePlaylistInfo}
               onAddVideosToPlaylist={handleAddVideosToPlaylist}

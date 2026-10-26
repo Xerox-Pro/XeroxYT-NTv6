@@ -94,6 +94,7 @@ interface LiveChatMessage {
 interface VideoPlayerProps {
   key?: React.Key;
   videoId: string;
+  isMini?: boolean;
   playlistId?: string;
   initialVideo?: Video | ShortVideo;
   onVideoSelect: (id: string, video?: Video) => void;
@@ -108,6 +109,7 @@ interface VideoPlayerProps {
 
 export default function VideoPlayer({
   videoId,
+  isMini = false,
   playlistId,
   initialVideo,
   onVideoSelect,
@@ -278,10 +280,10 @@ export default function VideoPlayer({
 
   // ドキュメントタイトルの更新 (動画表示時: タイトル - XeroxYT-NTv6)
   useEffect(() => {
-    if (activeVideo && activeVideo.title) {
+    if (!isMini && activeVideo && activeVideo.title) {
       document.title = `${activeVideo.title} - XeroxYT-NTv6`;
     }
-  }, [activeVideo.title]);
+  }, [activeVideo.title, isMini]);
 
   // ダウンロード処理 (getlate.devのURLを直接別タブで開く)
   const handleDownload = () => {
@@ -499,6 +501,8 @@ export default function VideoPlayer({
   // グローバルキーボードショートカットハンドラー
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Let browsing shortcuts work unless the mini player itself has focus.
+      if (isMini && !playerContainerRef.current?.contains(document.activeElement)) return;
       // ブラウザ標準ショートカット(Ctrl/Cmd/Alt)を優先
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
@@ -697,7 +701,7 @@ export default function VideoPlayer({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [postPlayerCommand, triggerHud, relatedVideos, onVideoSelect]);
+  }, [postPlayerCommand, triggerHud, relatedVideos, onVideoSelect, isMini]);
 
   // Fetch video metadata & initial comments
   useEffect(() => {
@@ -1168,7 +1172,7 @@ export default function VideoPlayer({
   }
 
   return (
-    <div className="flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
+    <div className="persistent-video-content flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div 

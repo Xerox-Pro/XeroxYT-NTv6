@@ -75,3 +75,35 @@ a, a:visited {
   text-decoration: inherit;
 }
 
+
+/* Resize the existing iframe; never move or recreate it on page navigation. */
+.persistent-mini-player {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  width: min(384px, calc(100vw - 24px));
+  z-index: 45;
+  overflow: hidden;
+  border-radius: 12px;
+  background: white;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 28%);
+}
+.persistent-mini-player .persistent-video-content {
+  display: block;
+  min-height: 0;
+  padding: 0;
+}
+.persistent-mini-player .persistent-video-content > :not(:first-child),
+.persistent-mini-player .persistent-video-content > :first-child > :not(:first-child) {
+  display: none;
+}
+.persistent-mini-player .persistent-video-content > :first-child > :first-child {
+  border: 0;
+  border-radius: 0;
+}
+
+.persistent-mini-player > :first-child:not(.persistent-video-content) {
+  min-height: 0;
+  max-height: 216px;
+  overflow: auto;
+}
