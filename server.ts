@@ -3227,7 +3227,7 @@ async function startServer() {
 
   app.get("/api/video/:id", async (req, res) => {
     const videoId = req.params.id;
-    const cacheKey = `video:${videoId}`;
+    const cacheKey = `video:v2:${videoId}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
@@ -3371,8 +3371,15 @@ async function startServer() {
         .filter((k: string) => k.length > 0);
       const combinedTags = Array.from(new Set([...hashMatches, ...keywords]));
 
+      const microformat: any = info.page?.[0]?.microformat;
+      const isUpcoming = Boolean(basic?.is_upcoming);
+      const isLive = Boolean(basic?.is_live || (basic?.is_live_content && microformat?.start_timestamp && !microformat?.end_timestamp && !isUpcoming));
       const videoData = {
         videoId: videoId,
+        isLive,
+        isUpcoming,
+        liveViewerCount: isLive ? (extractViewCount(primary?.view_count) || extractViewCount(basic?.view_count) || 0) : undefined,
+        lengthSeconds: Number.isFinite(basic?.duration) ? basic.duration : 0,
         title: basic?.title || primary?.title?.text,
         author: owner?.author?.name || basic?.author || "Unknown",
         authorId: owner?.author?.id || basic?.channel_id,
@@ -3403,8 +3410,8 @@ async function startServer() {
         lastAccess: Date.now(),
       });
 
-      setToMemoryCache(cacheKey, videoData, 30 * 60 * 1000);
-      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
+      setToMemoryCache(cacheKey, videoData, isLive || isUpcoming ? 30 * 1000 : 30 * 60 * 1000);
+      res.setHeader("Cache-Control", isLive || isUpcoming ? "no-store" : "public, s-maxage=7200, stale-while-revalidate=86400");
       return res.json(videoData);
     } catch (err) {
       console.error("Video API error:", err);
