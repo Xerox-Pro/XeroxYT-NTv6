@@ -984,6 +984,7 @@ export default function VideoPlayer({
   }
 
   const isLive = !!(activeVideo.isLive && !activeVideo.isPremiere && !activeVideo.isUpcoming);
+  const hasChat = isLive || !!activeVideo.hasLiveChat || !!activeVideo.isLiveContent;
 
   const cleanAuthorName = activeVideo.author ? activeVideo.author.split(/、他|\s*and\s+\d+\s+other/i)[0].trim() : 'チャンネル';
 
@@ -1449,8 +1450,8 @@ export default function VideoPlayer({
       
       {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
-        {/* チャットと関連動画の切り替え */}
-        {(
+        {/* チャットを利用できる動画のみ切り替えを表示 */}
+        {hasChat && (
           <div className="flex items-center justify-between border-b border-gray-100 pb-2">
             <div className="flex bg-gray-100 p-1 rounded-lg">
               <button
@@ -1474,11 +1475,11 @@ export default function VideoPlayer({
           </div>
         )}
         
-        {isRelatedOpen && sidebarTab === 'liveChat' && (
+        {isRelatedOpen && hasChat && sidebarTab === 'liveChat' && (
           <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} onSeek={(seconds) => { currentTimeRef.current = seconds; postPlayerCommand('seekTo', [seconds, true]); }} />
         )}
 
-        {isRelatedOpen && sidebarTab === 'related' && (
+        {isRelatedOpen && (!hasChat || sidebarTab === 'related') && (
           <div className="flex flex-col gap-3">
             {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
