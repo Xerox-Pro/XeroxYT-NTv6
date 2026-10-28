@@ -93,7 +93,12 @@ export default function MainApp() {
 
   useEffect(() => {
     const path = location.pathname;
-    if (path !== '/') recommendationRequestIdRef.current++;
+    if (path !== '/') {
+      recommendationRequestIdRef.current++;
+      setLoading(false);
+      setLoadingMore(false);
+      isFetchingMore.current = false;
+    }
     if (path === '/') {
       const category = searchParams.get('category') || 'すべて';
       setSelectedCategory(category);
