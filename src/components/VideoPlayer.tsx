@@ -11,6 +11,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import Avatar from './Avatar';
+import LiveChat from './LiveChat';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
 interface CommentItemProps {
@@ -312,14 +313,6 @@ export default function VideoPlayer({
   const [hasMoreRelated, setHasMoreRelated] = useState(true);
   const [loadingMoreRelated, setLoadingMoreRelated] = useState(false);
   const relatedEndRef = useRef<HTMLDivElement>(null);
-
-  // Live Chat state
-  const [liveChatMessages, setLiveChatMessages] = useState<LiveChatMessage[]>([]);
-  const [newLiveMessage, setNewLiveMessage] = useState('');
-  const [showSuperChatModal, setShowSuperChatModal] = useState(false);
-  const [superChatAmount, setSuperChatAmount] = useState('1000');
-  const [superChatMessage, setSuperChatMessage] = useState('');
-  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   const [showMultiChannelDialog, setShowMultiChannelDialog] = useState(false);
   const [multiChannelsLoading, setMultiChannelsLoading] = useState(false);
@@ -783,7 +776,7 @@ export default function VideoPlayer({
           // If it's a real live stream, auto-switch sidebar to live chat
           if (data?.isLive && !data?.isPremiere && !data?.isUpcoming) {
             setSidebarTab('liveChat');
-            initLiveChat(data.author || 'チャンネル');
+
           } else {
             setSidebarTab('related');
           }
@@ -955,73 +948,6 @@ export default function VideoPlayer({
       window.removeEventListener('scroll', handleWindowScroll);
     };
   }, [loadMoreRelated, hasMoreRelated, loadingMoreRelated]);
-
-  // Initialize live chat
-  const initLiveChat = (channelName: string) => {
-    setLiveChatMessages([
-      {
-        id: 'system-1',
-        author: 'システム',
-        message: `${channelName} のライブ配信です。チャットメッセージを送信できます。`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        badge: '案内'
-      }
-    ]);
-  };
-
-  useEffect(() => {
-    if (sidebarTab === 'liveChat') {
-      chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [liveChatMessages, sidebarTab]);
-
-  const handleSendLiveMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newLiveMessage.trim()) return;
-
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-    setLiveChatMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        author: 'あなた',
-        message: newLiveMessage.trim(),
-        timestamp: timeStr,
-        badge: 'あなた'
-      }
-    ]);
-    setNewLiveMessage('');
-  };
-
-  const handleSendSuperChat = (e: React.FormEvent) => {
-    e.preventDefault();
-    const colors: Record<string, string> = {
-      '500': 'bg-cyan-600',
-      '1000': 'bg-emerald-600',
-      '5000': 'bg-amber-600',
-      '10000': 'bg-red-600',
-    };
-    const now = new Date();
-    const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-
-    setLiveChatMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        author: 'あなた',
-        message: superChatMessage || '配信応援しています！🎉',
-        timestamp: timeStr,
-        isSuperChat: true,
-        superChatAmount: `¥${parseInt(superChatAmount).toLocaleString()}`,
-        superChatColor: colors[superChatAmount] || 'bg-emerald-600',
-        badge: 'あなた'
-      }
-    ]);
-    setShowSuperChatModal(false);
-    setSuperChatMessage('');
-  };
 
   const handleAddComment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1395,15 +1321,7 @@ export default function VideoPlayer({
                 <kbd className="hidden sm:inline px-1.5 py-0.2 bg-white border border-gray-300 rounded font-mono text-[9px] font-bold text-gray-600">?</kbd>
               </motion.button>
 
-              {isLive && (
-                <button
-                  onClick={() => setShowSuperChatModal(true)}
-                  className="flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-amber-500 to-red-500 hover:from-amber-600 hover:to-red-600 text-white rounded-full text-xs font-bold shadow-xs transition-all active:scale-95"
-                >
-                  <DollarSign size={14} />
-                  <span>Super Chat</span>
-                </button>
-              )}
+              
             </div>
           </div>
 
@@ -1529,8 +1447,8 @@ export default function VideoPlayer({
       
       {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
-        {/* サイドバーヘッダー・タブ切替（ライブ時のみ表示） */}
-        {isLive && (
+        {/* チャットと関連動画の切り替え */}
+        {(
           <div className="flex items-center justify-between border-b border-gray-100 pb-2">
             <div className="flex bg-gray-100 p-1 rounded-lg">
               <button
@@ -1555,80 +1473,7 @@ export default function VideoPlayer({
         )}
         
         {isRelatedOpen && sidebarTab === 'liveChat' && (
-          <div className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs">
-            {/* チャットヘッダー */}
-            <div className="p-3 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping"></span>
-                <span className="text-xs font-bold text-gray-900">ライブチャット</span>
-              </div>
-              <button
-                onClick={() => setShowSuperChatModal(true)}
-                className="text-[11px] font-bold text-amber-600 hover:text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 flex items-center gap-1 transition-colors"
-              >
-                <DollarSign size={12} />
-                <span>Super Chat</span>
-              </button>
-            </div>
-
-            {/* チャットメッセージスクロール領域 */}
-            <div className="flex-1 p-3 overflow-y-auto space-y-2.5 text-xs">
-              {liveChatMessages.map((msg) => (
-                <div 
-                  key={msg.id} 
-                  className={`flex items-start gap-2 ${
-                    msg.isSuperChat 
-                      ? `${msg.superChatColor || 'bg-emerald-600'} text-white p-2.5 rounded-lg shadow-xs` 
-                      : 'hover:bg-gray-50 p-1 rounded transition-colors'
-                  }`}
-                >
-                  <Avatar name={msg.author} className="w-6 h-6 text-[10px] shrink-0" />
-                  <div className="flex flex-col flex-1 overflow-hidden">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`font-bold truncate ${msg.isSuperChat ? 'text-white' : 'text-gray-700'}`}>
-                        {msg.author}
-                      </span>
-                      {msg.badge && (
-                        <span className="bg-blue-100 text-blue-800 text-[9px] px-1 py-0.2 rounded font-bold">
-                          {msg.badge}
-                        </span>
-                      )}
-                      {msg.isSuperChat && (
-                        <span className="bg-white/30 text-white text-[10px] font-black px-1.5 rounded">
-                          {msg.superChatAmount}
-                        </span>
-                      )}
-                      <span className={`text-[10px] ml-auto ${msg.isSuperChat ? 'text-white/80' : 'text-gray-400'}`}>
-                        {msg.timestamp}
-                      </span>
-                    </div>
-                    <p className={`mt-0.5 leading-snug break-words ${msg.isSuperChat ? 'text-white font-medium text-xs' : 'text-gray-900'}`}>
-                      {msg.message}
-                    </p>
-                  </div>
-                </div>
-              ))}
-              <div ref={chatBottomRef} />
-            </div>
-
-            {/* チャット送信フォーム */}
-            <form onSubmit={handleSendLiveMessage} className="p-2.5 bg-gray-50 border-t border-gray-200 flex items-center gap-2">
-              <input
-                type="text"
-                value={newLiveMessage}
-                onChange={(e) => setNewLiveMessage(e.target.value)}
-                placeholder="チャットメッセージを送信..."
-                className="flex-1 bg-white border border-gray-300 rounded-full px-3.5 py-1.5 text-xs text-gray-900 placeholder-gray-400 focus:outline-none focus:border-blue-600"
-              />
-              <button
-                type="submit"
-                disabled={!newLiveMessage.trim()}
-                className="p-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-full transition-colors shrink-0 shadow-xs"
-              >
-                <Send size={13} />
-              </button>
-            </form>
-          </div>
+          <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} onSeek={(seconds) => postPlayerCommand('seekTo', [seconds, true])} />
         )}
 
         {isRelatedOpen && sidebarTab === 'related' && (
@@ -1714,82 +1559,6 @@ export default function VideoPlayer({
           </div>
         )}
       </div>
-
-      {/* Super Chat Modal */}
-      {showSuperChatModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 flex flex-col gap-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sparkles className="text-amber-500" size={20} />
-                <h3 className="text-base font-bold text-gray-900">Super Chat を送信</h3>
-              </div>
-              <button 
-                onClick={() => setShowSuperChatModal(false)}
-                className="text-gray-400 hover:text-gray-600 text-lg font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-gray-600">
-              {activeVideo.author} さんの配信にメッセージと応援を送ります。
-            </p>
-
-            {/* 金額選択 */}
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { amount: '500', color: 'border-cyan-500 bg-cyan-50 text-cyan-800' },
-                { amount: '1000', color: 'border-emerald-500 bg-emerald-50 text-emerald-800' },
-                { amount: '5000', color: 'border-amber-500 bg-amber-50 text-amber-800' },
-                { amount: '10000', color: 'border-red-500 bg-red-50 text-red-800' },
-              ].map((tier) => (
-                <button
-                  key={tier.amount}
-                  type="button"
-                  onClick={() => setSuperChatAmount(tier.amount)}
-                  className={`py-2 px-1 rounded-xl font-bold text-xs border text-center transition-all ${
-                    superChatAmount === tier.amount 
-                      ? `${tier.color} ring-2 ring-blue-600 shadow-xs` 
-                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                  }`}
-                >
-                  ¥{parseInt(tier.amount).toLocaleString()}
-                </button>
-              ))}
-            </div>
-
-            {/* メッセージ入力 */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-gray-700">応援メッセージ</label>
-              <textarea
-                value={superChatMessage}
-                onChange={(e) => setSuperChatMessage(e.target.value)}
-                placeholder="配信最高です！応援してます！"
-                rows={3}
-                className="w-full border border-gray-300 rounded-xl p-3 text-xs text-gray-900 focus:outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowSuperChatModal(false)}
-                className="px-4 py-2 text-xs font-semibold text-gray-600 hover:bg-gray-100 rounded-full"
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                onClick={handleSendSuperChat}
-                className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-amber-500 to-red-500 text-white rounded-full shadow-xs hover:from-amber-600 hover:to-red-600 transition-all active:scale-95"
-              >
-                ¥{parseInt(superChatAmount).toLocaleString()} で送信
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Multi Channel Selection Modal */}
       {showMultiChannelDialog && (
