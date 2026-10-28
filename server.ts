@@ -3185,9 +3185,13 @@ async function startServer() {
         continuation = info.livechat.continuation;
         replay = info.livechat.is_replay;
       }
+      const offset = Number(req.query.offset);
+      const playerState = replay && Number.isFinite(offset) && offset >= 0 && offset <= 604800
+        ? { currentPlayerState: { playerOffsetMs: String(Math.floor(offset * 1000)) } }
+        : {};
       const response: any = await youtube.actions.execute(
         replay ? "/live_chat/get_live_chat_replay" : "/live_chat/get_live_chat",
-        { continuation, parse: true }
+        { continuation, ...playerState, parse: true }
       );
       const contents: any = response.continuation_contents;
       if (!contents) throw new Error("チャットの応答を取得できませんでした。");
