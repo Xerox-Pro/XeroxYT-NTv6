@@ -22,6 +22,8 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
   const [status, setStatus] = useState('チャットを読み込み中…');
   const [attempt, setAttempt] = useState(0);
   const getTimeRef = useRef(getCurrentTime);
+  const replayRef = useRef(false);
+  const requestPositionRef = useRef(getCurrentTime());
   const listRef = useRef<HTMLDivElement>(null);
   const followingRef = useRef(true);
   const [following, setFollowing] = useState(true);
@@ -41,6 +43,7 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
     setFollowing(true);
     setStatus('チャットを読み込み中…');
     setReplay(false);
+    replayRef.current = false;
 
     const poll = async () => {
       if (cancelled || ended) return;
@@ -50,6 +53,7 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
       }
       try {
         const params = new URLSearchParams();
+        params.set('offset', String(Math.max(0, requestPositionRef.current)));
         if (continuation) {
           params.set('continuation', continuation);
           params.set('replay', isReplay ? '1' : '0');
@@ -64,8 +68,10 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
         }
         isReplay = !!data.replay;
         setReplay(isReplay);
+        replayRef.current = isReplay;
         const incoming = data.messages || [];
         for (const message of incoming) if (message.offset !== undefined) lastOffset = Math.max(lastOffset, message.offset);
+        if (isReplay) requestPositionRef.current = getTimeRef.current();
         setMessages(previous => {
           const seen = new Set(previous.map(m => m.id));
           return [...previous, ...incoming.filter(m => m.id && !seen.has(m.id) && (seen.add(m.id), true))].slice(-3000);
@@ -86,10 +92,24 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
   }, [videoId, attempt]);
 
   useEffect(() => {
-    if (!replay) return;
-    const timer = setInterval(() => setPosition(getTimeRef.current()), 250);
+    let previous = getTimeRef.current();
+    let previousAt = performance.now();
+    requestPositionRef.current = previous;
+    const timer = setInterval(() => {
+      const now = performance.now();
+      const current = getTimeRef.current();
+      const elapsed = (now - previousAt) / 1000;
+      setPosition(current);
+      // Normal playback and temporary tab suspension should not look like a seek.
+      if (replayRef.current && (current < previous - 2 || current - previous > Math.max(4, elapsed * 3 + 1))) {
+        requestPositionRef.current = current;
+        setAttempt(n => n + 1);
+      }
+      previous = current;
+      previousAt = now;
+    }, 250);
     return () => clearInterval(timer);
-  }, [replay]);
+  }, [videoId]);
 
   const visible = replay ? messages.filter(m => m.offset !== undefined && m.offset <= position) : messages;
   const latestId = visible.at(-1)?.id;
