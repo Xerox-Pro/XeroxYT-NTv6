@@ -13,12 +13,13 @@ function formatOffset(seconds: number) {
   return h ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`;
 }
 
-export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
-  videoId: string; getCurrentTime: () => number; onSeek: (seconds: number) => void;
+export default function LiveChat({ videoId, getCurrentTime, isTimeAvailable, onSeek }: {
+  videoId: string; getCurrentTime: () => number; isTimeAvailable: () => boolean; onSeek: (seconds: number) => void;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [replay, setReplay] = useState(false);
   const [position, setPosition] = useState(0);
+  const [syncAvailable, setSyncAvailable] = useState(false);
   const [status, setStatus] = useState('チャットを読み込み中…');
   const [attempt, setAttempt] = useState(0);
   const getTimeRef = useRef(getCurrentTime);
@@ -29,6 +30,8 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
   const [following, setFollowing] = useState(true);
   const reducedMotion = useReducedMotion();
   getTimeRef.current = getCurrentTime;
+  const availabilityRef = useRef(isTimeAvailable);
+  availabilityRef.current = isTimeAvailable;
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +101,7 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
     const timer = setInterval(() => {
       const now = performance.now();
       const current = getTimeRef.current();
+      setSyncAvailable(availabilityRef.current());
       const elapsed = (now - previousAt) / 1000;
       setPosition(current);
       // Normal playback and temporary tab suspension should not look like a seek.
@@ -111,7 +115,7 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
     return () => clearInterval(timer);
   }, [videoId]);
 
-  const visible = replay ? messages.filter(m => m.offset !== undefined && m.offset <= position) : messages;
+  const visible = replay ? (syncAvailable ? messages.filter(m => m.offset !== undefined && m.offset <= position) : []) : messages;
   const latestId = visible.at(-1)?.id;
 
   useLayoutEffect(() => {
@@ -134,14 +138,19 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
     if (list) list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
   };
   return (
-    <section aria-label="ライブチャット" className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-200 text-sm font-semibold text-gray-900">{replay ? 'チャットのリプレイ' : 'ライブチャット'}</div>
-      {replay && <p className="px-3 py-2 text-xs text-gray-500">時刻を押すと動画をその位置から再生します。再生位置との同期は目安です。</p>}
+    <section aria-label="ライブチャット" className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <div className="px-4 py-3 border-b border-gray-200">
+        <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <span>{replay ? 'チャットのリプレイ' : 'ライブチャット'}</span>
+          {!replay && <span className="rounded bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white">ライブ</span>}
+        </div>
+        <div className="mt-1 text-[11px] text-gray-500">{replay ? (syncAvailable ? '再生位置に合わせて表示' : 'プレイヤーの再生位置を待っています') : 'メッセージは数秒遅れて表示されます'}</div>
+      </div>
       <div ref={listRef} onScroll={handleScroll} className="flex-1 px-2 py-2 overflow-y-auto text-xs" aria-live="polite" aria-relevant="additions">
         {status && <div className="text-gray-500">{status}</div>}
         {visible.slice(-200).map(message => (
           <motion.div key={message.id} initial={reducedMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className={`flex items-start gap-2 px-2 py-1.5 rounded-lg ${message.amount ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
-            <Avatar src={message.avatar} name={message.author} className="w-6 h-6 text-[10px] shrink-0" />
+            <Avatar src={message.avatar} name={message.author} className="w-7 h-7 text-[10px] shrink-0" />
             <div className="min-w-0">
               {message.offset !== undefined ? (
                 <button type="button" className="text-blue-600 hover:underline mr-2" onClick={() => onSeek(message.offset!)}>{formatOffset(message.offset)}</button>
@@ -155,7 +164,7 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
       </div>
       {!following && <button type="button" onClick={followLatest} className="mx-auto mb-2 rounded-full bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-200">最新のチャットへ ↓</button>}
       {status.includes('取得できません') && <button type="button" className="p-2 text-xs text-blue-600" onClick={() => setAttempt(n => n + 1)}>再試行</button>}
-      <div className="p-2 border-t text-xs text-gray-500">閲覧のみ対応しています。</div>
+      <div className="px-4 py-3 border-t border-gray-200 text-xs text-gray-500">チャットは閲覧のみ対応しています</div>
     </section>
   );
 }
