@@ -692,13 +692,13 @@ export default function MainApp() {
   const handleGoHome = useCallback(() => {
     setSelectedCategory('すべて');
     setPage(1);
-    if (location.pathname !== '/') {
+    if (location.pathname !== '/' || location.search) {
       navigate('/');
     } else {
       setView('home');
       fetchRecommendations(1, false);
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, location.search, navigate]);
 
   const fetchRecommendations = async (pageNum: number = 1, append: boolean = false) => {
     const currentReqId = ++recommendationRequestIdRef.current;
