@@ -25,6 +25,8 @@ export interface Video {
   likeCount?: number;
   recommendedVideos?: Video[];
   isLive?: boolean;
+  isLiveContent?: boolean;
+  hasLiveChat?: boolean;
   liveViewerCount?: number;
   isPremiere?: boolean;
   isUpcoming?: boolean;
