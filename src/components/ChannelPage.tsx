@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { Channel, ChannelSubscription, Video, CommunityPost, ReleaseItem } from '../types';
 import { 
   Loader2, Bell, AlertCircle, Play, Layers, ChevronRight, 
-  Zap, Radio, Disc, MessageSquare, ThumbsUp, Check, Users, PlaySquare
+  Zap, Radio, Disc, MessageSquare, ThumbsUp, Check, Users, PlaySquare, Search
 } from 'lucide-react';
 import VideoCard from './VideoCard';
 import Avatar from './Avatar';
@@ -18,7 +18,7 @@ interface ChannelPageProps {
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
-type TabType = 'home' | 'videos' | 'shorts' | 'live' | 'releases' | 'community' | 'playlists';
+type TabType = 'home' | 'videos' | 'shorts' | 'live' | 'releases' | 'community' | 'playlists' | 'search';
 
 export default function ChannelPage({
   channelId,
@@ -46,6 +46,75 @@ export default function ChannelPage({
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMoreVideos, setHasMoreVideos] = useState(true);
   const [hasMoreShorts, setHasMoreShorts] = useState(true);
+
+  const searchQuery = new URLSearchParams(location.search).get('query')?.trim() || '';
+  const [searchInput, setSearchInput] = useState('');
+  const [searchResults, setSearchResults] = useState<Video[]>([]);
+  const [searchPage, setSearchPage] = useState(1);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState('');
+  const searchEpoch = useRef(0);
+
+  useEffect(() => {
+    setSearchInput(activeTab === 'search' ? searchQuery : '');
+  }, [activeTab, searchQuery, channelId]);
+
+  useEffect(() => {
+    const epoch = ++searchEpoch.current;
+    setSearchResults([]);
+    setSearchPage(1);
+    setSearchHasMore(false);
+    setSearchError('');
+    if (activeTab !== 'search' || !searchQuery) {
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+    fetchJSON(`/api/channel/${encodeURIComponent(channelId)}/search?q=${encodeURIComponent(searchQuery)}&page=1`)
+      .then(data => {
+        if (searchEpoch.current !== epoch) return;
+        setSearchResults(Array.isArray(data.videos) ? data.videos : []);
+        setSearchHasMore(!!data.hasMore);
+      })
+      .catch((error: any) => {
+        if (searchEpoch.current === epoch) setSearchError(error.message || '検索に失敗しました。');
+      })
+      .finally(() => {
+        if (searchEpoch.current === epoch) setSearchLoading(false);
+      });
+    return () => { if (searchEpoch.current === epoch) searchEpoch.current++; };
+  }, [activeTab, channelId, searchQuery]);
+
+  const submitChannelSearch = (event: React.FormEvent) => {
+    event.preventDefault();
+    const query = searchInput.trim();
+    if (!query) return;
+    navigate(`/channel/${encodeURIComponent(channelData?.id || channelId)}/search?query=${encodeURIComponent(query)}`);
+  };
+
+  const loadMoreSearch = async () => {
+    if (searchLoading || !searchHasMore) return;
+    const epoch = searchEpoch.current;
+    const nextPage = searchPage + 1;
+    setSearchLoading(true);
+    setSearchError('');
+    try {
+      const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}/search?q=${encodeURIComponent(searchQuery)}&page=${nextPage}`);
+      if (searchEpoch.current !== epoch) return;
+      setSearchResults(previous => {
+        const seen = new Set(previous.map(video => video.videoId));
+        return [...previous, ...(data.videos || []).filter((video: Video) => video.videoId && !seen.has(video.videoId) && (seen.add(video.videoId), true))];
+      });
+      setSearchPage(nextPage);
+      setSearchHasMore(!!data.hasMore);
+    } catch (error: any) {
+      if (searchEpoch.current === epoch) setSearchError(error.message || '続きを取得できませんでした。');
+    } finally {
+      if (searchEpoch.current === epoch) setSearchLoading(false);
+    }
+  };
 
   // Poll vote state for community tab
   const [votedPolls, setVotedPolls] = useState<Record<string, number>>({});
@@ -302,11 +371,31 @@ export default function ChannelPage({
               </Link>
             );
           })}
+          <form onSubmit={submitChannelSearch} role="search" className="flex items-center shrink-0 gap-2 py-2">
+            <label htmlFor="channel-search" className="sr-only">チャンネル内を検索</label>
+            <input id="channel-search" type="search" maxLength={100} value={searchInput} onChange={event => setSearchInput(event.target.value)} placeholder="チャンネル内を検索" className="w-40 sm:w-52 rounded-full bg-gray-100 px-4 py-2 text-sm outline-none focus:ring-2 focus:ring-gray-400" />
+            <button type="submit" aria-label="チャンネル内を検索" className="rounded-full p-2 text-gray-600 hover:bg-gray-100"><Search size={19} /></button>
+          </form>
         </div>
       </div>
 
       {/* 4. タブ別コンテンツ表示 */}
       <div className="px-4 md:px-12 pt-8">
+        {activeTab === 'search' && (
+          <section aria-label="チャンネル内検索結果">
+            <h2 className="mb-6 text-lg font-bold">「{searchQuery}」の検索結果</h2>
+            {searchError && <p role="alert" className="mb-4 text-sm text-red-600">{searchError}</p>}
+            {!searchLoading && !searchError && searchResults.length === 0 && <p className="py-8 text-sm text-gray-500">このチャンネルに一致する動画が見つかりませんでした。</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-4 gap-y-8">
+              {searchResults.map(video => (
+                <VideoCard key={video.videoId} video={video} onClick={() => { if (video.videoId) onVideoSelect(video.videoId); }} onSelectChannel={onSelectChannel} hideChannelInfo />
+              ))}
+            </div>
+            {searchLoading && <div className="flex items-center gap-2 py-6 text-sm text-gray-500"><Loader2 className="animate-spin" size={18} />検索中...</div>}
+            {searchHasMore && !searchLoading && <button type="button" onClick={loadMoreSearch} className="mt-6 rounded-full bg-gray-100 px-5 py-2 text-sm font-semibold hover:bg-gray-200">もっと見る</button>}
+          </section>
+        )}
+
         {/* ================= タブ: ホーム ================= */}
         {activeTab === 'home' && (
           <div className="flex flex-col gap-10">
