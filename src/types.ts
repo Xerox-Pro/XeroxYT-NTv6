@@ -96,6 +96,7 @@ export interface Channel {
   subCountText?: string;
   videosCountText?: string;
   featuredVideo?: Video;
+  relatedChannels?: { id: string; title: string; avatar?: string; subscribers?: string }[];
   videos: Video[];
   shortVideos?: Video[];
   playlists?: Playlist[];
