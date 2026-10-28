@@ -55,6 +55,8 @@ export default function ChannelPage({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchError, setSearchError] = useState('');
   const searchEpoch = useRef(0);
+  const searchLoadingMoreRef = useRef(false);
+  const searchSentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSearchInput(activeTab === 'search' ? searchQuery : '');
@@ -62,6 +64,7 @@ export default function ChannelPage({
 
   useEffect(() => {
     const epoch = ++searchEpoch.current;
+    searchLoadingMoreRef.current = false;
     setSearchResults([]);
     setSearchPage(1);
     setSearchHasMore(false);
@@ -94,8 +97,9 @@ export default function ChannelPage({
     navigate(`/channel/${encodeURIComponent(channelData?.id || channelId)}/search?query=${encodeURIComponent(query)}`);
   };
 
-  const loadMoreSearch = async () => {
-    if (searchLoading || !searchHasMore) return;
+  const loadMoreSearch = useCallback(async () => {
+    if (searchLoading || !searchHasMore || searchLoadingMoreRef.current) return;
+    searchLoadingMoreRef.current = true;
     const epoch = searchEpoch.current;
     const nextPage = searchPage + 1;
     setSearchLoading(true);
@@ -112,9 +116,22 @@ export default function ChannelPage({
     } catch (error: any) {
       if (searchEpoch.current === epoch) setSearchError(error.message || '続きを取得できませんでした。');
     } finally {
-      if (searchEpoch.current === epoch) setSearchLoading(false);
+      if (searchEpoch.current === epoch) {
+        searchLoadingMoreRef.current = false;
+        setSearchLoading(false);
+      }
     }
-  };
+  }, [searchLoading, searchHasMore, searchPage, channelId, searchQuery]);
+
+  useEffect(() => {
+    const sentinel = searchSentinelRef.current;
+    if (loading || activeTab !== 'search' || !sentinel || !searchHasMore || searchLoading || searchError) return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) loadMoreSearch();
+    }, { rootMargin: '400px 0px' });
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [loading, activeTab, searchHasMore, searchLoading, searchError, loadMoreSearch]);
 
   // Poll vote state for community tab
   const [votedPolls, setVotedPolls] = useState<Record<string, number>>({});
@@ -392,7 +409,10 @@ export default function ChannelPage({
               ))}
             </div>
             {searchLoading && <div className="flex items-center gap-2 py-6 text-sm text-gray-500"><Loader2 className="animate-spin" size={18} />検索中...</div>}
-            {searchHasMore && !searchLoading && <button type="button" onClick={loadMoreSearch} className="mt-6 rounded-full bg-gray-100 px-5 py-2 text-sm font-semibold hover:bg-gray-200">もっと見る</button>}
+            <div ref={searchSentinelRef} aria-hidden="true" className="h-px" />
+            {searchError && searchResults.length > 0 && searchHasMore && !searchLoading && (
+              <button type="button" onClick={loadMoreSearch} className="mt-4 rounded-full bg-gray-100 px-5 py-2 text-sm font-semibold hover:bg-gray-200">再試行</button>
+            )}
           </section>
         )}
 
