@@ -14,6 +14,28 @@ import Avatar from './Avatar';
 import LiveChat from './LiveChat';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
+let playerApiPromise: Promise<any> | null = null;
+
+function loadPlayerApi(): Promise<any> {
+  const win = window as any;
+  if (win.YT?.Player) return Promise.resolve(win.YT);
+  if (playerApiPromise) return playerApiPromise;
+  playerApiPromise = new Promise((resolve, reject) => {
+    const previous = win.onYouTubeIframeAPIReady;
+    const timeout = window.setTimeout(() => reject(new Error('Player API timed out')), 15000);
+    win.onYouTubeIframeAPIReady = () => {
+      window.clearTimeout(timeout);
+      if (typeof previous === 'function') previous();
+      resolve(win.YT);
+    };
+    const script = document.createElement('script');
+    script.src = '/api/youtube-player/iframe-api';
+    script.onerror = () => { window.clearTimeout(timeout); reject(new Error('Player API unavailable')); };
+    document.head.appendChild(script);
+  }).catch(error => { playerApiPromise = null; throw error; });
+  return playerApiPromise;
+}
+
 interface CommentItemProps {
   comment: Comment;
   onSelectChannel: (channelIdOrName: string) => void;
@@ -365,6 +387,7 @@ export default function VideoPlayer({
 
   // ─── プレイヤー制御 & グローバルキーボードショートカット ───
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const apiPlayerRef = useRef<any>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
@@ -422,6 +445,39 @@ export default function VideoPlayer({
       console.warn('postPlayerCommand error:', err);
     }
   }, []);
+
+  // Player API scripts are loaded through the same-origin Vercel proxy.
+  useEffect(() => {
+    if (!iframeUrl || !iframeRef.current) return;
+    let cancelled = false;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    playerTimeReceivedRef.current = false;
+    loadPlayerApi().then(YT => {
+      if (cancelled || !iframeRef.current) return;
+      const player = new YT.Player(iframeRef.current, {
+        events: {
+          onReady: () => {
+            if (cancelled) return;
+            apiPlayerRef.current = player;
+            poll = setInterval(() => {
+              try {
+                const time = player.getCurrentTime();
+                if (typeof time === 'number' && Number.isFinite(time)) {
+                  currentTimeRef.current = time;
+                  playerTimeReceivedRef.current = true;
+                }
+              } catch { /* Keep the last reported position. */ }
+            }, 250);
+          },
+        },
+      });
+    }).catch(error => console.warn('Player API could not be loaded:', error));
+    return () => {
+      cancelled = true;
+      if (poll) clearInterval(poll);
+      apiPlayerRef.current = null;
+    };
+  }, [iframeUrl]);
 
   // YouTube IFrame API メッセージの受信 & 状態同期
   useEffect(() => {
