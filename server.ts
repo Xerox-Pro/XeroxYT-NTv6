@@ -2271,6 +2271,48 @@ async function startServer() {
   }
 
   // トレンド ＆ パーソナライズドおすすめAPI
+  // Use YouTube's Home feed chips rather than a keyword search.
+  app.get("/api/home/categories", async (req, res) => {
+    try {
+      const youtube = await getInnertubeInstance(req);
+      const feed = await youtube.getHomeFeed();
+      const categories = (feed.filters || []).filter((name: string) =>
+        name && name !== "すべて" && name.toLowerCase() !== "all"
+      );
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ categories });
+    } catch (error: any) {
+      console.error("[Home categories]", error?.message || error);
+      return res.status(502).json({ error: "ホームのカテゴリを取得できませんでした。" });
+    }
+  });
+
+  app.get("/api/home/category", async (req, res) => {
+    const category = typeof req.query.name === "string" ? req.query.name.trim() : "";
+    const page = Number(req.query.page || 1);
+    if (!category || category.length > 100 || !Number.isInteger(page) || page < 1 || page > 8) {
+      return res.status(400).json({ error: "カテゴリを確認してください。" });
+    }
+    try {
+      const youtube = await getInnertubeInstance(req);
+      let feed: any = await youtube.getHomeFeed();
+      if (!feed.filters?.includes(category)) {
+        return res.status(404).json({ error: "このカテゴリは現在利用できません。ホームを更新してください。" });
+      }
+      feed = await feed.applyFilter(category);
+      for (let index = 1; index < page; index++) {
+        if (!feed.has_continuation) return res.json({ videos: [], hasMore: false });
+        feed = await feed.getContinuation();
+      }
+      const videos = (feed.videos || []).map((item: any) => formatVideoObject(item)).filter((item: any) => item && item.videoId);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.json({ videos, hasMore: Boolean(feed.has_continuation) && page < 8 });
+    } catch (error: any) {
+      console.error("[Home category]", error?.message || error);
+      return res.status(502).json({ error: "カテゴリのおすすめを取得できませんでした。" });
+    }
+  });
+
   app.get("/api/recommendations", async (req, res) => {
     const keywords = (req.query.keywords as string) || "";
     const historyIds = ((req.query.historyIds as string) || "")
