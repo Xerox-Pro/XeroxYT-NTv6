@@ -3170,6 +3170,41 @@ async function startServer() {
 
 
   // Stateless continuation polling works on serverless deployments.
+  // Proxy only YouTube's player API scripts; arbitrary hosts and paths are not accepted.
+  app.get("/api/youtube-player/iframe-api", async (_req, res) => {
+    try {
+      const response = await axios.get("https://www.youtube.com/iframe_api", {
+        responseType: "text", timeout: 10000, maxContentLength: 1024 * 1024, maxRedirects: 0,
+      });
+      const script = String(response.data).replace(
+        /(?:https?:)?\/\/www\.youtube\.com\/s\/player\//g,
+        "/api/youtube-player/s/player/"
+      );
+      res.type("application/javascript");
+      res.setHeader("Cache-Control", "public, s-maxage=3600");
+      res.send(script);
+    } catch (err: any) {
+      console.error("[Player API proxy]", err?.message || err);
+      res.status(502).type("text/plain").send("Player API unavailable");
+    }
+  });
+
+  app.get("/api/youtube-player/s/player/*", async (req, res) => {
+    const part = req.params[0];
+    if (!/^[a-zA-Z0-9_./-]+\.js$/.test(part) || part.includes("..")) return res.sendStatus(400);
+    try {
+      const response = await axios.get(`https://www.youtube.com/s/player/${part}`, {
+        responseType: "text", timeout: 10000, maxContentLength: 2 * 1024 * 1024, maxRedirects: 0,
+      });
+      res.type("application/javascript");
+      res.setHeader("Cache-Control", "public, max-age=3600, s-maxage=86400");
+      res.send(response.data);
+    } catch (err: any) {
+      console.error("[Player widget proxy]", err?.message || err);
+      res.status(502).type("text/plain").send("Player widget unavailable");
+    }
+  });
+
   app.get("/api/video/:id/live-chat", async (req, res) => {
     const id = req.params.id;
     if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) return res.status(400).json({ error: "動画IDが正しくありません。" });
