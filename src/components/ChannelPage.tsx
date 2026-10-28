@@ -125,7 +125,7 @@ export default function ChannelPage({
       setLoading(true);
       setError('');
       try {
-        const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}`);
+        const data = await fetchJSON(`/api/channel/${encodeURIComponent(channelId)}?v=2`);
         setChannelData(data);
         if (data && data.title) {
           document.title = `${data.title} - XeroxYT-NTv6`;
@@ -443,6 +443,21 @@ export default function ChannelPage({
                   </button>
                 </div>
               </div>
+            )}
+
+            {!!channelData.relatedChannels?.length && (
+              <section aria-label="関連チャンネル" className="border-b border-gray-100 pb-8">
+                <h2 className="mb-4 text-lg font-bold text-gray-900">関連チャンネル</h2>
+                <div className="flex gap-4 overflow-x-auto pb-2">
+                  {channelData.relatedChannels.map(channel => (
+                    <button key={channel.id} type="button" onClick={() => onSelectChannel(channel.id)} className="w-32 shrink-0 rounded-xl p-2 text-center hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-blue-600">
+                      <Avatar src={channel.avatar} name={channel.title} channelId={channel.id} className="mx-auto h-20 w-20 text-xl" />
+                      <span className="mt-2 block truncate text-sm font-bold">{channel.title}</span>
+                      {channel.subscribers && <span className="mt-1 block truncate text-xs text-gray-500">{channel.subscribers}</span>}
+                    </button>
+                  ))}
+                </div>
+              </section>
             )}
 
             {/* おすすめ動画グリッド（チャンネル一覧内はチャンネル名非表示） */}
