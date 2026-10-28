@@ -220,7 +220,11 @@ export default function VideoPlayer({
       try {
         const fallbackRes = await fetch(`/api/edu/${id}`);
         if (fallbackRes.ok) {
-          const fallbackUrl = await fallbackRes.text();
+          const rawFallbackUrl = await fallbackRes.text();
+          const parsedFallback = new URL(rawFallbackUrl, window.location.origin);
+          parsedFallback.searchParams.set('enablejsapi', '1');
+          parsedFallback.searchParams.set('origin', window.location.origin);
+          const fallbackUrl = parsedFallback.toString();
           if (playlist) {
             return `${fallbackUrl}&list=${playlist}`;
           }
@@ -235,7 +239,10 @@ export default function VideoPlayer({
     if (playlist) {
       url += url.includes('?') ? `&list=${playlist}` : `?list=${playlist}`;
     }
-    return url;
+    const apiUrl = new URL(url);
+    apiUrl.searchParams.set('enablejsapi', '1');
+    apiUrl.searchParams.set('origin', window.location.origin);
+    return apiUrl.toString();
   };
 
   // 動画を開いた時に毎回 key(params) を取得してプレイヤーを埋め込む
@@ -364,6 +371,7 @@ export default function VideoPlayer({
 
   // プレイヤー状態の内部トラッキング
   const currentTimeRef = useRef<number>(0);
+  const playerTimeReceivedRef = useRef(false);
   const durationRef = useRef<number>(0);
   const playerStateRef = useRef<number>(1); // 1: playing, 2: paused
   const volumeRef = useRef<number>(100);
@@ -425,6 +433,7 @@ export default function VideoPlayer({
         if ((data.event === 'infoDelivery' || data.event === 'initialDelivery') && data.info) {
           if (typeof data.info.currentTime === 'number') {
             currentTimeRef.current = data.info.currentTime;
+            playerTimeReceivedRef.current = true;
           }
           if (typeof data.info.duration === 'number' && data.info.duration > 0) {
             durationRef.current = data.info.duration;
@@ -453,6 +462,7 @@ export default function VideoPlayer({
   // 動画変更時に duration / currentTime の初期化
   useEffect(() => {
     currentTimeRef.current = 0;
+    playerTimeReceivedRef.current = false;
     const rawDuration = (activeVideo as any).duration;
     if (activeVideo.lengthSeconds && activeVideo.lengthSeconds > 0) {
       durationRef.current = activeVideo.lengthSeconds;
@@ -465,20 +475,6 @@ export default function VideoPlayer({
       }
     }
   }, [activeVideo.videoId, (activeVideo as any).duration, activeVideo.lengthSeconds]);
-
-  // 再生中のローカルタイム積算 (iframe からの更新間隔を補間)
-  useEffect(() => {
-    if (!isPlaying) return;
-    const ticker = setInterval(() => {
-      if (playerStateRef.current === 1) {
-        currentTimeRef.current += 1;
-        if (durationRef.current > 0 && currentTimeRef.current > durationRef.current) {
-          currentTimeRef.current = durationRef.current;
-        }
-      }
-    }, 1000);
-    return () => clearInterval(ticker);
-  }, [isPlaying]);
 
   // iframe 読み込み完了時に listening 要求を送信
   const handleIframeLoad = () => {
@@ -1450,36 +1446,11 @@ export default function VideoPlayer({
       
       {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
-        {/* チャットを利用できる動画のみ切り替えを表示 */}
         {hasChat && (
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-            <div className="flex bg-gray-100 p-1 rounded-lg">
-              <button
-                onClick={() => setSidebarTab('liveChat')}
-                className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all ${
-                  sidebarTab === 'liveChat' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <Radio size={13} className="text-red-500 animate-pulse" />
-                <span>チャット</span>
-              </button>
-              <button
-                onClick={() => setSidebarTab('related')}
-                className={`px-3 py-1 text-xs font-bold rounded-md flex items-center gap-1.5 transition-all ${
-                  sidebarTab === 'related' ? 'bg-white text-gray-900 shadow-xs' : 'text-gray-600 hover:text-gray-900'
-                }`}
-              >
-                <span>関連動画</span>
-              </button>
-            </div>
-          </div>
-        )}
-        
-        {isRelatedOpen && hasChat && sidebarTab === 'liveChat' && (
-          <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} onSeek={(seconds) => { currentTimeRef.current = seconds; postPlayerCommand('seekTo', [seconds, true]); }} />
+          <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} isTimeAvailable={() => playerTimeReceivedRef.current} onSeek={(seconds) => { currentTimeRef.current = seconds; postPlayerCommand('seekTo', [seconds, true]); }} />
         )}
 
-        {isRelatedOpen && (!hasChat || sidebarTab === 'related') && (
+        {isRelatedOpen && (
           <div className="flex flex-col gap-3">
             {/* カテゴリフィルターチップ（ユーザー添付の画像スタイル） */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
