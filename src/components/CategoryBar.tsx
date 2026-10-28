@@ -8,9 +8,11 @@ interface CategoryBarProps {
   selectedCategory?: string;
 }
 
+const fallbackCategories = ['音楽', 'ゲーム', 'アニメ', 'ライブ', '料理', 'エンタメ', 'ニュース', 'テクノロジー', '教育', 'スポーツ'];
+
 export default function CategoryBar({ onSelectCategory, selectedCategory = 'すべて' }: CategoryBarProps) {
   const [active, setActive] = useState(selectedCategory);
-  const [homeCategories, setHomeCategories] = useState<string[]>([]);
+  const [homeCategories, setHomeCategories] = useState<string[]>(fallbackCategories);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -19,7 +21,7 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
     let cancelled = false;
     fetchJSON('/api/home/categories')
       .then(data => {
-        if (!cancelled && Array.isArray(data.categories)) {
+        if (!cancelled && Array.isArray(data.categories) && data.categories.length > 0) {
           setHomeCategories(data.categories.filter((category: unknown): category is string => typeof category === 'string' && !!category));
         }
       })
