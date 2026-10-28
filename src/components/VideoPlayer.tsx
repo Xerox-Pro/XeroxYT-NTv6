@@ -131,10 +131,10 @@ interface VideoPlayerProps {
 }
 
 export default function VideoPlayer({
-  videoId,
+  videoId: requestedVideoId,
   isMini = false,
   playlistId,
-  initialVideo,
+  initialVideo: initialVideoProp,
   onVideoSelect,
   onSelectChannel,
   subscriptions,
@@ -144,6 +144,10 @@ export default function VideoPlayer({
   onCacheVideo,
   watchHistory = []
 }: VideoPlayerProps) {
+  // The embedded playlist can move to another video without replacing its iframe.
+  const [videoId, setVideoId] = useState(requestedVideoId);
+  const currentVideoIdRef = useRef(requestedVideoId);
+  const initialVideo = videoId === requestedVideoId ? initialVideoProp : undefined;
   const [videoData, setVideoData] = useState<Video | null>(null);
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -181,7 +185,7 @@ export default function VideoPlayer({
     type: 'video'
   };
 
-  const activeVideo: Video = videoData || fallbackVideo;
+  const activeVideo: Video = videoData?.videoId === videoId ? videoData : fallbackVideo;
 
   const handleLike = () => {
     if (isLiked) {
@@ -271,7 +275,7 @@ export default function VideoPlayer({
   useEffect(() => {
     let isCurrent = true;
     const loadPlayer = async () => {
-      const id = videoId || 'videoseries';
+      const id = requestedVideoId || 'videoseries';
       const url = await getEduPlayerUrl(id, playlistId);
       if (isCurrent) {
         setIframeUrl(url);
@@ -281,7 +285,7 @@ export default function VideoPlayer({
     return () => {
       isCurrent = false;
     };
-  }, [videoId, playlistId]);
+  }, [requestedVideoId, playlistId]);
 
   // 再読み込みボタンのクールダウンカウントダウン
   useEffect(() => {
@@ -388,6 +392,14 @@ export default function VideoPlayer({
   // ─── プレイヤー制御 & グローバルキーボードショートカット ───
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const apiPlayerRef = useRef<any>(null);
+  const playlistRef = useRef(playlistId);
+  playlistRef.current = playlistId;
+  const updatePlayingVideo = useCallback((id: unknown) => {
+    if (!playlistRef.current || typeof id !== 'string' || !/^[a-zA-Z0-9_-]{11}$/.test(id)) return;
+    if (id === currentVideoIdRef.current) return;
+    currentVideoIdRef.current = id;
+    setVideoId(id);
+  }, []);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showShortcutsModal, setShowShortcutsModal] = useState(false);
@@ -461,6 +473,10 @@ export default function VideoPlayer({
             apiPlayerRef.current = player;
             poll = setInterval(() => {
               try {
+                const url = player.getVideoUrl?.();
+                if (typeof url === 'string' && url) {
+                  try { updatePlayingVideo(new URL(url).searchParams.get('v')); } catch { /* Wait for a valid video URL. */ }
+                }
                 const time = player.getCurrentTime();
                 if (typeof time === 'number' && Number.isFinite(time)) {
                   currentTimeRef.current = time;
@@ -477,7 +493,7 @@ export default function VideoPlayer({
       if (poll) clearInterval(poll);
       apiPlayerRef.current = null;
     };
-  }, [iframeUrl]);
+  }, [iframeUrl, updatePlayingVideo]);
 
   // YouTube IFrame API メッセージの受信 & 状態同期
   useEffect(() => {
@@ -487,6 +503,7 @@ export default function VideoPlayer({
         const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
         if (!data) return;
         if ((data.event === 'infoDelivery' || data.event === 'initialDelivery') && data.info) {
+          updatePlayingVideo(data.info.videoData?.video_id);
           if (typeof data.info.currentTime === 'number') {
             currentTimeRef.current = data.info.currentTime;
             playerTimeReceivedRef.current = true;
@@ -513,7 +530,7 @@ export default function VideoPlayer({
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [updatePlayingVideo]);
 
   // 動画変更時に duration / currentTime の初期化
   useEffect(() => {
@@ -751,6 +768,8 @@ export default function VideoPlayer({
 
   // Fetch video metadata & initial comments
   useEffect(() => {
+    let cancelled = false;
+    setComments([]);
     setCommentPage(1);
     setCommentSort('top');
     setHasMoreComments(false);
@@ -783,6 +802,7 @@ export default function VideoPlayer({
       setError('');
       try {
         const data = await fetchJSON(`/api/video/${videoId}`);
+        if (cancelled) return;
         if (data && (data.title || data.videoId)) {
           setVideoData(data);
           setIsFallback(false);
@@ -801,6 +821,7 @@ export default function VideoPlayer({
             // 初回から自動で2ページ目もバックグラウンドで先読みして結合（ボタン不要で最初から豊富なリストを提供）
             fetchJSON(`/api/video/${videoId}/related?page=2&filter=all`)
               .then((res2) => {
+                if (cancelled) return;
                 const p2Items: Video[] = Array.isArray(res2) ? res2 : res2.videos || [];
                 if (p2Items.length > 0) {
                   setRelatedVideos((prev) => {
@@ -837,6 +858,7 @@ export default function VideoPlayer({
           throw new Error('動画情報を取得できませんでした');
         }
       } catch (err: any) {
+        if (cancelled) return;
         console.warn('Video metadata fetch failed, using fallback with edukey player:', err);
         setIsFallback(true);
         setVideoData(fallbackVideo);
@@ -847,7 +869,7 @@ export default function VideoPlayer({
         setSidebarTab(initialVideo && 'isLive' in initialVideo && initialVideo.isLive ? 'liveChat' : 'related');
         if (initialVideo && 'isLive' in initialVideo && initialVideo.isLive) setIsRelatedOpen(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
@@ -855,6 +877,7 @@ export default function VideoPlayer({
       setLoadingComments(true);
       try {
         const res = await fetchJSON(`/api/video/${videoId}/comments?sort=top&page=1`);
+        if (cancelled) return;
         if (res && res.isPlayerOnly) {
           setComments([]);
           setHasMoreComments(false);
@@ -870,13 +893,14 @@ export default function VideoPlayer({
       } catch (err) {
         console.error("Failed to load comments", err);
       } finally {
-        setLoadingComments(false);
+        if (!cancelled) setLoadingComments(false);
       }
     };
 
     fetchVideo();
     fetchComments();
     setIsDescExpanded(false);
+    return () => { cancelled = true; };
   }, [videoId]);
 
   // コメント並び替えの切り替え (人気順・新しい順)
