@@ -128,7 +128,7 @@ export default function VideoPlayer({
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>('related');
+  const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>(() => initialVideo && 'isLive' in initialVideo && initialVideo.isLive ? 'liveChat' : 'related');
   const [iframeUrl, setIframeUrl] = useState<string>('');
   const [refreshingIframe, setRefreshingIframe] = useState(false);
   const [cooldownSec, setCooldownSec] = useState(0);
@@ -418,6 +418,7 @@ export default function VideoPlayer({
   // YouTube IFrame API メッセージの受信 & 状態同期
   useEffect(() => {
     const handleMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
       try {
         const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
         if (!data) return;
@@ -776,7 +777,7 @@ export default function VideoPlayer({
           // If it's a real live stream, auto-switch sidebar to live chat
           if (data?.isLive && !data?.isPremiere && !data?.isUpcoming) {
             setSidebarTab('liveChat');
-
+            setIsRelatedOpen(true);
           } else {
             setSidebarTab('related');
           }
@@ -791,7 +792,8 @@ export default function VideoPlayer({
         if (onRecordHistory) {
           onRecordHistory(fallbackVideo);
         }
-        setSidebarTab('related');
+        setSidebarTab(initialVideo && 'isLive' in initialVideo && initialVideo.isLive ? 'liveChat' : 'related');
+        if (initialVideo && 'isLive' in initialVideo && initialVideo.isLive) setIsRelatedOpen(true);
       } finally {
         setLoading(false);
       }
@@ -1473,7 +1475,7 @@ export default function VideoPlayer({
         )}
         
         {isRelatedOpen && sidebarTab === 'liveChat' && (
-          <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} onSeek={(seconds) => postPlayerCommand('seekTo', [seconds, true])} />
+          <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} onSeek={(seconds) => { currentTimeRef.current = seconds; postPlayerCommand('seekTo', [seconds, true]); }} />
         )}
 
         {isRelatedOpen && sidebarTab === 'related' && (
