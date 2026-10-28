@@ -3168,6 +3168,59 @@ async function startServer() {
     }
   });
 
+
+  // Stateless continuation polling works on serverless deployments.
+  app.get("/api/video/:id/live-chat", async (req, res) => {
+    const id = req.params.id;
+    if (!/^[a-zA-Z0-9_-]{11}$/.test(id)) return res.status(400).json({ error: "動画IDが正しくありません。" });
+    const token = typeof req.query.continuation === "string" ? req.query.continuation : "";
+    if (token.length > 8192) return res.status(400).json({ error: "チャットの取得情報が正しくありません。" });
+    try {
+      const youtube = await getYt();
+      let continuation = token;
+      let replay = req.query.replay === "1";
+      if (!continuation) {
+        const info = await youtube.getInfo(id);
+        if (!info.livechat?.continuation) return res.json({ available: false });
+        continuation = info.livechat.continuation;
+        replay = info.livechat.is_replay;
+      }
+      const response: any = await youtube.actions.execute(
+        replay ? "/live_chat/get_live_chat_replay" : "/live_chat/get_live_chat",
+        { continuation, parse: true }
+      );
+      const contents: any = response.continuation_contents;
+      if (!contents) throw new Error("チャットの応答を取得できませんでした。");
+      const messages: any[] = [];
+      const visit = (action: any, offset?: number) => {
+        if (action?.type === "ReplayChatItemAction") {
+          const ms = Number(action.video_offset_time_msec);
+          for (const child of action.actions || []) visit(child, Number.isFinite(ms) ? ms / 1000 : undefined);
+          return;
+        }
+        if (action?.type !== "AddChatItemAction" || !action.item) return;
+        const item = action.item;
+        const text = item.message?.toString?.() || item.header_subtext?.toString?.() || item.primary_text?.toString?.() || "";
+        if (!text && !item.purchase_amount) return;
+        messages.push({
+          id: String(item.id || action.client_id || ""),
+          author: item.author?.name?.toString?.() || "ユーザー",
+          avatar: item.author?.thumbnails?.[0]?.url || "",
+          text,
+          timestamp: item.timestamp_text || (item.timestamp ? new Date(item.timestamp).toLocaleTimeString("ja-JP", { timeZone: "Asia/Tokyo", hour: "2-digit", minute: "2-digit" }) : ""),
+          amount: item.purchase_amount?.toString?.() || "",
+          offset
+        });
+      };
+      for (const action of contents.actions || []) visit(action);
+      res.setHeader("Cache-Control", "no-store");
+      res.json({ available: true, replay, messages, continuation: contents.continuation?.token || null });
+    } catch (error: any) {
+      console.error("[LiveChat]", error?.message || error);
+      res.status(502).json({ error: "チャットを取得できませんでした。しばらくしてから再試行してください。" });
+    }
+  });
+
   app.get("/api/video/:id", async (req, res) => {
     const videoId = req.params.id;
     const cacheKey = `video:${videoId}`;
