@@ -93,9 +93,21 @@ export default function MainApp() {
 
   useEffect(() => {
     const path = location.pathname;
+    if (path !== '/') {
+      recommendationRequestIdRef.current++;
+      setLoading(false);
+      setLoadingMore(false);
+      isFetchingMore.current = false;
+    }
     if (path === '/') {
+      const category = searchParams.get('category') || 'すべて';
+      setSelectedCategory(category);
+      setPage(1);
+      isFetchingMore.current = false;
+      setLoadingMore(false);
       setView('home');
-      fetchRecommendations(1, false);
+      if (category === 'すべて') fetchRecommendations(1, false);
+      else fetchHomeCategory(category, 1, false);
     } else if (path.startsWith('/shorts/')) {
       const parts = path.split('/');
       const shortId = parts[2]?.split('?')[0];
@@ -680,13 +692,13 @@ export default function MainApp() {
   const handleGoHome = useCallback(() => {
     setSelectedCategory('すべて');
     setPage(1);
-    if (location.pathname !== '/') {
+    if (location.pathname !== '/' || location.search) {
       navigate('/');
     } else {
       setView('home');
       fetchRecommendations(1, false);
     }
-  }, [location.pathname, navigate]);
+  }, [location.pathname, location.search, navigate]);
 
   const fetchRecommendations = async (pageNum: number = 1, append: boolean = false) => {
     const currentReqId = ++recommendationRequestIdRef.current;
@@ -778,12 +790,46 @@ export default function MainApp() {
     }
   };
 
+  // Use the selected chip's actual YouTube home feed.
+  const fetchHomeCategory = async (category: string, pageNum = 1, append = false) => {
+    const requestId = ++recommendationRequestIdRef.current;
+    if (append) setLoadingMore(true);
+    else { setLoading(true); setVideos([]); }
+    setError('');
+    try {
+      const params = new URLSearchParams({ name: category, page: String(pageNum) });
+      const data = await fetchJSON(`/api/home/category?${params}`);
+      if (requestId !== recommendationRequestIdRef.current) return;
+      const result: Video[] = Array.isArray(data.videos) ? data.videos : [];
+      updateCache(result);
+      if (append) {
+        setVideos(previous => {
+          const seen = new Set(previous.map(video => video.videoId));
+          return [...previous, ...result.filter(video => video.videoId && !seen.has(video.videoId) && (seen.add(video.videoId), true))];
+        });
+      } else setVideos(result);
+      setHasMore(!!data.hasMore);
+    } catch (error: any) {
+      if (requestId === recommendationRequestIdRef.current) {
+        if (!append) setError(error.message || 'カテゴリのおすすめを取得できませんでした。');
+        setHasMore(false);
+      }
+    } finally {
+      if (requestId === recommendationRequestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        isFetchingMore.current = false;
+      }
+    }
+  };
+
   // 検索動画・チャンネルデータ読み込み (YouTube風に統合取得)
   const fetchSearch = async (
     q: string,
     pageNum: number = 1,
     append: boolean = false
   ) => {
+    const requestId = ++recommendationRequestIdRef.current;
     if (append) {
       setLoadingMore(true);
     } else {
@@ -798,6 +844,7 @@ export default function MainApp() {
 
     try {
       const data = await fetchJSON(`/api/search?q=${encodeURIComponent(q)}&page=${pageNum}`);
+      if (requestId !== recommendationRequestIdRef.current) return;
       const newVideos: Video[] = Array.isArray(data) ? data : (data.videos || []);
       const newChannels: SearchChannel[] = Array.isArray(data) ? [] : (data.channels || []);
 
@@ -819,11 +866,13 @@ export default function MainApp() {
       setHasMore(newVideos.length > 0);
     } catch (err: any) {
       console.error(err);
-      if (!append) setError(err.message || 'エラーが発生しました');
+      if (requestId === recommendationRequestIdRef.current && !append) setError(err.message || 'エラーが発生しました');
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      isFetchingMore.current = false;
+      if (requestId === recommendationRequestIdRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+        isFetchingMore.current = false;
+      }
     }
   };
 
@@ -843,12 +892,13 @@ export default function MainApp() {
       setPage(nextPage);
 
       if (view === 'home') {
-        fetchRecommendations(nextPage, true);
+        if (selectedCategory === 'すべて') fetchRecommendations(nextPage, true);
+        else fetchHomeCategory(selectedCategory, nextPage, true);
       } else if (view === 'search') {
         fetchSearch(searchQuery, nextPage, true);
       }
     }
-  }, [view, loading, loadingMore, hasMore, page, searchQuery]);
+  }, [view, loading, loadingMore, hasMore, page, searchQuery, selectedCategory]);
 
   useEffect(() => {
     window.addEventListener('scroll', handleScroll);
@@ -860,15 +910,13 @@ export default function MainApp() {
   };
 
   const handleSelectCategory = (category: string) => {
-    if (!category || category === 'すべて' || category === 'あなたへのおすすめ') {
-      if (location.pathname !== '/') {
-        navigate('/');
-      } else {
-        fetchRecommendations(1, false);
-      }
-    } else {
-      navigate(`/results?search_query=${encodeURIComponent(category)}`);
-    }
+    const next = category && category !== 'すべて' ? category : '';
+    const target = next ? `/?category=${encodeURIComponent(next)}` : '/';
+    if (location.pathname + location.search === target) {
+      setPage(1);
+      if (next) fetchHomeCategory(next, 1, false);
+      else fetchRecommendations(1, false);
+    } else navigate(target);
   };
 
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
@@ -1060,7 +1108,7 @@ export default function MainApp() {
               className="w-full"
             >
               {/* カテゴリーバー（ホーム ＆ 検索画面のみ） */}
-              {(view === 'home' || view === 'search') && (
+              {view === 'home' && (
                 <CategoryBar
                   selectedCategory={selectedCategory}
                   onSelectCategory={handleSelectCategory}
@@ -1142,7 +1190,7 @@ export default function MainApp() {
               <p className="text-sm font-medium max-w-md">{error}</p>
               <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
                 <button
-                  onClick={() => view === 'search' ? fetchSearch(searchQuery) : fetchRecommendations(1)}
+                  onClick={() => view === 'search' ? fetchSearch(searchQuery) : selectedCategory === 'すべて' ? fetchRecommendations(1) : fetchHomeCategory(selectedCategory, 1)}
                   className="px-4 py-2 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-800 transition-colors"
                 >
                   再読み込み

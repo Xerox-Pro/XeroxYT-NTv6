@@ -1,46 +1,33 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
-import { localAI } from '../lib/intelligence';
+import { fetchJSON } from '../utils';
 
 interface CategoryBarProps {
   onSelectCategory?: (category: string) => void;
   selectedCategory?: string;
 }
 
-const staticCategories = [
-  'すべて',
-  '音楽',
-  'ゲーム',
-  'アニメ',
-  'ライブ',
-  '料理',
-  'エンタメ',
-  'ニュース',
-  'テクノロジー',
-  '教育',
-  'スポーツ',
-];
-
 export default function CategoryBar({ onSelectCategory, selectedCategory = 'すべて' }: CategoryBarProps) {
   const [active, setActive] = useState(selectedCategory);
-  const [dynamicCategories, setDynamicCategories] = useState<string[]>([]);
-  const [sampledHashtags, setSampledHashtags] = useState<string[]>([]);
+  const [homeCategories, setHomeCategories] = useState<string[]>([]);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 独自AIによる分析結果をカテゴリーに反映
-    const topInterests = localAI.getTopSuggestedQueries(3);
-    setDynamicCategories(topInterests);
+    let cancelled = false;
+    fetchJSON('/api/home/categories')
+      .then(data => {
+        if (!cancelled && Array.isArray(data.categories)) {
+          setHomeCategories(data.categories.filter((category: unknown): category is string => typeof category === 'string' && !!category));
+        }
+      })
+      .catch(error => console.warn('Home categories unavailable:', error));
+    return () => { cancelled = true; };
+  }, []);
 
-    // 視聴動画のタイトル・概要欄から記憶したハッシュタグから5個ピックアップ
-    const tags = localAI.getSampledHashtags(5);
-    setSampledHashtags(tags);
-  }, [selectedCategory]);
-
-  const categories = [...staticCategories, ...dynamicCategories, ...sampledHashtags];
+  const categories = Array.from(new Set(['すべて', ...homeCategories]));
 
   useEffect(() => {
     setActive(selectedCategory || 'すべて');

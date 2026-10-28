@@ -196,6 +196,8 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const isGet = !options || !options.method || options.method === 'GET';
     const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
     const isTimeSensitive = 
+      url.startsWith('/api/home/') ||
+      /^\/api\/channel\/[^/]+\/search(?:\?|$)/.test(url) ||
       url.includes('/sync/') || 
       url.includes('/auth/') || 
       url.includes('/stream') || 
