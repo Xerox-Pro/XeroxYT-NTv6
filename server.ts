@@ -3227,7 +3227,7 @@ async function startServer() {
 
   app.get("/api/video/:id", async (req, res) => {
     const videoId = req.params.id;
-    const cacheKey = `video:v2:${videoId}`;
+    const cacheKey = `video:v3:${videoId}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", cached.isLive || cached.isUpcoming ? "no-store" : "public, s-maxage=7200, stale-while-revalidate=86400");
@@ -3378,6 +3378,8 @@ async function startServer() {
         videoId: videoId,
         isLive,
         isUpcoming,
+        isLiveContent: Boolean(basic?.is_live_content),
+        hasLiveChat: Boolean(info.livechat?.continuation),
         liveViewerCount: isLive ? (extractViewCount(primary?.view_count) || extractViewCount(basic?.view_count) || 0) : undefined,
         lengthSeconds: Number.isFinite(basic?.duration) ? basic.duration : 0,
         title: basic?.title || primary?.title?.text,
