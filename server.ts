@@ -3230,7 +3230,7 @@ async function startServer() {
     const cacheKey = `video:v2:${videoId}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=7200, stale-while-revalidate=86400");
+      res.setHeader("Cache-Control", cached.isLive || cached.isUpcoming ? "no-store" : "public, s-maxage=7200, stale-while-revalidate=86400");
       return res.json(cached);
     }
 
