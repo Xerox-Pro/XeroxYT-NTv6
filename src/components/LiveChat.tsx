@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'motion/react';
 import Avatar from './Avatar';
 
 type Message = { id: string; author: string; avatar?: string; text: string; timestamp: string; amount?: string; offset?: number };
@@ -21,6 +22,10 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
   const [status, setStatus] = useState('チャットを読み込み中…');
   const [attempt, setAttempt] = useState(0);
   const getTimeRef = useRef(getCurrentTime);
+  const listRef = useRef<HTMLDivElement>(null);
+  const followingRef = useRef(true);
+  const [following, setFollowing] = useState(true);
+  const reducedMotion = useReducedMotion();
   getTimeRef.current = getCurrentTime;
 
   useEffect(() => {
@@ -32,6 +37,8 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
     let ended = false;
     const abort = new AbortController();
     setMessages([]);
+    followingRef.current = true;
+    setFollowing(true);
     setStatus('チャットを読み込み中…');
     setReplay(false);
 
@@ -80,19 +87,40 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
 
   useEffect(() => {
     if (!replay) return;
-    const timer = setInterval(() => setPosition(getTimeRef.current()), 1000);
+    const timer = setInterval(() => setPosition(getTimeRef.current()), 250);
     return () => clearInterval(timer);
   }, [replay]);
 
-  const visible = replay ? messages.filter(m => m.offset === undefined || m.offset <= position) : messages;
+  const visible = replay ? messages.filter(m => m.offset !== undefined && m.offset <= position) : messages;
+  const latestId = visible.at(-1)?.id;
+
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && followingRef.current) list.scrollTop = list.scrollHeight;
+  }, [latestId]);
+
+  const handleScroll = () => {
+    const list = listRef.current;
+    if (!list) return;
+    const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 48;
+    followingRef.current = atBottom;
+    setFollowing(atBottom);
+  };
+
+  const followLatest = () => {
+    followingRef.current = true;
+    setFollowing(true);
+    const list = listRef.current;
+    if (list) list.scrollTo({ top: list.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' });
+  };
   return (
     <section aria-label="ライブチャット" className="flex flex-col h-[580px] bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div className="p-3 bg-gray-50 border-b text-xs font-bold">{replay ? 'チャットのリプレイ' : 'ライブチャット'}</div>
+      <div className="px-4 py-3 border-b border-gray-200 text-sm font-semibold text-gray-900">{replay ? 'チャットのリプレイ' : 'ライブチャット'}</div>
       {replay && <p className="px-3 py-2 text-xs text-gray-500">時刻を押すと動画をその位置から再生します。再生位置との同期は目安です。</p>}
-      <div className="flex-1 p-3 overflow-y-auto space-y-3 text-xs" aria-live="polite">
+      <div ref={listRef} onScroll={handleScroll} className="flex-1 px-2 py-2 overflow-y-auto text-xs" aria-live="polite" aria-relevant="additions">
         {status && <div className="text-gray-500">{status}</div>}
         {visible.slice(-200).map(message => (
-          <div key={message.id} className="flex items-start gap-2">
+          <motion.div key={message.id} initial={reducedMotion ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.22, ease: 'easeOut' }} className={`flex items-start gap-2 px-2 py-1.5 rounded-lg ${message.amount ? 'bg-amber-50' : 'hover:bg-gray-50'}`}>
             <Avatar src={message.avatar} name={message.author} className="w-6 h-6 text-[10px] shrink-0" />
             <div className="min-w-0">
               {message.offset !== undefined ? (
@@ -100,11 +128,12 @@ export default function LiveChat({ videoId, getCurrentTime, onSeek }: {
               ) : <span className="text-gray-400 mr-2">{message.timestamp}</span>}
               <span className="font-bold text-gray-600">{message.author}</span>
               {message.amount && <span className="ml-2 font-bold text-amber-700">{message.amount}</span>}
-              <p className="break-words text-gray-900">{message.text}</p>
+              <p className="inline ml-1 break-words text-gray-900">{message.text}</p>
             </div>
-          </div>
+          </motion.div>
         ))}
       </div>
+      {!following && <button type="button" onClick={followLatest} className="mx-auto mb-2 rounded-full bg-gray-100 px-4 py-1.5 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-200">最新のチャットへ ↓</button>}
       {status.includes('取得できません') && <button type="button" className="p-2 text-xs text-blue-600" onClick={() => setAttempt(n => n + 1)}>再試行</button>}
       <div className="p-2 border-t text-xs text-gray-500">閲覧のみ対応しています。</div>
     </section>
