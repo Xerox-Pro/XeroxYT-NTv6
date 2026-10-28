@@ -2295,11 +2295,15 @@ async function startServer() {
     }
     try {
       const youtube = await getInnertubeInstance(req);
-      let feed: any = await youtube.getHomeFeed();
-      if (!feed.filters?.includes(category)) {
-        return res.status(404).json({ error: "このカテゴリは現在利用できません。ホームを更新してください。" });
+      let feed: any;
+      try {
+        const home = await youtube.getHomeFeed();
+        if (home.filters?.includes(category)) feed = await home.applyFilter(category);
+      } catch (error: any) {
+        console.warn("[Home category filter]", error?.message || error);
       }
-      feed = await feed.applyFilter(category);
+      // Some sessions do not receive Home chips. Keep categories usable in that case.
+      if (!feed) feed = await youtube.search(category, { type: "video" });
       for (let index = 1; index < page; index++) {
         if (!feed.has_continuation) return res.json({ videos: [], hasMore: false });
         feed = await feed.getContinuation();
@@ -3979,7 +3983,7 @@ async function startServer() {
     const rawId = decodeURIComponent(req.params.id || "");
     let channelId = rawId;
 
-    const cacheKey = `channel:${rawId}`;
+    const cacheKey = `channel:v2:${rawId}`;
     const cached = getFromMemoryCache<any>(cacheKey);
     if (cached) {
       res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
@@ -4028,7 +4032,7 @@ async function startServer() {
           meta.title ||
           (isValidAuthorName(rawId) ? rawId : "チャンネル");
 
-        const realChannelId = channel.id || meta.id || (isValidChannelId(channelId) ? channelId : rawId);
+        const realChannelId = meta.external_id || channel.id || meta.id || (isValidChannelId(channelId) ? channelId : rawId);
 
         let videosList: any[] = [];
         let shortVideosList: any[] = [];
@@ -4298,6 +4302,22 @@ async function startServer() {
           });
         }
 
+        // Only channels returned on YouTube's channel page; do not invent recommendations.
+        const relatedChannels: any[] = [];
+        const seenChannelIds = new Set<string>([realChannelId]);
+        for (const item of channel.channels || []) {
+          const relatedId = item.id || item.author?.id || item.endpoint?.payload?.browseId;
+          const name = item.author?.name?.toString?.() || "";
+          if (!isValidChannelId(relatedId) || !name || seenChannelIds.has(relatedId)) continue;
+          seenChannelIds.add(relatedId);
+          relatedChannels.push({
+            id: relatedId,
+            title: name,
+            avatar: item.author?.thumbnails?.[0]?.url || "",
+            subscribers: item.subscribers?.toString?.() || item.subscriber_count?.toString?.() || "",
+          });
+        }
+
         const channelData = {
           id: realChannelId,
           title: channelTitle,
@@ -4319,6 +4339,7 @@ async function startServer() {
             "",
           videosCountText: `${videosList.length} 本の動画`,
           featuredVideo: videosList[0] || null,
+          relatedChannels,
           videos: videosList,
           shortVideos:
             shortVideosList.length > 0
@@ -4575,9 +4596,24 @@ async function startServer() {
         if (!feed.has_continuation) return res.json({ videos: [], hasMore: false });
         feed = await feed.getContinuation();
       }
-      const videos = (feed.videos || [])
-        .map((video: any) => formatVideoObject(video, channel.metadata?.title || "", id))
-        .filter((video: any) => video && video.videoId);
+      const targetId = channel.metadata?.external_id || (isValidChannelId(id) ? id : "");
+      if (!isValidChannelId(targetId)) throw new Error("Channel ID is unavailable");
+      // Verify the actual uploader before formatting (the formatter can use a fallback author).
+      const verified = await Promise.all((feed.videos || []).slice(0, 30).map(async (item: any) => {
+        const formatted = formatVideoObject(item, "", undefined);
+        if (!formatted?.videoId) return null;
+        let authorId = item.author?.id || item.author?.endpoint?.payload?.browseId ||
+          item.owner?.id || item.owner?.endpoint?.payload?.browseId || "";
+        if (!isValidChannelId(authorId)) {
+          try {
+            const info = await youtube.getBasicInfo(formatted.videoId);
+            authorId = info.basic_info?.channel_id || "";
+          } catch { return null; }
+        }
+        if (authorId !== targetId) return null;
+        return { ...formatted, authorId: targetId };
+      }));
+      const videos = verified.filter(Boolean);
       res.setHeader("Cache-Control", "no-store");
       return res.json({ videos, hasMore: Boolean(feed.has_continuation) && rawPage < 8 });
     } catch (error: any) {
