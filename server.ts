@@ -4515,6 +4515,35 @@ async function startServer() {
   const channelTabSessions = new Map<string, ChannelTabSession>();
 
   // チャンネル動画のページネーション（2ページ目以降の動画・ショート・ライブ読み込み & 並び替え対応）
+  // Search the channel itself, including videos not loaded in the channel tabs.
+  app.get("/api/channel/:id/search", async (req, res) => {
+    const id = req.params.id || "";
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+    const rawPage = Number(req.query.page || 1);
+    if (!id || id.length > 100 || !query || query.length > 100 ||
+        !Number.isInteger(rawPage) || rawPage < 1 || rawPage > 8) {
+      return res.status(400).json({ error: "検索条件を確認してください。" });
+    }
+
+    try {
+      const youtube = await getYt();
+      const channel = await youtube.getChannel(id.startsWith("UC") || id.startsWith("@") ? id : "@" + id);
+      let feed: any = await channel.search(query);
+      for (let page = 1; page < rawPage; page++) {
+        if (!feed.has_continuation) return res.json({ videos: [], hasMore: false });
+        feed = await feed.getContinuation();
+      }
+      const videos = (feed.videos || [])
+        .map((video: any) => formatVideoObject(video, channel.metadata?.title || "", id))
+        .filter((video: any) => video && video.videoId);
+      res.setHeader("Cache-Control", "no-store");
+      return res.json({ videos, hasMore: Boolean(feed.has_continuation) && rawPage < 8 });
+    } catch (error: any) {
+      console.error("[Channel search]", error?.message || error);
+      return res.status(502).json({ error: "チャンネル内の検索結果を取得できませんでした。" });
+    }
+  });
+
   app.get("/api/channel/:id/tab/:tabName", async (req, res) => {
     const { id, tabName } = req.params;
     const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
