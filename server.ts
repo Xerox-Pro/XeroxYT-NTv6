@@ -436,6 +436,20 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
+  // Temporary preview diagnostic, removed after investigation.
+  app.get('/api/preview-proxy-debug', async (req, res, next) => {
+    if (process.env.VERCEL_ENV !== 'preview') return next();
+    const url = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!isAllowedMediaUrl(url)) return res.status(400).json({error:'url'});
+    try {
+      const r = await fetch(url, {headers: {Range: 'bytes=0-1023'}, redirect:'error', signal:AbortSignal.timeout(30000)});
+      const range = r.headers.get('content-range'), type=r.headers.get('content-type');
+      const reader = r.body?.getReader(); let size=0;
+      if(reader) for (;;) {const part=await reader.read(); if(part.done)break; size += part.value.byteLength; if(size>1024){await reader.cancel(); break;}}
+      return res.json({status:r.status, range, type, size});
+    } catch(error:any) {return res.status(502).json({name:error?.name, code:error?.cause?.code, error: String(error?.message || '').slice(0,100)});}
+  });
+
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
