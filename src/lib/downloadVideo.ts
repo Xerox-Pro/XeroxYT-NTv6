@@ -7,13 +7,21 @@ type DownloadInfo = { title: string; video: Source & { height: number }; audio: 
 const CHUNK = 1024 * 1024 * 2;
 const MAX_MEDIA = 350 * 1024 * 1024;
 
-async function readSource(source: Source, progress: (loaded: number) => void): Promise<Uint8Array> {
+async function readSource(source: Source, progress: (loaded: number) => void, update: (message: string) => void): Promise<Uint8Array> {
   if (!Number.isSafeInteger(source.size) || source.size <= 0) throw new Error('ファイルサイズを確認できません。');
   const data = new Uint8Array(source.size);
   for (let offset = 0; offset < source.size; offset += CHUNK) {
     const end = Math.min(offset + CHUNK, source.size) - 1;
-    const response = await fetch(`/api/download-media?url=${encodeURIComponent(source.url)}`, { headers: { Range: `bytes=${offset}-${end}` }, credentials: 'same-origin' });
-    if (response.status !== 206) throw new Error(`動画データの取得に失敗しました（${response.status}）。`);
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch(`/api/download-media?url=${encodeURIComponent(source.url)}`, { headers: { Range: `bytes=${offset}-${end}` }, credentials: 'same-origin' });
+      if (response.status !== 429 || attempt === 2) break;
+      const waitSeconds = Math.min(90, Math.max(1, Number(response.headers.get('retry-after')) || 60));
+      await response.body?.cancel();
+      update('アクセス制限のため少し待ってから再開します…');
+      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+    }
+    if (!response || response.status !== 206) throw new Error(`動画データの取得に失敗しました（${response?.status || "通信エラー"}）。`);
     const range = response.headers.get('content-range');
     if (range !== `bytes ${offset}-${end}/${source.size}`) throw new Error('動画データの範囲を確認できませんでした。');
     const buffer = new Uint8Array(await response.arrayBuffer());
@@ -32,8 +40,8 @@ export async function downloadVideo(videoId: string, update: (message: string) =
   if (total > MAX_MEDIA) throw new Error('この動画は端末内での結合に必要な容量が大きすぎます。');
   let done = 0;
   const progress = (bytes: number) => { done += bytes; update(`映像と音声を取得中… ${Math.min(100, Math.floor(done / total * 100))}%`); };
-  const video = await readSource(info.video, progress);
-  const audio = await readSource(info.audio, progress);
+  const video = await readSource(info.video, progress, update);
+  const audio = await readSource(info.audio, progress, update);
   update(`${info.video.height}pの映像と音声を端末内で結合中…`);
   const ffmpeg = new FFmpeg();
   try {
