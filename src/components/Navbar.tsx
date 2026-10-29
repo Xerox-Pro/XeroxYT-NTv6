@@ -5,6 +5,7 @@ import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, Sparkles
 import Avatar from './Avatar';
 import { UserInfo } from '../types';
 import { PWAInstallButton } from './PWAInstallButton';
+import { useSiteAccount } from './AccountGate';
 import { parseYouTubeUrl, YouTubeUrlParseResult, fetchJSON, formatDuration } from '../utils';
 
 interface NavbarProps {
@@ -21,6 +22,7 @@ export default function Navbar({
   initialSearchQuery
 }: NavbarProps) {
   const navigate = useNavigate();
+  const account = useSiteAccount();
   const [query, setQuery] = useState(initialSearchQuery);
   const [detectedNotice, setDetectedNotice] = useState<{
     label: string;
@@ -682,6 +684,13 @@ export default function Navbar({
         >
           Xray
         </Link>
+        {account && <details className="relative">
+          <summary className="list-none cursor-pointer flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 w-9 h-9 text-gray-700" aria-label={`アカウント: ${account.username}`} title={account.username}><User size={19} /></summary>
+          <div className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-gray-200 bg-white shadow-lg p-2 z-[110]">
+            <div className="px-3 py-2 text-sm font-semibold text-gray-800 truncate">{account.username}</div>
+            <button type="button" onClick={() => void account.logout()} className="w-full px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-100 text-gray-700">ログアウト</button>
+          </div>
+        </details>}
       </div>
     </header>
   );
