@@ -6,6 +6,7 @@ type Cache = { history: Item[]; version: number; dirty: boolean };
 export const AccountContext = createContext<{ username: string; logout: () => Promise<void> } | null>(null);
 export const useSiteAccount = () => useContext(AccountContext);
 const LEGACY_KEY = 'xerox_watch_history';
+const SESSION_HINT_KEY = 'xerox_site_session_hint';
 const accountKey = (id: string) => `xerox_account_history_${id}`;
 // These values are device-local; keep them separate when accounts share a browser.
 const deviceKeys = ['xerox_youtube_credentials', 'xerox_user_info', 'xerox_subscriptions', 'xerox_user_playlists', 'xerox_ai_interests', 'xerox_video_cache'];
@@ -38,26 +39,30 @@ async function api(path: string, method = 'GET', body?: unknown) {
 }
 
 export default function AccountGate({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [phase, setPhase] = useState<'checking' | 'login' | 'loading' | 'ready' | 'error'>('checking');
+  const [cachedUser] = useState<User | null>(() => { const hint = read<User | null>(SESSION_HINT_KEY, null); return hint && typeof hint.id === 'string' && typeof hint.username === 'string' && localStorage.getItem('xerox_last_account_id') === hint.id ? hint : null; });
+  const [user, setUser] = useState<User | null>(cachedUser);
+  const [phase, setPhase] = useState<'checking' | 'login' | 'loading' | 'ready' | 'error'>(cachedUser ? 'ready' : 'checking');
   const [register, setRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [migrate, setMigrate] = useState(false);
   const [message, setMessage] = useState('');
-  const cache = useRef<Cache>({ history: [], version: 0, dirty: false });
-  const active = useRef<User | null>(null);
+  const cache = useRef<Cache>(cachedUser ? read<Cache>(accountKey(cachedUser.id), { history: [], version: 0, dirty: false }) : { history: [], version: 0, dirty: false });
+  const active = useRef<User | null>(cachedUser);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sending = useRef(false);
+  const authEpoch = useRef(0);
   const sync = useRef<() => Promise<void>>(async () => {});
 
   const persist = (u: User) => localStorage.setItem(accountKey(u.id), JSON.stringify(cache.current));
-  const initialize = useCallback(async (u: User, importLegacy = false) => {
-    setPhase('loading'); setMessage('');
+  const initialize = useCallback(async (u: User, importLegacy = false, background = false) => {
+    if (!background) setPhase('loading'); setMessage('');
+    const epoch = authEpoch.current;
     try {
       const remote = await api('/history');
-      const saved = read<Cache | null>(accountKey(u.id), null);
+      if (epoch !== authEpoch.current) return;
+      const saved = active.current?.id === u.id ? cache.current : read<Cache | null>(accountKey(u.id), null);
       let history: Item[] = Array.isArray(remote.history) ? remote.history : [];
       let dirty = false;
       if (saved?.dirty) { history = saved.version === remote.version ? saved.history : merge(saved.history, history); dirty = true; }
@@ -72,9 +77,15 @@ export default function AccountGate({ children }: { children: ReactNode }) {
       cache.current = { history, version: remote.version, dirty };
       localStorage.setItem(LEGACY_KEY, JSON.stringify(history));
       localStorage.setItem('xerox_last_account_id', u.id);
+      localStorage.setItem(SESSION_HINT_KEY, JSON.stringify(u));
       active.current = u; persist(u); setUser(u); setPhase('ready');
+      if (background) window.dispatchEvent(new CustomEvent('xerox-history-remote', { detail: history }));
       if (dirty) setTimeout(() => void sync.current(), 0);
-    } catch (err) { setUser(u); setMessage(err instanceof Error ? err.message : '履歴を読み込めませんでした。'); setPhase('error'); }
+    } catch (err: any) {
+      if (err.status === 401) { active.current = null; localStorage.removeItem(SESSION_HINT_KEY); setUser(null); setPhase('login'); setMessage('ログインの有効期限が切れました。'); }
+      else if (background) { setMessage('クラウドの履歴を確認できません。端末内の履歴を表示しています。'); }
+      else { setUser(u); setMessage(err instanceof Error ? err.message : '履歴を読み込めませんでした。'); setPhase('error'); }
+    }
   }, []);
 
   sync.current = async () => {
@@ -103,12 +114,16 @@ export default function AccountGate({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    api('/session').then(({ user: existing }) => initialize(existing)).catch((err) => {
-      if (err.status === 401) setPhase('login');
+    if (cachedUser) active.current = cachedUser;
+    const epoch = authEpoch.current;
+    api('/session').then(({ user: existing }) => { if (authEpoch.current === epoch) return initialize(existing, false, cachedUser?.id === existing.id); }).catch((err) => {
+      if (authEpoch.current !== epoch) return;
+      if (err.status === 401) { active.current = null; localStorage.removeItem(SESSION_HINT_KEY); setUser(null); setPhase('login'); }
+      else if (cachedUser) setMessage('接続を確認できません。端末内の履歴を表示しています。');
       else { setMessage('ログイン状態を確認できません。通信環境を確認してください。'); setPhase('error'); }
     });
     return () => { active.current = null; if (timer.current) clearTimeout(timer.current); };
-  }, [initialize]);
+  }, [initialize, cachedUser]);
 
   useEffect(() => {
     const changed = (event: Event) => {
@@ -136,7 +151,7 @@ export default function AccountGate({ children }: { children: ReactNode }) {
   }
   async function logout() {
     if (cache.current.dirty) { await sync.current(); if (cache.current.dirty) { setMessage('履歴の同期が完了していません。端末内には保存されています。'); return; } }
-    try { await api('/logout', 'POST', {}); active.current = null; setUser(null); setPhase('login'); setMessage(''); }
+    try { authEpoch.current++; await api('/logout', 'POST', {}); active.current = null; localStorage.removeItem(SESSION_HINT_KEY); setUser(null); setPhase('login'); setMessage(''); }
     catch { setMessage('ログアウトできませんでした。'); }
   }
   if (phase === 'ready' && user) return <AccountContext.Provider value={{ username: user.username, logout }}>{children}{message && <div role="status" className="fixed top-16 right-4 z-[200] bg-gray-900 text-white text-xs p-3 rounded-xl max-w-xs shadow-lg">{message}</div>}</AccountContext.Provider>;
