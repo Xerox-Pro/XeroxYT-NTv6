@@ -319,12 +319,24 @@ export default function VideoPlayer({
     }
   }, [activeVideo.title, isMini]);
 
-  // ダウンロード処理 (getlate.devのURLを直接別タブで開く)
-  const handleDownload = () => {
-    if (!videoId) return;
-    const directUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&formatId=2`;
-    window.open(directUrl, '_blank');
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const handleDownload = async () => {
+    if (!videoId || downloading) return;
+    setDownloading(true);
+    try {
+      const { downloadVideo } = await import('../lib/downloadVideo');
+      await downloadVideo(videoId, setDownloadStatus);
+    } catch (error) {
+      setDownloadStatus(error instanceof Error ? error.message : 'ダウンロードに失敗しました。');
+    } finally { setDownloading(false); }
   };
+
+  useEffect(() => {
+    if (!downloadStatus || downloading) return;
+    const timeout = setTimeout(() => setDownloadStatus(''), 10000);
+    return () => clearTimeout(timeout);
+  }, [downloadStatus, downloading]);
 
   // Watch duration tracker
   const watchSecondsRef = useRef<number>(0);
@@ -1355,12 +1367,14 @@ export default function VideoPlayer({
               <motion.button 
                 onClick={handleDownload}
                 whileTap={{ scale: 0.92 }}
-                title="動画をダウンロード"
+                disabled={downloading}
+                title={downloadStatus || "動画をダウンロード"}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
                 <Download size={15} />
-                <span>ダウンロード</span>
+                <span>{downloading ? "処理中…" : "ダウンロード"}</span>
               </motion.button>
+              {downloadStatus && <span role="status" className="text-xs text-gray-600">{downloadStatus}</span>}
 
               <motion.button 
                 onClick={handleReloadPlayer}
