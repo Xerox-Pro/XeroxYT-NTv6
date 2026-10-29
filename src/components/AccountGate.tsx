@@ -5,6 +5,19 @@ type User = { id: string; username: string };
 type Cache = { history: Item[]; version: number; dirty: boolean };
 const LEGACY_KEY = 'xerox_watch_history';
 const accountKey = (id: string) => `xerox_account_history_${id}`;
+// These values are device-local; keep them separate when accounts share a browser.
+const deviceKeys = ['xerox_youtube_credentials', 'xerox_user_info', 'xerox_subscriptions', 'xerox_user_playlists', 'xerox_ai_interests', 'xerox_video_cache'];
+function switchDeviceAccount(id: string) {
+  const previous = localStorage.getItem('xerox_last_account_id');
+  if (previous === id) return;
+  for (const key of deviceKeys) {
+    const old = localStorage.getItem(key);
+    if (old !== null) localStorage.setItem(`xerox_device_${previous || 'legacy'}_${key}`, old);
+    const next = localStorage.getItem(`xerox_device_${id}_${key}`);
+    if (next === null) localStorage.removeItem(key); else localStorage.setItem(key, next);
+  }
+}
+
 const read = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || '') as T; } catch { return fallback; } };
 const merge = (...lists: Item[][]): Item[] => {
   const seen = new Map<string, Item>();
@@ -51,6 +64,7 @@ export default function AccountGate({ children }: { children: ReactNode }) {
         localStorage.setItem('xerox_legacy_history_backup', JSON.stringify(legacy));
         history = merge(history, Array.isArray(legacy) ? legacy : []); dirty = true;
       }
+      switchDeviceAccount(u.id);
       cache.current = { history, version: remote.version, dirty };
       localStorage.setItem(LEGACY_KEY, JSON.stringify(history));
       localStorage.setItem('xerox_last_account_id', u.id);

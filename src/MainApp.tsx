@@ -633,7 +633,6 @@ export default function MainApp() {
     localStorage.removeItem('webauthn_credential_id');
     setUserInfo(null);
     setSubscriptions([]);
-    setWatchHistory([]);
     setYoutubePlaylists([]);
     setWatchLaterVideos([]);
     setNotifications([]);
@@ -1113,21 +1112,12 @@ export default function MainApp() {
               </div>
             ) : (
               <HistoryPage
-                history={localStorage.getItem('xerox_youtube_credentials') ? youtubeHistory : watchHistory}
+                history={[...watchHistory, ...youtubeHistory.filter(item => !watchHistory.some(local => local.videoId === item.videoId))].sort((a, b) => b.timestamp - a.timestamp)}
                 onVideoSelect={(id) => handleVideoSelect(id)}
-                onClearHistory={() => {
-                  if (localStorage.getItem('xerox_youtube_credentials')) {
-                    setYoutubeHistory([]);
-                  } else {
-                    setWatchHistory([]);
-                  }
-                }}
+                onClearHistory={() => { setWatchHistory([]); setYoutubeHistory([]); }}
                 onRemoveHistoryItem={(id) => {
-                  if (localStorage.getItem('xerox_youtube_credentials')) {
-                    setYoutubeHistory(prev => prev.filter(i => i.videoId !== id));
-                  } else {
-                    setWatchHistory(prev => prev.filter(i => i.videoId !== id));
-                  }
+                  setWatchHistory(prev => prev.filter(i => i.videoId !== id));
+                  setYoutubeHistory(prev => prev.filter(i => i.videoId !== id));
                 }}
                 onSelectChannel={handleSelectChannel}
               />

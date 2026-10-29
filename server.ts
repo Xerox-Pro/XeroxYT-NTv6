@@ -445,6 +445,9 @@ async function startServer() {
       });
       if (session.status === 401) return res.status(401).json({ error: 'ログインが必要です。' });
       if (!session.ok) return res.status(503).json({ error: '認証サービスに接続できません。' });
+      const account = await session.json() as { user?: { id?: string } };
+      if (!account.user?.id) return res.status(401).json({ error: 'ログインが必要です。' });
+      res.locals.siteAccountId = account.user.id;
       return next();
     } catch {
       return res.status(503).json({ error: '認証サービスに接続できません。' });
@@ -1052,12 +1055,10 @@ async function startServer() {
   });
 
   // YouTubei.js Login API
-  let currentAuthFlow: any = null;
-  let authFlowExpiry: number = 0;
+  const authFlows = new Map<string, { flow: any; expires: number }>();
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
-      lastCredentials = null; // Reset lastCredentials
       const youtube = await getYt();
       
       // Load client ID if not already loaded
@@ -1083,7 +1084,7 @@ async function startServer() {
       const code_obj = response.data;
       console.log("[Auth] Direct device code generated via Google APIs:", code_obj.user_code);
 
-      currentAuthFlow = {
+      const currentAuthFlow = {
         device_code: code_obj.device_code,
         user_code: code_obj.user_code,
         verification_url: code_obj.verification_url,
@@ -1092,7 +1093,7 @@ async function startServer() {
           client_secret: clientSecret
         }
       };
-      authFlowExpiry = Date.now() + (code_obj.expires_in || 1800) * 1000;
+      authFlows.set(res.locals.siteAccountId, { flow: currentAuthFlow, expires: Date.now() + (code_obj.expires_in || 1800) * 1000 });
 
       res.setHeader("Cache-Control", "no-store");
       return res.json({
@@ -1111,7 +1112,9 @@ async function startServer() {
   });
 
   app.get("/api/auth/poll", async (req, res) => {
-    if (!currentAuthFlow || Date.now() > authFlowExpiry) {
+    const state = authFlows.get(res.locals.siteAccountId);
+    const currentAuthFlow = state?.flow;
+    if (!currentAuthFlow || Date.now() > state!.expires) {
       console.warn(
         `[Auth] Poll rejected: ${!currentAuthFlow ? "No flow" : "Flow expired"}`,
       );
@@ -1161,7 +1164,7 @@ async function startServer() {
         }
         
         // Clear flow state to stop polling
-        currentAuthFlow = null;
+        authFlows.delete(res.locals.siteAccountId);
         
         res.setHeader("Cache-Control", "no-store");
         return res.json({ success: false, status: "error", error: errorMessage });
@@ -1170,7 +1173,7 @@ async function startServer() {
       const tokenData = response.data;
       if (tokenData && tokenData.access_token) {
         console.log("[Auth] Token received from Google. Authenticating instance...");
-        const youtube = await getYt();
+        const youtube = await Innertube.create({ cache: new UniversalCache(false), location: "JP", lang: "ja", retrieve_player: false });
 
         const credentials = {
           access_token: tokenData.access_token,
@@ -1219,7 +1222,7 @@ async function startServer() {
 
         // Save credentials and clear flow state
         lastCredentials = credentials;
-        currentAuthFlow = null;
+        authFlows.delete(res.locals.siteAccountId);
 
         res.setHeader("Cache-Control", "no-store");
         return res.json({
@@ -1245,8 +1248,7 @@ async function startServer() {
 
   app.post("/api/auth/logout", async (req, res) => {
     try {
-      const youtube = await getYt();
-      await youtube.session.signOut();
+      authFlows.delete(res.locals.siteAccountId);
       res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
       return res.json({ success: true });
     } catch (err) {
