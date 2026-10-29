@@ -2,6 +2,17 @@
   "name": "xeroxyt-stream-proxy",
   "main": "worker.mjs",
   "compatibility_date": "2026-10-28",
-  "d1_databases": [{"binding":"DB","database_name":"xeroxyt-accounts","database_id":"7bf1a341-ca3c-426a-b4dd-07da4a8d2528"}],
-  "observability": {"enabled": true}
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "xeroxyt-accounts",
+      "database_id": "7bf1a341-ca3c-426a-b4dd-07da4a8d2528"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  },
+  "placement": {
+    "region": "aws:us-west-1"
+  }
 }

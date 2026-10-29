@@ -436,31 +436,6 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-  // Temporary preview-only diagnostic, removed after testing.
-  app.get('/api/preview-network-check', async (_req, res, next) => {
-    if (process.env.VERCEL_ENV !== 'preview') return next();
-    try {
-      const username = `previewdiag_${crypto.randomBytes(6).toString('hex')}`;
-      const registration = await fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/register', { method:'POST', headers:{'Content-Type':'application/json',Origin:'https://xeroxapp044.vercel.app'}, body:JSON.stringify({username,password:crypto.randomBytes(24).toString('hex')}) });
-      const cookie = registration.headers.get('set-cookie')?.split(';')[0];
-      if (!registration.ok || !cookie) return res.status(502).json({step:'registration', status:registration.status, username});
-      const yt = await Innertube.create({cache:new UniversalCache(false),location:'JP',lang:'ja',retrieve_player:true,generate_session_locally:true,fetch:(input,init)=>youtubeProxyFetch(input,init,cookie)});
-      const info = await yt.getBasicInfo('Byl70gUSzD4',{client:'IOS'});
-      const formats = info.streaming_data?.adaptive_formats || [];
-      const video = formats.find(f=>f.has_video && !f.has_audio && f.height===1080 && f.mime_type.includes('avc1') && !!f.url);
-      const audio = formats.find(f=>f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && f.itag===140 && !!f.url);
-      if (!video || !audio) return res.json({step:'format',username,status:info.playability_status?.status,reason:info.playability_status?.reason,count:formats.length});
-      const checks = [];
-      for (const item of [video,audio]) {
-        const url = await item.decipher(yt.session.player);
-        const response = await youtubeProxyFetch(url,{headers:{Range:'bytes=0-1023'}},cookie);
-        const range=response.headers.get('content-range');const bytes=(await response.arrayBuffer()).byteLength;
-        checks.push({kind:item.has_video?'video':'audio',status:response.status,range,bytes});
-      }
-      return res.json({step:'complete',username,checks});
-    } catch(e:any) { return res.status(502).json({step:'exception',error:String(e?.message||'error').slice(0,100)}); }
-  });
-
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
@@ -3156,7 +3131,7 @@ async function startServer() {
           if (info.playability_status?.status === 'LOGIN_REQUIRED') accessRestricted = true;
           const formats = info.streaming_data?.adaptive_formats || [];
           const videos = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate);
-          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => b.bitrate - a.bitrate);
+          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => Number(!!b.audio_track?.audio_is_default || !!b.is_original) - Number(!!a.audio_track?.audio_is_default || !!a.is_original) || b.bitrate - a.bitrate);
           if (!videos.length || !audios.length) continue;
           const video = videos[0], audio = audios[0];
           const [videoUrl, audioUrl] = await Promise.all([video.decipher(youtube.session.player), audio.decipher(youtube.session.player)]);
