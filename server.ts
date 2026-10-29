@@ -436,6 +436,21 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
+  // Follow only redirects to Google's media hosts; never proxy arbitrary URLs.
+  async function fetchMedia(initialUrl: string, range: string) {
+    let current = initialUrl;
+    for (let i = 0; i < 5; i++) {
+      if (!isAllowedMediaUrl(current)) throw new Error('Invalid media redirect');
+      const response = await fetch(current, {headers: {Range: range}, redirect:'manual', signal:AbortSignal.timeout(30000)});
+      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location) throw new Error('Missing media redirect');
+      current = new URL(location, current).href;
+    }
+    throw new Error('Too many media redirects');
+  }
+
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
@@ -3138,7 +3153,7 @@ async function startServer() {
     const start = Number(range[1]), end = Number(range[2]);
     if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 2 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
     try {
-      const upstream = await fetch(url, { headers: { Range: `bytes=${start}-${end}` }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+      const upstream = await fetchMedia(url, `bytes=${start}-${end}`);
       const contentRange = upstream.headers.get('content-range');
       const contentType = upstream.headers.get('content-type') || '';
       if (upstream.status !== 206 || !contentRange?.startsWith(`bytes ${start}-${end}/`) || !/^(video|audio)\//i.test(contentType)) {
