@@ -436,29 +436,6 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-  // Temporary preview diagnostic, removed before publishing.
-  app.get('/api/preview-source-test', async (_req, res, next) => {
-    if (process.env.VERCEL_ENV !== 'preview') return next();
-    try {
-      const yt = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true });
-      const info = await yt.getBasicInfo('dQw4w9WgXcQ', {client: 'IOS'});
-      const format = info.streaming_data?.adaptive_formats?.find(f => f.height === 1080 && f.mime_type.includes('avc1') && !!f.url);
-      if (!format) return res.status(422).json({error: 'no format'});
-      return res.json({url: await format.decipher(yt.session.player)});
-    } catch { return res.status(502).json({error: 'source unavailable'}); }
-  });
-  app.get('/api/preview-range-test', async (req, res, next) => {
-    if (process.env.VERCEL_ENV !== 'preview') return next();
-    const url = typeof req.query.url === 'string' ? req.query.url : '';
-    if (!isAllowedMediaUrl(url)) return res.sendStatus(400);
-    try {
-      const upstream = await fetch(url, {headers: {Range: 'bytes=0-1023'}, redirect: 'error', signal: AbortSignal.timeout(15000)});
-      const result = {status: upstream.status, type: upstream.headers.get('content-type'), range: upstream.headers.get('content-range')};
-      await upstream.body?.cancel();
-      return res.json(result);
-    } catch {return res.status(502).json({error:'fetch failed'});}
-  });
-
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
