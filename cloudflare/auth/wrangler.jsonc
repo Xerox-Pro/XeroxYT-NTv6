@@ -1,0 +1,8 @@
+{
+  "name": "xeroxyt-account",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-28",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [{"binding": "DB", "database_name": "xeroxyt-accounts", "database_id": "7bf1a341-ca3c-426a-b4dd-07da4a8d2528"}],
+  "vars": {"ALLOWED_ORIGINS": "https://xeroxapp044.vercel.app,https://xerox-yt-n-tv6-one.vercel.app"}
+}

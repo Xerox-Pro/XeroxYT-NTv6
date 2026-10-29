@@ -436,6 +436,21 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
+  // The account Worker validates the session before access to site APIs and streams.
+  app.use(async (req, res, next) => {
+    if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
+    try {
+      const session = await fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/session', {
+        headers: { cookie: req.headers.cookie || '' }, signal: AbortSignal.timeout(5000)
+      });
+      if (session.status === 401) return res.status(401).json({ error: 'ログインが必要です。' });
+      if (!session.ok) return res.status(503).json({ error: '認証サービスに接続できません。' });
+      return next();
+    } catch {
+      return res.status(503).json({ error: '認証サービスに接続できません。' });
+    }
+  });
+
   // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
   app.use((req, res, next) => {
     const userAgent = (req.headers["user-agent"] || "").toLowerCase();
@@ -895,98 +910,8 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  app.post("/api/sync/save", async (req, res) => {
-    const { credentialId, data } = req.body;
-    if (!credentialId || !data) return res.status(400).send("Missing args");
-
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
-    }
-
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const encryptedPayload = encryptData(data);
-      const fileContent = Buffer.from(
-        JSON.stringify(encryptedPayload),
-      ).toString("base64");
-
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      let sha: string | undefined = undefined;
-      try {
-        const getRes = await axios.get(url, { headers: getGithubHeaders() });
-        sha = getRes.data.sha;
-      } catch (e: any) {
-        if (e.response?.status !== 404) throw e;
-      }
-
-      await axios.put(
-        url,
-        {
-          message: `Sync data for ${hashedId}`,
-          content: fileContent,
-          sha,
-        },
-        { headers: getGithubHeaders() },
-      );
-
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error("Save error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to save to GitHub" });
-    }
-  });
-
-  app.post("/api/sync/load", async (req, res) => {
-    const { credentialId } = req.body;
-    if (!credentialId) return res.status(400).send("Missing args");
-
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
-    }
-
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      const getRes = await axios.get(url, { headers: getGithubHeaders() });
-      const encryptedPayload = JSON.parse(
-        Buffer.from(getRes.data.content, "base64").toString("utf8"),
-      );
-
-      const data = decryptData(encryptedPayload);
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true, data });
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-        return res.json({ success: true, data: null }); // No existing data
-      }
-      console.error("Load error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to load from GitHub" });
-    }
-  });
+  // The legacy credential-id-only sync did not verify identity.
+  app.post(["/api/sync/save", "/api/sync/load"], (_req, res) => res.status(410).json({ error: "Legacy sync disabled" }));
 
   // Request logger
   app.use((req, res, next) => {

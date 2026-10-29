@@ -316,42 +316,6 @@ export default function MainApp() {
     }
   };
 
-  const [isSyncing, setIsSyncing] = useState(false);
-  const skipNextSync = useRef(false);
-
-  useEffect(() => {
-    const initSync = async () => {
-      const credentialId = localStorage.getItem('webauthn_credential_id');
-      if (credentialId) {
-        setUserInfo({ 
-          name: 'Sync User', 
-          email: 'Logged in with TouchID',
-          avatar: `https://ui-avatars.com/api/?name=User&background=random`
-        });
-        setIsSyncing(true);
-        try {
-          const res = await fetchJSON('/api/sync/load', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credentialId })
-          });
-          if (res.data) {
-            skipNextSync.current = true;
-            if (res.data.subscriptions) setSubscriptions(res.data.subscriptions);
-            if (res.data.watchHistory) setWatchHistory(res.data.watchHistory);
-            if (res.data.userPlaylists) setPlaylists(res.data.userPlaylists);
-            setTimeout(() => { skipNextSync.current = false; }, 1000);
-          }
-        } catch (e) {
-          console.error('Initial sync failed', e);
-        } finally {
-          setIsSyncing(false);
-        }
-      }
-    };
-    initSync();
-  }, []);
-
   useEffect(() => {
     if (view === 'history') {
       const ytCreds = localStorage.getItem('xerox_youtube_credentials');
@@ -381,36 +345,21 @@ export default function MainApp() {
     }
   }, [view, userInfo]);
 
-  const performServerSync = async (data: any) => {
-    const credentialId = localStorage.getItem('webauthn_credential_id');
-    if (!credentialId || skipNextSync.current) return;
-    try {
-      await fetchJSON('/api/sync/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credentialId, data })
-      });
-    } catch (e) {
-      console.error('Failed to sync to server', e);
-    }
-  };
-
   useEffect(() => {
     try {
       localStorage.setItem('xerox_subscriptions', JSON.stringify(subscriptions));
     } catch (e) {
       console.error(e);
     }
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [subscriptions]);
 
   useEffect(() => {
     try {
       localStorage.setItem('xerox_watch_history', JSON.stringify(watchHistory));
+      window.dispatchEvent(new CustomEvent('xerox-history-change', { detail: watchHistory }));
     } catch (e) {
       console.error(e);
     }
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [watchHistory]);
 
   useEffect(() => {
@@ -419,8 +368,13 @@ export default function MainApp() {
     } catch (e) {
       console.error(e);
     }
-    performServerSync({ subscriptions, watchHistory, userPlaylists: playlists });
   }, [playlists]);
+
+  useEffect(() => {
+    const onRemote = (event: Event) => setWatchHistory((event as CustomEvent<WatchHistoryItem[]>).detail);
+    window.addEventListener('xerox-history-remote', onRemote);
+    return () => window.removeEventListener('xerox-history-remote', onRemote);
+  }, []);
 
   // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {

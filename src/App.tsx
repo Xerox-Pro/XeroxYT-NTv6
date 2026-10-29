@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import MainApp from './MainApp';
+import AccountGate from './components/AccountGate';
 import PWAUpdateIndicator from './components/PWAUpdateIndicator';
 
 export default function App() {
@@ -18,7 +19,7 @@ export default function App() {
     <>
       <PWAUpdateIndicator />
       <Routes>
-        <Route path="/*" element={<MainApp />} />
+        <Route path="/*" element={<AccountGate><MainApp /></AccountGate>} />
       </Routes>
     </>
   );
