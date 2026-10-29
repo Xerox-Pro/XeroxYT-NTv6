@@ -58,10 +58,12 @@ export default function AccountGate({ children }: { children: ReactNode }) {
       const saved = read<Cache | null>(accountKey(u.id), null);
       let history: Item[] = Array.isArray(remote.history) ? remote.history : [];
       let dirty = false;
-      if (saved?.dirty) { history = merge(saved.history, history); dirty = true; }
-      if (importLegacy) {
-        const legacy = read<Item[]>(LEGACY_KEY, []);
+      if (saved?.dirty) { history = saved.version === remote.version ? saved.history : merge(saved.history, history); dirty = true; }
+      const legacy = read<Item[]>(LEGACY_KEY, []);
+      if (!localStorage.getItem('xerox_last_account_id') && !localStorage.getItem('xerox_legacy_history_backup')) {
         localStorage.setItem('xerox_legacy_history_backup', JSON.stringify(legacy));
+      }
+      if (importLegacy) {
         history = merge(history, Array.isArray(legacy) ? legacy : []); dirty = true;
       }
       switchDeviceAccount(u.id);
