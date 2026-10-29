@@ -451,6 +451,27 @@ async function startServer() {
     throw new Error('Too many media redirects');
   }
 
+  // Preview-only diagnostic for troubleshooting upstream format extraction.
+  app.get('/api/preview-format-debug', async (req, res, next) => {
+    if (process.env.VERCEL_ENV !== 'preview') return next();
+    const id = String(req.query.id || '');
+    if (!['Byl70gUSzD4','4mGVkTCx2ls','JW3N-HvU0MA','dQw4w9WgXcQ'].includes(id)) return res.sendStatus(400);
+    const results = [];
+    try {
+      const youtube = await Innertube.create({cache:new UniversalCache(false), location:'JP',lang:'ja',retrieve_player:true});
+      for (const client of ['IOS','ANDROID_VR','WEB','TV','WEB_EMBEDDED'] as const) {
+        try {
+          const info = await youtube.getBasicInfo(id,{client});
+          const formats = info.streaming_data?.adaptive_formats || [];
+          const video = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher));
+          const audio = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher));
+          results.push({client, status:info.playability_status?.status,reason:info.playability_status?.reason,formats:formats.length,usable:formats.filter(f=>f.url||f.signature_cipher||f.cipher).length,video:video.length,audio:audio.length});
+        } catch(e:any){ results.push({client,error:String(e?.message||'error').slice(0,150)}); }
+      }
+      return res.json({results});
+    } catch(e:any) { return res.status(502).json({error:String(e?.message||'error').slice(0,150)}); }
+  });
+
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
