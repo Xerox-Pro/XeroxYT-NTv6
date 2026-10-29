@@ -58,6 +58,6 @@ export default {
         return new Response(upstream.body,{status:upstream.status,headers:forwarded});
       }
       return errorResponse('Too many redirects',502);
-    } catch (err) { console.error('stream proxy failure', err instanceof Error ? err.name : 'unknown'); return errorResponse('Upstream unavailable',502); }
+    } catch (err) { console.error('stream proxy failure', err instanceof Error ? err.name : 'unknown'); return err?.name === 'TimeoutError' || err?.name === 'AbortError' ? errorResponse('Upstream timeout',504) : errorResponse('Upstream unavailable',502); }
   }
 };

@@ -1,4 +1,5 @@
 import express from "express";
+import { handleDownloadMedia } from "./download-media.mjs";
 import path from "path";
 import crypto from "crypto";
 import { Innertube, UniversalCache } from "youtubei.js";
@@ -3150,29 +3151,7 @@ async function startServer() {
     try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && /(^|\.)googlevideo\.com$/i.test(u.hostname); } catch { return false; }
   }
   // Small range requests keep each response within the serverless payload limit.
-  app.get('/api/download-media', async (req, res) => {
-    const url = typeof req.query.url === 'string' ? req.query.url : '';
-    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
-    if (!isAllowedMediaUrl(url) || !range) return res.status(400).json({ error: '不正なデータ要求です。' });
-    const start = Number(range[1]), end = Number(range[2]);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 4 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
-    try {
-      const upstream = await youtubeProxyFetch(url, { headers: { Range: `bytes=${start}-${end}` } }, req.headers.cookie || '');
-      const contentRange = upstream.headers.get('content-range');
-      const contentType = upstream.headers.get('content-type') || '';
-      if (upstream.status !== 206 || !contentRange?.startsWith(`bytes ${start}-${end}/`) || !/^(video|audio)\//i.test(contentType)) {
-        await upstream.body?.cancel(); return res.status(502).json({ error: '動画配信元からデータを取得できませんでした。' });
-      }
-      const expected = end - start + 1;
-      const reader = upstream.body?.getReader();
-      if (!reader) return res.status(502).json({ error: '動画データがありません。' });
-      const parts: Uint8Array[] = []; let received = 0;
-      for (;;) { const chunk = await reader.read(); if (chunk.done) break; received += chunk.value.byteLength; if (received > expected) { await reader.cancel(); return res.status(502).json({ error: '動画データが不正です。' }); } parts.push(chunk.value); }
-      if (received !== expected) return res.status(502).json({ error: '動画データが途中で切れました。' });
-      res.status(206).set({ 'Content-Type': contentType, 'Content-Range': contentRange, 'Content-Length': String(received), 'Cache-Control': 'private, no-store' });
-      return res.send(Buffer.concat(parts.map(part => Buffer.from(part))));
-    } catch { return res.status(502).json({ error: '動画配信元への接続に失敗しました。' }); }
-  });
+  app.get('/api/download-media', (req, res) => handleDownloadMedia(req, res, youtubeProxyFetch));
 
   // 動画ダウンロードプロキシ API
   app.get("/api/download-link", async (req, res) => {

@@ -11,25 +11,23 @@ const MAX_MEDIA = 700 * 1024 * 1024;
 async function readSource(source: Source, progress: (loaded: number) => void, update: (message: string) => void): Promise<Uint8Array> {
   if (!Number.isSafeInteger(source.size) || source.size <= 0) throw new Error('ファイルサイズを確認できません。');
   const data = new Uint8Array(source.size);
-  let chunk = source.mime.startsWith('audio/') ? AUDIO_CHUNK : VIDEO_CHUNK;
+  const chunk = source.mime.startsWith('audio/') ? AUDIO_CHUNK : VIDEO_CHUNK;
   let offset = 0;
   while (offset < source.size) {
     const end = Math.min(offset + chunk, source.size) - 1;
-    let response: Response | undefined;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      response = await fetch(`/api/download-media?url=${encodeURIComponent(source.url)}`, { headers: { Range: `bytes=${offset}-${end}` }, credentials: 'same-origin' });
-      if (response.status !== 429 || attempt === 2) break;
-      const waitSeconds = Math.min(90, Math.max(1, Number(response.headers.get('retry-after')) || 60));
-      await response.body?.cancel();
-      update('アクセス制限のため少し待ってから再開します…');
-      await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
+    let response: Response;
+    try {
+      response = await fetch(`/api/download-media?url=${encodeURIComponent(source.url)}`, { headers: { Range: `bytes=${offset}-${end}` }, credentials: 'same-origin', signal: AbortSignal.timeout(45000) });
+    } catch (error) {
+      if (error instanceof DOMException && (error.name === 'TimeoutError' || error.name === 'AbortError')) throw new Error('データの取得がタイムアウトしました。もう一度お試しください。');
+      throw new Error('通信に失敗しました。接続を確認してください。');
     }
-    if (response?.status === 502 && chunk > 128 * 1024) {
-      await response.body?.cancel();
-      chunk = Math.floor(chunk / 2);
-      continue;
+    if (response.status !== 206) {
+      let detail: { error?: string } = {};
+      try { detail = await response.json(); } catch { /* Non-JSON gateway errors */ }
+      const fallback = response.status === 403 ? '配信元がアクセスを拒否しました（403）。' : response.status === 504 ? '配信元への接続がタイムアウトしました（504）。' : response.status === 502 ? '配信元からのデータ取得に失敗しました（502）。' : `データの取得に失敗しました（${response.status}）。`;
+      throw new Error(`${source.mime.startsWith('audio/') ? '音声' : '映像'}: ${detail.error || fallback}`);
     }
-    if (!response || response.status !== 206) throw new Error(`動画データの取得に失敗しました（${response?.status || '通信エラー'}）。`);
     const range = response.headers.get('content-range');
     if (range !== `bytes ${offset}-${end}/${source.size}`) throw new Error('動画データの範囲を確認できませんでした。');
     const buffer = new Uint8Array(await response.arrayBuffer());

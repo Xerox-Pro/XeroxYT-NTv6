@@ -25,3 +25,13 @@ test('forwards allowed ranges and rejects redirects to untrusted hosts', async (
     assert.equal(ok.status,206); assert.equal(ok.headers.get('content-range'),'bytes 0-1023/2000'); assert.equal((await ok.arrayBuffer()).byteLength,1024);
   } finally {globalThis.fetch=original;}
 });
+
+test('preserves upstream access denial and reports timeouts separately', async () => {
+  const original = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => new Response('forbidden', {status:403});
+    assert.equal((await worker.fetch(post({url:'https://x.googlevideo.com/videoplayback',headers:{range:'bytes=0-3'}}),env)).status,403);
+    globalThis.fetch = async () => { throw new DOMException('timeout', 'TimeoutError'); };
+    assert.equal((await worker.fetch(post({url:'https://x.googlevideo.com/videoplayback',headers:{range:'bytes=0-3'}}),env)).status,504);
+  } finally { globalThis.fetch = original; }
+});
