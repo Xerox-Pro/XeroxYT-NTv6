@@ -436,40 +436,29 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-  // Follow only redirects to Google's media hosts; never proxy arbitrary URLs.
-  async function fetchMedia(initialUrl: string, range: string) {
-    let current = initialUrl;
-    for (let i = 0; i < 5; i++) {
-      if (!isAllowedMediaUrl(current)) throw new Error('Invalid media redirect');
-      const response = await fetch(current, {headers: {Range: range}, redirect:'manual', signal:AbortSignal.timeout(30000)});
-      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-      const location = response.headers.get('location');
-      await response.body?.cancel();
-      if (!location) throw new Error('Missing media redirect');
-      current = new URL(location, current).href;
-    }
-    throw new Error('Too many media redirects');
-  }
-
-  // Preview-only diagnostic for troubleshooting upstream format extraction.
-  app.get('/api/preview-format-debug', async (req, res, next) => {
+  // Temporary preview-only diagnostic, removed after testing.
+  app.get('/api/preview-network-check', async (_req, res, next) => {
     if (process.env.VERCEL_ENV !== 'preview') return next();
-    const id = String(req.query.id || '');
-    if (!['Byl70gUSzD4','4mGVkTCx2ls','JW3N-HvU0MA','dQw4w9WgXcQ'].includes(id)) return res.sendStatus(400);
-    const results = [];
     try {
-      const youtube = await Innertube.create({cache:new UniversalCache(false), location:'JP',lang:'ja',retrieve_player:true});
-      for (const client of ['IOS','ANDROID_VR','WEB','TV','WEB_EMBEDDED'] as const) {
-        try {
-          const info = await youtube.getBasicInfo(id,{client});
-          const formats = info.streaming_data?.adaptive_formats || [];
-          const video = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher));
-          const audio = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher));
-          results.push({client, status:info.playability_status?.status,reason:info.playability_status?.reason,formats:formats.length,usable:formats.filter(f=>f.url||f.signature_cipher||f.cipher).length,video:video.length,audio:audio.length});
-        } catch(e:any){ results.push({client,error:String(e?.message||'error').slice(0,150)}); }
+      const username = `previewdiag_${crypto.randomBytes(6).toString('hex')}`;
+      const registration = await fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/register', { method:'POST', headers:{'Content-Type':'application/json',Origin:'https://xeroxapp044.vercel.app'}, body:JSON.stringify({username,password:crypto.randomBytes(24).toString('hex')}) });
+      const cookie = registration.headers.get('set-cookie')?.split(';')[0];
+      if (!registration.ok || !cookie) return res.status(502).json({step:'registration', status:registration.status, username});
+      const yt = await Innertube.create({cache:new UniversalCache(false),location:'JP',lang:'ja',retrieve_player:true,generate_session_locally:true,fetch:(input,init)=>youtubeProxyFetch(input,init,cookie)});
+      const info = await yt.getBasicInfo('Byl70gUSzD4',{client:'IOS'});
+      const formats = info.streaming_data?.adaptive_formats || [];
+      const video = formats.find(f=>f.has_video && !f.has_audio && f.height===1080 && f.mime_type.includes('avc1') && !!f.url);
+      const audio = formats.find(f=>f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && f.itag===140 && !!f.url);
+      if (!video || !audio) return res.json({step:'format',username,status:info.playability_status?.status,reason:info.playability_status?.reason,count:formats.length});
+      const checks = [];
+      for (const item of [video,audio]) {
+        const url = await item.decipher(yt.session.player);
+        const response = await youtubeProxyFetch(url,{headers:{Range:'bytes=0-1023'}},cookie);
+        const range=response.headers.get('content-range');const bytes=(await response.arrayBuffer()).byteLength;
+        checks.push({kind:item.has_video?'video':'audio',status:response.status,range,bytes});
       }
-      return res.json({results});
-    } catch(e:any) { return res.status(502).json({error:String(e?.message||'error').slice(0,150)}); }
+      return res.json({step:'complete',username,checks});
+    } catch(e:any) { return res.status(502).json({step:'exception',error:String(e?.message||'error').slice(0,100)}); }
   });
 
   // The account Worker validates the session before access to site APIs and streams.
@@ -3139,15 +3128,32 @@ async function startServer() {
     res.send(playerUrl);
   });
 
+  // Route YouTube metadata and media requests through the authenticated Cloudflare Worker.
+  async function youtubeProxyFetch(input: RequestInfo | URL, init: RequestInit | undefined, cookie: string): Promise<Response> {
+    const original = new Request(input, init);
+    const payload = {
+      url: original.url,
+      method: original.method,
+      headers: Object.fromEntries(original.headers.entries()),
+      ...(original.method === 'POST' ? { body: await original.text() } : {}),
+    };
+    return fetch('https://xeroxyt-stream-proxy.2026-97th.workers.dev/fetch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(40000),
+    });
+  }
+
   // Resolve separate MP4 video and AAC audio streams. Each candidate must contain a real URL.
   app.get('/api/download-formats/:id', async (req, res) => {
     const videoId = req.params.id;
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return res.status(400).json({ error: '動画IDが不正です。' });
     try {
-      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true });
+      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true, generate_session_locally: true, fetch: (input, init) => youtubeProxyFetch(input, init, req.headers.cookie || '') });
+      let accessRestricted = false;
       for (const client of ['IOS', 'ANDROID_VR'] as const) {
         try {
           const info = await youtube.getBasicInfo(videoId, { client });
+          if (info.playability_status?.status === 'LOGIN_REQUIRED') accessRestricted = true;
           const formats = info.streaming_data?.adaptive_formats || [];
           const videos = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate);
           const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => b.bitrate - a.bitrate);
@@ -3159,7 +3165,9 @@ async function startServer() {
           return res.json({ title: info.basic_info.title || videoId, video: { url: videoUrl, size: video.content_length, itag: video.itag, mime: video.mime_type, height: video.height }, audio: { url: audioUrl, size: audio.content_length, itag: audio.itag, mime: audio.mime_type } });
         } catch (err) { console.warn('Download format lookup failed for client', client); }
       }
-      return res.status(422).json({ error: 'この動画の映像と音声を取得できませんでした。' });
+      return accessRestricted
+        ? res.status(503).json({ error: 'YouTube側がプロキシからの取得を制限しています。時間をおいて再試行してください。' })
+        : res.status(422).json({ error: 'この動画で利用できる映像または音声が見つかりませんでした。' });
     } catch { return res.status(502).json({ error: '動画情報の取得に失敗しました。' }); }
   });
 
@@ -3172,9 +3180,9 @@ async function startServer() {
     const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
     if (!isAllowedMediaUrl(url) || !range) return res.status(400).json({ error: '不正なデータ要求です。' });
     const start = Number(range[1]), end = Number(range[2]);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 2 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 4 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
     try {
-      const upstream = await fetchMedia(url, `bytes=${start}-${end}`);
+      const upstream = await youtubeProxyFetch(url, { headers: { Range: `bytes=${start}-${end}` } }, req.headers.cookie || '');
       const contentRange = upstream.headers.get('content-range');
       const contentType = upstream.headers.get('content-type') || '';
       if (upstream.status !== 206 || !contentRange?.startsWith(`bytes ${start}-${end}/`) || !/^(video|audio)\//i.test(contentType)) {
