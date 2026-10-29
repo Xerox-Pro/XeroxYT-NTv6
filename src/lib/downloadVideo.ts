@@ -4,14 +4,17 @@ import wasmURL from '@ffmpeg/core/wasm?url';
 
 type Source = { url: string; size: number; itag: number; mime: string };
 type DownloadInfo = { title: string; video: Source & { height: number }; audio: Source };
-const CHUNK = 1024 * 1024 * 2;
-const MAX_MEDIA = 350 * 1024 * 1024;
+const VIDEO_CHUNK = 1024 * 1024 * 4;
+const AUDIO_CHUNK = 1024 * 1024;
+const MAX_MEDIA = 700 * 1024 * 1024;
 
 async function readSource(source: Source, progress: (loaded: number) => void, update: (message: string) => void): Promise<Uint8Array> {
   if (!Number.isSafeInteger(source.size) || source.size <= 0) throw new Error('ファイルサイズを確認できません。');
   const data = new Uint8Array(source.size);
-  for (let offset = 0; offset < source.size; offset += CHUNK) {
-    const end = Math.min(offset + CHUNK, source.size) - 1;
+  let chunk = source.mime.startsWith('audio/') ? AUDIO_CHUNK : VIDEO_CHUNK;
+  let offset = 0;
+  while (offset < source.size) {
+    const end = Math.min(offset + chunk, source.size) - 1;
     let response: Response | undefined;
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(`/api/download-media?url=${encodeURIComponent(source.url)}`, { headers: { Range: `bytes=${offset}-${end}` }, credentials: 'same-origin' });
@@ -21,12 +24,17 @@ async function readSource(source: Source, progress: (loaded: number) => void, up
       update('アクセス制限のため少し待ってから再開します…');
       await new Promise(resolve => setTimeout(resolve, waitSeconds * 1000));
     }
-    if (!response || response.status !== 206) throw new Error(`動画データの取得に失敗しました（${response?.status || "通信エラー"}）。`);
+    if (response?.status === 502 && chunk > 128 * 1024) {
+      await response.body?.cancel();
+      chunk = Math.floor(chunk / 2);
+      continue;
+    }
+    if (!response || response.status !== 206) throw new Error(`動画データの取得に失敗しました（${response?.status || '通信エラー'}）。`);
     const range = response.headers.get('content-range');
     if (range !== `bytes ${offset}-${end}/${source.size}`) throw new Error('動画データの範囲を確認できませんでした。');
     const buffer = new Uint8Array(await response.arrayBuffer());
     if (buffer.length !== end - offset + 1) throw new Error('動画データが途中で切れました。');
-    data.set(buffer, offset); progress(buffer.length);
+    data.set(buffer, offset); progress(buffer.length); offset += buffer.length;
   }
   return data;
 }

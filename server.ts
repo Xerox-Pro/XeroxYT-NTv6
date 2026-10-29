@@ -436,21 +436,6 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
-  // Follow only redirects to Google's media hosts; never proxy arbitrary URLs.
-  async function fetchMedia(initialUrl: string, range: string) {
-    let current = initialUrl;
-    for (let i = 0; i < 5; i++) {
-      if (!isAllowedMediaUrl(current)) throw new Error('Invalid media redirect');
-      const response = await fetch(current, {headers: {Range: range}, redirect:'manual', signal:AbortSignal.timeout(30000)});
-      if (![301, 302, 303, 307, 308].includes(response.status)) return response;
-      const location = response.headers.get('location');
-      await response.body?.cancel();
-      if (!location) throw new Error('Missing media redirect');
-      current = new URL(location, current).href;
-    }
-    throw new Error('Too many media redirects');
-  }
-
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
@@ -3118,18 +3103,35 @@ async function startServer() {
     res.send(playerUrl);
   });
 
+  // Route YouTube metadata and media requests through the authenticated Cloudflare Worker.
+  async function youtubeProxyFetch(input: RequestInfo | URL, init: RequestInit | undefined, cookie: string): Promise<Response> {
+    const original = new Request(input, init);
+    const payload = {
+      url: original.url,
+      method: original.method,
+      headers: Object.fromEntries(original.headers.entries()),
+      ...(original.method === 'POST' ? { body: await original.text() } : {}),
+    };
+    return fetch('https://xeroxyt-stream-proxy.2026-97th.workers.dev/fetch', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
+      body: JSON.stringify(payload), signal: AbortSignal.timeout(40000),
+    });
+  }
+
   // Resolve separate MP4 video and AAC audio streams. Each candidate must contain a real URL.
   app.get('/api/download-formats/:id', async (req, res) => {
     const videoId = req.params.id;
     if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return res.status(400).json({ error: '動画IDが不正です。' });
     try {
-      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true });
+      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true, generate_session_locally: true, fetch: (input, init) => youtubeProxyFetch(input, init, req.headers.cookie || '') });
+      let accessRestricted = false;
       for (const client of ['IOS', 'ANDROID_VR'] as const) {
         try {
           const info = await youtube.getBasicInfo(videoId, { client });
+          if (info.playability_status?.status === 'LOGIN_REQUIRED') accessRestricted = true;
           const formats = info.streaming_data?.adaptive_formats || [];
           const videos = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate);
-          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => b.bitrate - a.bitrate);
+          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => Number(!!b.audio_track?.audio_is_default || !!b.is_original) - Number(!!a.audio_track?.audio_is_default || !!a.is_original) || b.bitrate - a.bitrate);
           if (!videos.length || !audios.length) continue;
           const video = videos[0], audio = audios[0];
           const [videoUrl, audioUrl] = await Promise.all([video.decipher(youtube.session.player), audio.decipher(youtube.session.player)]);
@@ -3138,7 +3140,9 @@ async function startServer() {
           return res.json({ title: info.basic_info.title || videoId, video: { url: videoUrl, size: video.content_length, itag: video.itag, mime: video.mime_type, height: video.height }, audio: { url: audioUrl, size: audio.content_length, itag: audio.itag, mime: audio.mime_type } });
         } catch (err) { console.warn('Download format lookup failed for client', client); }
       }
-      return res.status(422).json({ error: 'この動画の映像と音声を取得できませんでした。' });
+      return accessRestricted
+        ? res.status(503).json({ error: 'YouTube側がプロキシからの取得を制限しています。時間をおいて再試行してください。' })
+        : res.status(422).json({ error: 'この動画で利用できる映像または音声が見つかりませんでした。' });
     } catch { return res.status(502).json({ error: '動画情報の取得に失敗しました。' }); }
   });
 
@@ -3151,9 +3155,9 @@ async function startServer() {
     const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
     if (!isAllowedMediaUrl(url) || !range) return res.status(400).json({ error: '不正なデータ要求です。' });
     const start = Number(range[1]), end = Number(range[2]);
-    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 2 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 4 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
     try {
-      const upstream = await fetchMedia(url, `bytes=${start}-${end}`);
+      const upstream = await youtubeProxyFetch(url, { headers: { Range: `bytes=${start}-${end}` } }, req.headers.cookie || '');
       const contentRange = upstream.headers.get('content-range');
       const contentType = upstream.headers.get('content-type') || '';
       if (upstream.status !== 206 || !contentRange?.startsWith(`bytes ${start}-${end}/`) || !/^(video|audio)\//i.test(contentType)) {
