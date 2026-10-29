@@ -3,9 +3,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
 import { formatNumberJP, formatDuration, fetchJSON, isDailyVideoLimitReached } from '../utils';
 import { localAI } from '../lib/intelligence';
-import { 
-  ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
-  ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
+import {
+  ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2,
+  ChevronDown, ChevronUp, MessageSquare, Send, Plus,
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
   Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
   AlertTriangle
@@ -43,36 +43,36 @@ interface CommentItemProps {
 
 const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  
+
   // 3行以上または長いテキストの判定
   const lineCount = (comment.text || '').split('\n').length;
   const isLong = lineCount > 3 || (comment.text || '').length > 160;
 
   return (
     <div className="flex items-start gap-3 text-sm">
-      <button 
-        onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+      <button
+        onClick={() => onSelectChannel(comment.authorId || comment.author)}
         className="shrink-0 cursor-pointer text-left self-start mt-0.5 hover:opacity-85 transition-opacity"
         title={`${comment.author}のチャンネルを開く`}
       >
-        <Avatar 
-          src={comment.authorAvatar} 
-          name={comment.author} 
+        <Avatar
+          src={comment.authorAvatar}
+          name={comment.author}
           channelId={comment.authorId}
-          className="w-9 h-9 text-xs shadow-xs" 
+          className="w-9 h-9 text-xs shadow-xs"
         />
       </button>
       <div className="flex flex-col gap-1 flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => onSelectChannel(comment.authorId || comment.author)} 
+          <button
+            onClick={() => onSelectChannel(comment.authorId || comment.author)}
             className="font-bold text-gray-900 text-xs hover:underline cursor-pointer text-left truncate"
           >
             {comment.author}
           </button>
           <span className="text-[11px] text-gray-500 shrink-0">{comment.publishedTime}</span>
         </div>
-        
+
         <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
           {comment.text}
         </p>
@@ -319,12 +319,24 @@ export default function VideoPlayer({
     }
   }, [activeVideo.title, isMini]);
 
-  // ダウンロード処理 (getlate.devのURLを直接別タブで開く)
-  const handleDownload = () => {
-    if (!videoId) return;
-    const directUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&formatId=2`;
-    window.open(directUrl, '_blank');
+  const [downloadStatus, setDownloadStatus] = useState('');
+  const [downloading, setDownloading] = useState(false);
+  const handleDownload = async () => {
+    if (!videoId || downloading) return;
+    setDownloading(true);
+    try {
+      const { downloadVideo } = await import('../lib/downloadVideo');
+      await downloadVideo(videoId, setDownloadStatus);
+    } catch (error) {
+      setDownloadStatus(error instanceof Error ? error.message : 'ダウンロードに失敗しました。');
+    } finally { setDownloading(false); }
   };
+
+  useEffect(() => {
+    if (!downloadStatus || downloading) return;
+    const timeout = setTimeout(() => setDownloadStatus(''), 10000);
+    return () => clearTimeout(timeout);
+  }, [downloadStatus, downloading]);
 
   // Watch duration tracker
   const watchSecondsRef = useRef<number>(0);
@@ -355,7 +367,7 @@ export default function VideoPlayer({
     if (activeVideo?.multipleChannelIds && activeVideo.multipleChannelIds.length > 1) {
       setMultiChannelsLoading(true);
       Promise.all(
-        activeVideo.multipleChannelIds.map((id: string) => 
+        activeVideo.multipleChannelIds.map((id: string) =>
           fetch(`/api/channel/${id}`).then(res => res.ok ? res.json() : null)
         )
       ).then(channels => {
@@ -835,7 +847,7 @@ export default function VideoPlayer({
               })
               .catch(() => {});
           }
-          
+
           // Local Intelligence Analysis
           if (data) {
             localAI.processVideoInteraction(data, 1.5);
@@ -886,7 +898,7 @@ export default function VideoPlayer({
         const newComments = Array.isArray(res) ? res : res.comments || [];
         setComments(newComments);
         setHasMoreComments(res.hasMore !== undefined ? res.hasMore : newComments.length > 0);
-        
+
         if (activeVideo && activeVideo.recommendedVideos) {
           localAI.processMetadataAnalysis(videoId, newComments, activeVideo.recommendedVideos);
         }
@@ -1064,7 +1076,7 @@ export default function VideoPlayer({
 
   const cleanAuthorName = activeVideo.author ? activeVideo.author.split(/、他|\s*and\s+\d+\s+other/i)[0].trim() : 'チャンネル';
 
-  const isSubscribed = subscriptions.some(s => 
+  const isSubscribed = subscriptions.some(s =>
     s.id === activeVideo.authorId || s.title === cleanAuthorName || s.title === activeVideo.author
   );
 
@@ -1106,9 +1118,9 @@ export default function VideoPlayer({
       }
       if (/^@/.test(part)) {
         return (
-          <button 
-            key={i} 
-            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
+          <button
+            key={i}
+            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }}
             className="text-blue-600 hover:underline cursor-pointer"
           >
             {part}
@@ -1126,9 +1138,9 @@ export default function VideoPlayer({
     return parts.map((part, i) => {
       if (/^@/.test(part)) {
         return (
-          <button 
-            key={i} 
-            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }} 
+          <button
+            key={i}
+            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }}
             className="text-blue-600 hover:underline cursor-pointer"
           >
             {part}
@@ -1150,7 +1162,7 @@ export default function VideoPlayer({
   // 通常の関連動画リストの中にしれっと過去履歴をブレンド
   const blendedRecommendations: any[] = [];
   const baseRecs = relatedVideos.length > 0 ? relatedVideos : (activeVideo.recommendedVideos || []);
-  
+
   let filteredRecs = baseRecs;
   if (relatedFilter === 'author') {
     filteredRecs = baseRecs.filter(v => v.author === activeVideo.author || v.authorId === activeVideo.authorId);
@@ -1180,7 +1192,7 @@ export default function VideoPlayer({
     <div className="persistent-video-content flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
-        <div 
+        <div
           ref={playerContainerRef}
           tabIndex={0}
           className="w-full aspect-video bg-black rounded-2xl overflow-hidden shadow-xl border border-gray-200 relative max-h-[85vh] group outline-hidden focus:ring-2 focus:ring-blue-500/20"
@@ -1231,7 +1243,7 @@ export default function VideoPlayer({
             )}
           </AnimatePresence>
         </div>
-        
+
         <div className="mt-4 flex flex-col">
           {/* 実際のライブ配信時のみバッジを表示 */}
           {isLive && (
@@ -1252,7 +1264,7 @@ export default function VideoPlayer({
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug break-all">
             {renderTitleWithMentions(activeVideo.title)}
           </h1>
-          
+
           <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
             {/* チャンネル情報 */}
             <div className="flex items-center gap-3">
@@ -1269,7 +1281,7 @@ export default function VideoPlayer({
                   className="w-11 h-11 text-base shadow-xs"
                 />
               </button>
-              
+
               <div className="flex flex-col">
                 <button
                   onClick={handleAuthorClick}
@@ -1294,8 +1306,8 @@ export default function VideoPlayer({
                 onClick={handleSubClick}
                 whileTap={{ scale: 0.93 }}
                 className={`ml-4 px-4 py-2 text-xs font-bold rounded-full transition-colors duration-200 shadow-xs ${
-                  isSubscribed 
-                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200' 
+                  isSubscribed
+                    ? 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200'
                     : 'bg-gray-900 hover:bg-black text-white'
                 }`}
               >
@@ -1313,7 +1325,7 @@ export default function VideoPlayer({
             {/* アクションボタン */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
               <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shadow-2xs">
-                <motion.button 
+                <motion.button
                   onClick={handleLike}
                   whileTap={{ scale: 0.88 }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-l-full transition-colors duration-150 ${
@@ -1324,7 +1336,7 @@ export default function VideoPlayer({
                   <span>{formatNumberJP((activeVideo.likeCount || 0) + likeCountDelta)}</span>
                 </motion.button>
                 <div className="w-[1px] h-4 bg-gray-300"></div>
-                <motion.button 
+                <motion.button
                   onClick={handleDislike}
                   whileTap={{ scale: 0.88 }}
                   className={`px-3 py-1.5 text-xs rounded-r-full transition-colors duration-150 ${
@@ -1335,7 +1347,7 @@ export default function VideoPlayer({
                 </motion.button>
               </div>
 
-              <motion.button 
+              <motion.button
                 onClick={() => {
                   if (navigator.share) {
                     navigator.share({ title: activeVideo.title, url: window.location.href }).catch(() => {});
@@ -1352,17 +1364,20 @@ export default function VideoPlayer({
                 <span>共有</span>
               </motion.button>
 
-              <motion.button 
+              <motion.button
                 onClick={handleDownload}
                 whileTap={{ scale: 0.92 }}
-                title="動画をダウンロード"
+                disabled={downloading}
+                title={downloadStatus || "動画をダウンロード"}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
               >
                 <Download size={15} />
-                <span>ダウンロード</span>
-              </motion.button>
+                <span>{downloading ? "処理中…" : "ダウンロード"}</span>
 
-              <motion.button 
+              </motion.button>
+              {downloadStatus && <span role="status" className="text-xs text-gray-600">{downloadStatus}</span>}
+
+              <motion.button
                 onClick={handleReloadPlayer}
                 whileTap={{ scale: 0.92 }}
                 disabled={refreshingIframe || cooldownSec > 0}
@@ -1378,7 +1393,7 @@ export default function VideoPlayer({
               </motion.button>
 
               {onOpenAddToPlaylist && (
-                <motion.button 
+                <motion.button
                   onClick={() => onOpenAddToPlaylist(activeVideo)}
                   whileTap={{ scale: 0.92 }}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
@@ -1400,7 +1415,7 @@ export default function VideoPlayer({
                 <kbd className="hidden sm:inline px-1.5 py-0.2 bg-white border border-gray-300 rounded font-mono text-[9px] font-bold text-gray-600">?</kbd>
               </motion.button>
 
-              
+
             </div>
           </div>
 
@@ -1503,10 +1518,10 @@ export default function VideoPlayer({
             ) : (
               <div className="flex flex-col gap-5">
                 {comments.map((comment) => (
-                  <CommentItem 
-                    key={comment.id} 
-                    comment={comment} 
-                    onSelectChannel={onSelectChannel} 
+                  <CommentItem
+                    key={comment.id}
+                    comment={comment}
+                    onSelectChannel={onSelectChannel}
                   />
                 ))}
 
@@ -1523,7 +1538,7 @@ export default function VideoPlayer({
           </div>
         </div>
       </div>
-      
+
       {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
         {hasChat && (
@@ -1557,13 +1572,13 @@ export default function VideoPlayer({
 
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
             {blendedRecommendations.map((recVideo, idx) => (
-              <div 
-                key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
+              <div
+                key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`}
                 className="flex gap-2.5 group cursor-pointer"
                 onClick={() => onVideoSelect(recVideo.videoId || '', recVideo)}
               >
                 <div className="w-[160px] shrink-0 relative aspect-video rounded-lg overflow-hidden bg-gray-100 border border-gray-200">
-                  <img 
+                  <img
                     src={recVideo.videoThumbnails?.[0]?.url || (recVideo.videoId ? `https://i.ytimg.com/vi/${recVideo.videoId}/hqdefault.jpg` : 'https://images.unsplash.com/photo-1611162617474-5b21e879e113?q=80&w=320&auto=format&fit=crop')}
                     alt={recVideo.title}
                     className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
@@ -1627,7 +1642,7 @@ export default function VideoPlayer({
                 <X size={20} className="text-gray-600" />
               </button>
             </div>
-            
+
             <div className="overflow-y-auto pr-1 -mr-1 flex flex-col gap-3">
               {multiChannelsLoading ? (
                 <div className="flex justify-center p-4">
@@ -1637,7 +1652,7 @@ export default function VideoPlayer({
                 multiChannelsData.map((channel, i) => {
                   const isSub = subscriptions.some(s => s.id === channel.id || s.title === channel.title || s.id === channel.authorId || s.title === channel.name);
                   const handleId = channel.authorId || channel.id || '';
-                  
+
                   return (
                     <div key={i} className="flex items-center gap-3 p-2 hover:bg-gray-50 rounded-xl transition-colors">
                       <button
@@ -1671,14 +1686,14 @@ export default function VideoPlayer({
                         </span>
                       </div>
                       <button
-                        onClick={() => onToggleSubscribe({ 
-                          id: handleId, 
-                          title: channel.title || channel.author || channel.name, 
-                          avatar: channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url) 
+                        onClick={() => onToggleSubscribe({
+                          id: handleId,
+                          title: channel.title || channel.author || channel.name,
+                          avatar: channel.avatar || channel.authorAvatar || (channel.avatar?.[0]?.url)
                         })}
                         className={`shrink-0 px-3 py-1.5 text-xs font-bold rounded-full transition-all duration-200 shadow-xs active:scale-95 flex items-center gap-1 ${
-                          isSub 
-                            ? 'bg-gray-100 text-gray-800 hover:bg-gray-200' 
+                          isSub
+                            ? 'bg-gray-100 text-gray-800 hover:bg-gray-200'
                             : 'bg-gray-900 text-white hover:bg-black'
                         }`}
                       >

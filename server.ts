@@ -918,7 +918,7 @@ async function startServer() {
 
   // Request logger
   app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
     next();
   });
 
@@ -3101,6 +3101,58 @@ async function startServer() {
     const playerUrl = `https://www.youtubeeducation.com/embed/${encodeURIComponent(videoId)}${key}`;
     res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
     res.send(playerUrl);
+  });
+
+  // Resolve separate MP4 video and AAC audio streams. Each candidate must contain a real URL.
+  app.get('/api/download-formats/:id', async (req, res) => {
+    const videoId = req.params.id;
+    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return res.status(400).json({ error: '動画IDが不正です。' });
+    try {
+      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true });
+      for (const client of ['IOS', 'ANDROID_VR'] as const) {
+        try {
+          const info = await youtube.getBasicInfo(videoId, { client });
+          const formats = info.streaming_data?.adaptive_formats || [];
+          const videos = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate);
+          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => b.bitrate - a.bitrate);
+          if (!videos.length || !audios.length) continue;
+          const video = videos[0], audio = audios[0];
+          const [videoUrl, audioUrl] = await Promise.all([video.decipher(youtube.session.player), audio.decipher(youtube.session.player)]);
+          if (![videoUrl, audioUrl].every(isAllowedMediaUrl)) continue;
+          res.setHeader('Cache-Control', 'private, no-store');
+          return res.json({ title: info.basic_info.title || videoId, video: { url: videoUrl, size: video.content_length, itag: video.itag, mime: video.mime_type, height: video.height }, audio: { url: audioUrl, size: audio.content_length, itag: audio.itag, mime: audio.mime_type } });
+        } catch (err) { console.warn('Download format lookup failed for client', client); }
+      }
+      return res.status(422).json({ error: 'この動画の映像と音声を取得できませんでした。' });
+    } catch { return res.status(502).json({ error: '動画情報の取得に失敗しました。' }); }
+  });
+
+  function isAllowedMediaUrl(value: string): boolean {
+    try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && /(^|\.)googlevideo\.com$/i.test(u.hostname); } catch { return false; }
+  }
+  // Small range requests keep each response within the serverless payload limit.
+  app.get('/api/download-media', async (req, res) => {
+    const url = typeof req.query.url === 'string' ? req.query.url : '';
+    const range = /^bytes=(\d+)-(\d+)$/.exec(req.headers.range || '');
+    if (!isAllowedMediaUrl(url) || !range) return res.status(400).json({ error: '不正なデータ要求です。' });
+    const start = Number(range[1]), end = Number(range[2]);
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || end < start || end - start >= 2 * 1024 * 1024) return res.status(400).json({ error: '取得範囲が不正です。' });
+    try {
+      const upstream = await fetch(url, { headers: { Range: `bytes=${start}-${end}` }, redirect: 'error', signal: AbortSignal.timeout(30000) });
+      const contentRange = upstream.headers.get('content-range');
+      const contentType = upstream.headers.get('content-type') || '';
+      if (upstream.status !== 206 || !contentRange?.startsWith(`bytes ${start}-${end}/`) || !/^(video|audio)\//i.test(contentType)) {
+        await upstream.body?.cancel(); return res.status(502).json({ error: '動画配信元からデータを取得できませんでした。' });
+      }
+      const expected = end - start + 1;
+      const reader = upstream.body?.getReader();
+      if (!reader) return res.status(502).json({ error: '動画データがありません。' });
+      const parts: Uint8Array[] = []; let received = 0;
+      for (;;) { const chunk = await reader.read(); if (chunk.done) break; received += chunk.value.byteLength; if (received > expected) { await reader.cancel(); return res.status(502).json({ error: '動画データが不正です。' }); } parts.push(chunk.value); }
+      if (received !== expected) return res.status(502).json({ error: '動画データが途中で切れました。' });
+      res.status(206).set({ 'Content-Type': contentType, 'Content-Range': contentRange, 'Content-Length': String(received), 'Cache-Control': 'private, no-store' });
+      return res.send(Buffer.concat(parts.map(part => Buffer.from(part))));
+    } catch { return res.status(502).json({ error: '動画配信元への接続に失敗しました。' }); }
   });
 
   // 動画ダウンロードプロキシ API
