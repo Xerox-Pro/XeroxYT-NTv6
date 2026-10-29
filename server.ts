@@ -436,6 +436,24 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
+  // The account Worker validates the session before access to site APIs and streams.
+  app.use(async (req, res, next) => {
+    if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
+    try {
+      const session = await fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/session', {
+        headers: { cookie: req.headers.cookie || '' }, signal: AbortSignal.timeout(5000)
+      });
+      if (session.status === 401) return res.status(401).json({ error: 'ログインが必要です。' });
+      if (!session.ok) return res.status(503).json({ error: '認証サービスに接続できません。' });
+      const account = await session.json() as { user?: { id?: string } };
+      if (!account.user?.id) return res.status(401).json({ error: 'ログインが必要です。' });
+      res.locals.siteAccountId = account.user.id;
+      return next();
+    } catch {
+      return res.status(503).json({ error: '認証サービスに接続できません。' });
+    }
+  });
+
   // --- Bot & Aggressive Crawler Protection (Save Vercel Serverless CPU time) ---
   app.use((req, res, next) => {
     const userAgent = (req.headers["user-agent"] || "").toLowerCase();
@@ -895,98 +913,8 @@ async function startServer() {
 
   app.use(express.json({ limit: "10mb" }));
 
-  app.post("/api/sync/save", async (req, res) => {
-    const { credentialId, data } = req.body;
-    if (!credentialId || !data) return res.status(400).send("Missing args");
-
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
-    }
-
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const encryptedPayload = encryptData(data);
-      const fileContent = Buffer.from(
-        JSON.stringify(encryptedPayload),
-      ).toString("base64");
-
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      let sha: string | undefined = undefined;
-      try {
-        const getRes = await axios.get(url, { headers: getGithubHeaders() });
-        sha = getRes.data.sha;
-      } catch (e: any) {
-        if (e.response?.status !== 404) throw e;
-      }
-
-      await axios.put(
-        url,
-        {
-          message: `Sync data for ${hashedId}`,
-          content: fileContent,
-          sha,
-        },
-        { headers: getGithubHeaders() },
-      );
-
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true });
-    } catch (err: any) {
-      console.error("Save error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to save to GitHub" });
-    }
-  });
-
-  app.post("/api/sync/load", async (req, res) => {
-    const { credentialId } = req.body;
-    if (!credentialId) return res.status(400).send("Missing args");
-
-    if (
-      !process.env.GITHUB_TOKEN ||
-      !process.env.GITHUB_USERNAME ||
-      !process.env.GITHUB_REPO
-    ) {
-      return res
-        .status(500)
-        .json({ error: "GitHub credentials not configured on server" });
-    }
-
-    try {
-      const hashedId = crypto
-        .createHash("sha256")
-        .update(credentialId)
-        .digest("hex");
-      const filename = `${hashedId}.json`;
-      const url = `https://api.github.com/repos/${process.env.GITHUB_USERNAME}/${process.env.GITHUB_REPO}/contents/${filename}`;
-
-      const getRes = await axios.get(url, { headers: getGithubHeaders() });
-      const encryptedPayload = JSON.parse(
-        Buffer.from(getRes.data.content, "base64").toString("utf8"),
-      );
-
-      const data = decryptData(encryptedPayload);
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-      return res.json({ success: true, data });
-    } catch (err: any) {
-      if (err.response?.status === 404) {
-        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
-        return res.json({ success: true, data: null }); // No existing data
-      }
-      console.error("Load error:", err.response?.data || err.message);
-      res.status(500).json({ error: "Failed to load from GitHub" });
-    }
-  });
+  // The legacy credential-id-only sync did not verify identity.
+  app.post(["/api/sync/save", "/api/sync/load"], (_req, res) => res.status(410).json({ error: "Legacy sync disabled" }));
 
   // Request logger
   app.use((req, res, next) => {
@@ -1127,12 +1055,10 @@ async function startServer() {
   });
 
   // YouTubei.js Login API
-  let currentAuthFlow: any = null;
-  let authFlowExpiry: number = 0;
+  const authFlows = new Map<string, { flow: any; expires: number }>();
 
   app.get("/api/auth/signin", async (req, res) => {
     try {
-      lastCredentials = null; // Reset lastCredentials
       const youtube = await getYt();
       
       // Load client ID if not already loaded
@@ -1158,7 +1084,7 @@ async function startServer() {
       const code_obj = response.data;
       console.log("[Auth] Direct device code generated via Google APIs:", code_obj.user_code);
 
-      currentAuthFlow = {
+      const currentAuthFlow = {
         device_code: code_obj.device_code,
         user_code: code_obj.user_code,
         verification_url: code_obj.verification_url,
@@ -1167,7 +1093,7 @@ async function startServer() {
           client_secret: clientSecret
         }
       };
-      authFlowExpiry = Date.now() + (code_obj.expires_in || 1800) * 1000;
+      authFlows.set(res.locals.siteAccountId, { flow: currentAuthFlow, expires: Date.now() + (code_obj.expires_in || 1800) * 1000 });
 
       res.setHeader("Cache-Control", "no-store");
       return res.json({
@@ -1186,7 +1112,9 @@ async function startServer() {
   });
 
   app.get("/api/auth/poll", async (req, res) => {
-    if (!currentAuthFlow || Date.now() > authFlowExpiry) {
+    const state = authFlows.get(res.locals.siteAccountId);
+    const currentAuthFlow = state?.flow;
+    if (!currentAuthFlow || Date.now() > state!.expires) {
       console.warn(
         `[Auth] Poll rejected: ${!currentAuthFlow ? "No flow" : "Flow expired"}`,
       );
@@ -1236,7 +1164,7 @@ async function startServer() {
         }
         
         // Clear flow state to stop polling
-        currentAuthFlow = null;
+        authFlows.delete(res.locals.siteAccountId);
         
         res.setHeader("Cache-Control", "no-store");
         return res.json({ success: false, status: "error", error: errorMessage });
@@ -1245,7 +1173,7 @@ async function startServer() {
       const tokenData = response.data;
       if (tokenData && tokenData.access_token) {
         console.log("[Auth] Token received from Google. Authenticating instance...");
-        const youtube = await getYt();
+        const youtube = await Innertube.create({ cache: new UniversalCache(false), location: "JP", lang: "ja", retrieve_player: false });
 
         const credentials = {
           access_token: tokenData.access_token,
@@ -1294,7 +1222,7 @@ async function startServer() {
 
         // Save credentials and clear flow state
         lastCredentials = credentials;
-        currentAuthFlow = null;
+        authFlows.delete(res.locals.siteAccountId);
 
         res.setHeader("Cache-Control", "no-store");
         return res.json({
@@ -1320,8 +1248,7 @@ async function startServer() {
 
   app.post("/api/auth/logout", async (req, res) => {
     try {
-      const youtube = await getYt();
-      await youtube.session.signOut();
+      authFlows.delete(res.locals.siteAccountId);
       res.setHeader("Cache-Control", "s-maxage=3600, stale-while-revalidate=86400");
       return res.json({ success: true });
     } catch (err) {
