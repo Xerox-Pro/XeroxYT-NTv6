@@ -436,6 +436,25 @@ const decryptData = (encryptedData: any) => {
 async function startServer() {
   const app = express();
 
+  // Temporary preview-only diagnostic; removed before release.
+  app.get('/api/preview-download-check', async (_req, res, next) => {
+    if (process.env.VERCEL_ENV !== 'preview') return next();
+    try {
+      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true });
+      const info = await youtube.getBasicInfo('dQw4w9WgXcQ', {client: 'IOS'});
+      const formats = info.streaming_data?.adaptive_formats || [];
+      const video = formats.find(f => f.height === 1080 && f.mime_type.includes('avc1') && !!f.url);
+      const audio = formats.find(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !!f.url);
+      if (!video || !audio) return res.json({ formats: formats.length, video: !!video, audio: !!audio });
+      const responses = await Promise.all([video, audio].map(async f => {
+        const url = await f.decipher(youtube.session.player);
+        const r = await fetch(url, { headers: { Range: 'bytes=0-1023' }, redirect: 'error', signal: AbortSignal.timeout(12000) });
+        const result = { status: r.status, type: r.headers.get('content-type'), range: r.headers.get('content-range') }; await r.body?.cancel(); return result;
+      }));
+      return res.json({ formats: formats.length, height: video.height, responses });
+    } catch (error) { return res.status(502).json({ error: error instanceof Error ? error.message : 'failed' }); }
+  });
+
   // The account Worker validates the session before access to site APIs and streams.
   app.use(async (req, res, next) => {
     if (!/^\/(api|stream|360|edu|scratch-edu)(?:\/|$)/.test(req.path)) return next();
