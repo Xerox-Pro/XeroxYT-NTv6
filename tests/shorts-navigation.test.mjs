@@ -27,7 +27,8 @@ test('shorts can leave for home, search, history, channel and browser back durin
   if(address.startsWith('/api/shorts-ranking'))return new Response(JSON.stringify({videos:ranking,count:2,updatedAt:'today'}));
   if(address.startsWith('/api/shorts?'))return new Response(JSON.stringify({videos:regular,hasMore:false}));
   if(address.startsWith('/api/edu/'))return new Response(`https://www.youtubeeducation.com/embed/${address.split('/').pop()}?controls=0`);
-  if(address.startsWith('/api/shorts/')){const id=address.split('/').pop().split('?')[0];return new Response(JSON.stringify({...video(id,'youtube'),aspectVerified:true,likeCount:10}));}
+  if(address.includes('/comments'))return new Response(JSON.stringify({comments:[],hasMore:false}));
+  if(address.startsWith('/api/shorts/')){const id=address.split('/').pop().split('?')[0];return new Response(JSON.stringify({...video(id,'youtube'),aspectVerified:true,likeCount:10,description:'概要テスト'}));}
   throw new Error(`unexpected fetch ${address}`);
  };
  const settle=async()=>{await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});};
@@ -48,8 +49,15 @@ test('shorts can leave for home, search, history, channel and browser back durin
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
    assert.equal(document.querySelector('.shorts-tap-area'),null);
    assert.equal(document.querySelector('.shorts-actions'),null);
+   const frames=[...document.querySelectorAll('iframe')];assert.equal(frames.length,3,'active and next two embeds are prepared');
+   for(const next of frames.slice(1))assert.equal(new URL(next.src).searchParams.get('autoplay'),'0','preloaded videos do not autoplay');
+   assert.ok(document.querySelector('[aria-label="コメントを表示"]'));assert.ok(document.querySelector('[aria-label="概要欄を表示"]'));
+   assert.ok(document.querySelector('[aria-label="高評価（この端末に保存）"]'));
    assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
    assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
+   await act(async()=>document.querySelector('[aria-label="概要欄を表示"]').click());
+   assert.ok(document.querySelector('.shorts-description').textContent.includes('概要テスト'));
+   await act(async()=>document.querySelector('[aria-label="パネルを閉じる"]').click());
    await act(async()=>document.querySelector(`[data-target="${target}"]`).click());
    // Simulate an IntersectionObserver notification queued before the exit animation.
    await act(async()=>{for(const observer of observers){const node=observer.nodes.at(-1);if(node)observer.callback([{target:node,isIntersecting:true,intersectionRatio:1}]);}});
