@@ -107,3 +107,55 @@ a, a:visited {
   max-height: 216px;
   overflow: auto;
 }
+
+/* Shorts: one active iframe, vertical snap feed, thumb-friendly actions. */
+.shorts-shelf { padding: 18px 0 26px; margin-bottom: 24px; border-bottom: 1px solid #e5e7eb; }
+.shorts-shelf-scroll { display: flex; gap: 14px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 10px; }
+.shorts-cover { flex: 0 0 clamp(138px, 17vw, 208px); scroll-snap-align: start; min-width: 0; }
+.shorts-cover:focus-visible, .shorts-viewer button:focus-visible { outline: 3px solid #3b82f6; outline-offset: 3px; }
+.shorts-viewer { position: relative; display: flex; height: calc(100dvh - 56px); min-height: 360px; background: #fafafa; overflow: hidden; }
+.shorts-stage { flex: 1; min-width: 0; position: relative; }
+.shorts-scroll { height: 100%; overflow-y: auto; overscroll-behavior-y: contain; scroll-snap-type: y mandatory; scrollbar-width: none; touch-action: pan-y; }
+.shorts-scroll::-webkit-scrollbar { display: none; }
+.shorts-slide { height: 100%; scroll-snap-align: start; scroll-snap-stop: always; display: flex; align-items: center; justify-content: center; padding: 12px 90px 28px 24px; }
+.shorts-frame { height: 100%; max-width: 100%; aspect-ratio: 9/16; position: relative; overflow: hidden; border-radius: 14px; background: #080808; color: white; }
+.shorts-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.shorts-tap-area { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; touch-action: pan-y; }
+.shorts-caption { position: absolute; bottom: 16px; left: 0; right: 0; padding: 40px 18px 12px; z-index: 10; background: linear-gradient(transparent, #000b); pointer-events: none; }
+.shorts-caption button { pointer-events: auto; }
+.shorts-player-control { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 50%; color: white; background: #0008; }
+.shorts-progress { position: absolute; z-index: 25; bottom: 1px; left: 0; width: 100%; height: 10px; accent-color: #ef4444; cursor: pointer; }
+.shorts-actions { position: absolute; right: max(12px, calc((100% - (100dvh - 96px) * .5625) / 2 - 40px)); bottom: 50px; z-index: 20; display: flex; flex-direction: column; gap: 14px; width: 58px; }
+.shorts-action { display: flex; align-items: center; flex-direction: column; gap: 4px; color: #111; }
+.shorts-action > span { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: #ebebeb; }
+.shorts-action:hover > span { background: #ddd; }
+.shorts-action[aria-pressed=true] > span { color: white; background: #111; }
+.shorts-action small { font-size: 11px; font-weight: 600; }
+.shorts-navigation { position: absolute; top: 32px; right: 16px; display: flex; gap: 8px; flex-direction: column; }
+.shorts-navigation button { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%; background: #eee; }
+.shorts-navigation button:disabled { opacity: .3; }
+.shorts-instruction { position: absolute; bottom: 5px; left: 0; right: 0; display: flex; justify-content: center; align-items: center; gap: 4px; font-size: 10px; color: #777; pointer-events: none; }
+.shorts-feed-end { min-height: 40%; display: flex; flex-direction: column; justify-content: center; align-items: center; padding: 32px; text-align: center; font-size: 14px; color: #666; scroll-snap-align: start; }
+.shorts-comments { flex: 0 0 min(380px, 40%); background: white; border-left: 1px solid #ddd; display: flex; flex-direction: column; z-index: 30; min-width: 280px; height: 100%; }
+.shorts-notice { position: absolute; bottom: 26px; left: 50%; transform: translateX(-50%); width: max-content; max-width: 85%; background: #222e; color: white; font-size: 12px; padding: 12px 18px; border-radius: 10px; z-index: 40; pointer-events: none; }
+@media (max-width: 767px) {
+  .shorts-viewer { background: #080808; height: calc(100dvh - 56px); }
+  .shorts-slide { padding: 0; }
+  .shorts-frame { border-radius: 0; }
+  .shorts-caption { padding-right: 72px; bottom: 16px; }
+  .shorts-actions { right: 7px; bottom: max(50px, env(safe-area-inset-bottom)); gap: 16px; color: white; }
+  .shorts-action { color: white; text-shadow: 0 1px 3px #0009; }
+  .shorts-action > span { background: #262626aa; }
+  .shorts-action:hover > span { background: #444a; }
+  .shorts-action[aria-pressed=true] > span { background: white; color: black; }
+  .shorts-navigation { display: none; }
+  .shorts-instruction { color: #bbb; }
+  .shorts-comments { position: absolute; bottom: 0; left: 0; width: 100%; height: 72%; border-radius: 16px 16px 0 0; box-shadow: 0 -20px 80px #0008; }
+}
+@media (max-height: 620px) {
+  .shorts-actions { gap: 5px; bottom: 28px; }
+  .shorts-action > span { width: 36px; height: 36px; }
+  .shorts-action small { font-size: 10px; }
+  .shorts-navigation { top: 8px; right: 8px; flex-direction: row; }
+  .shorts-navigation button { width: 32px; height: 32px; }
+}

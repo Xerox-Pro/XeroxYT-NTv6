@@ -31,6 +31,11 @@ export interface Video {
   isPremiere?: boolean;
   isUpcoming?: boolean;
   isPlayerOnly?: boolean;
+  isShort?: boolean;
+  aspectVerified?: boolean;
+  width?: number;
+  height?: number;
+  viewCountText?: string;
 }
 
 export interface CommunityPost {
