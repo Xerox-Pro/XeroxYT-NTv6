@@ -19,7 +19,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const observers=[];
  globalThis.IntersectionObserver=class{constructor(callback){this.callback=callback;this.nodes=[];observers.push(this)} observe(node){this.nodes.push(node)} disconnect(){this.nodes=[]}};
- const video=(id,source)=>({videoId:id,title:`clip ${id}`,author:'channel',isShort:true,shortSource:source,viewCount:20,lengthSeconds:20,publishedText:'',videoThumbnails:[{url:'https://i.ytimg.com/frame.jpg'}]});
+ const video=(id,source)=>({videoId:id,title:`clip ${id}`,author:'channel',authorAvatar:'https://yt3.ggpht.com/avatar.jpg',isShort:true,shortSource:source,viewCount:20,lengthSeconds:20,publishedText:'',videoThumbnails:[{url:'https://i.ytimg.com/frame.jpg'}]});
  const regular=[video('abcdefghijk','youtube'),video('lmnopqrstuv','youtube')];
  const ranking=[video('12345678901','ranking'),video('23456789012','ranking')];
  globalThis.fetch=async url=>{
@@ -48,6 +48,8 @@ test('shorts can leave for home, search, history, channel and browser back durin
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
    assert.equal(document.querySelector('.shorts-tap-area'),null);
    assert.equal(document.querySelector('.shorts-actions'),null);
+   assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
+   assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
    await act(async()=>document.querySelector(`[data-target="${target}"]`).click());
    // Simulate an IntersectionObserver notification queued before the exit animation.
    await act(async()=>{for(const observer of observers){const node=observer.nodes.at(-1);if(node)observer.callback([{target:node,isIntersecting:true,intersectionRatio:1}]);}});

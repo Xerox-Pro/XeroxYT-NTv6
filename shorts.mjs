@@ -1,3 +1,4 @@
+import { discoveryQueries, diversifyShorts } from './shorts-discovery.mjs';
 // Shorts are identified by YouTube's renderer/endpoint AND a portrait thumbnail,
 // never by a title, hashtag or duration. Playback verifies actual video dimensions.
 export function isShortAspect(width, height) {
@@ -103,12 +104,55 @@ export function registerShortsRoutes(app, getYoutube) {
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const videoId = typeof req.query.videoId === 'string' ? req.query.videoId : '';
     const page = Number(req.query.page || 1);
+    const session = typeof req.query.session === 'string' ? req.query.session : '';
+    const excludeText = typeof req.query.exclude === 'string' ? req.query.exclude : '';
+    const excluded = excludeText ? excludeText.split(',') : [];
     if (!['home', 'search', 'related'].includes(source) || q.length > 200 ||
+      (session && !/^[\w-]{1,80}$/.test(session)) || excluded.length > 300 || excluded.some(id => !/^[\w-]{11}$/.test(id)) ||
       !Number.isInteger(page) || page < 1 || page > 20 ||
       (source === 'search' && !q) || (source === 'related' && !/^[\w-]{11}$/.test(videoId))) {
       return res.status(400).json({ error: 'ショートの取得条件を確認してください。' });
     }
     try {
+      if (session) {
+        const youtube = await getYoutube();
+        let context = q;
+        let primary = [];
+        if (source === 'related') {
+          try {
+            const info = await cached(`info:${videoId}`, () => youtube.getInfo(videoId));
+            context = info.basic_info?.title?.replace(/#[^\s]+/g, '').slice(0, 100) || '';
+            if (page === 1) primary = collectShorts(info);
+          } catch { /* Topic discovery still works if the source metadata is unavailable. */ }
+        }
+        const queries = discoveryQueries(session, page, context);
+        const round = Math.floor((page - 1) / 10);
+        const tasks = queries.map(async query => {
+          let feed = await cached(`discovery:${query}`, async () => {
+            let search = await youtube.search(query, { type: 'all' });
+            const chip = search.refinement_filters?.find(name => /^(shorts|ショート(?:動画)?)$/i.test(name));
+            if (chip) search = await search.applyRefinement(chip);
+            return search;
+          });
+          for (let index = 0; index < round; index++) {
+            if (!feed.has_continuation) return [];
+            const previous = feed;
+            feed = await cached(`discovery-continuation:${query}:${index}`, () => previous.getContinuation());
+          }
+          return collectShorts(feed);
+        });
+        if (source === 'home' && !q && page === 1) tasks.push((async () => {
+          try { return collectShorts(await cached('home-feed', () => youtube.getHomeFeed())); } catch { return []; }
+        })());
+        const results = await Promise.allSettled(tasks);
+        const pools = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+        if (!primary.length && results.every(result => result.status === 'rejected')) throw new Error('All discovery sources failed');
+        const candidates = [...primary, ...pools];
+        rememberOriginalAspects(candidates);
+        const videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.json({ videos, hasMore: page < 20, page });
+      }
       const result = await cached(JSON.stringify([source, q, videoId, page]), async () => {
         const youtube = await getYoutube();
         let query = q;

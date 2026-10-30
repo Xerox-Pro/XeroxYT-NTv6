@@ -116,7 +116,7 @@ a, a:visited {
 .shorts-viewer { display: flex; flex-direction: column; height: calc(100dvh - 56px); min-height: 360px; background: #fafafa; }
 .shorts-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; scroll-snap-type: y proximity; scrollbar-width: thin; }
 .shorts-slide { min-height: 100%; scroll-snap-align: start; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 20px; gap: 10px; }
-.shorts-frame { position: relative; width: min(100%, calc((100dvh - 250px) * .5625)); min-width: 150px; aspect-ratio: 9/16; border-radius: 12px; overflow: hidden; background: #080808; color: white; flex: none; }
+.shorts-frame { position: relative; width: min(100%, calc((100dvh - 170px) * .5625)); min-width: 150px; aspect-ratio: 9/16; border-radius: 12px; overflow: hidden; background: #080808; color: white; flex: none; }
 .shorts-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; pointer-events: auto; }
 .shorts-embed-error { position: absolute; inset: 0; display: flex; flex-direction: column; justify-content: center; text-align: center; padding: 20px; font-size: 13px; }
 .shorts-caption { width: min(100%, 460px); }
@@ -126,3 +126,13 @@ a, a:visited {
 .shorts-feed-source { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: 10px; line-height: 1.5; padding: 5px 12px; border-top: 1px solid #eee; color: #737373; }
 .shorts-feed-source a { text-decoration: underline; }
 @media (max-height: 520px) { .shorts-frame { width: 160px; } }
+
+.shorts-overlay { position: absolute; z-index: 2; inset: auto 0 44px; padding: 48px 16px 16px; background: linear-gradient(transparent, rgba(0,0,0,.72)); color: #fff; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.65); }
+.shorts-channel { display: flex; align-items: center; gap: 9px; max-width: 100%; margin-bottom: 10px; text-align: left; font-size: 14px; font-weight: 700; pointer-events: auto; }
+.shorts-channel > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shorts-channel img, .shorts-channel-placeholder { flex: none; box-shadow: 0 0 0 1px rgba(255,255,255,.3); }
+.shorts-channel-placeholder { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #555; }
+.shorts-overlay-title { font-size: 14px; font-weight: 500; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.shorts-overlay-stats { font-size: 11px; line-height: 1.5; color: rgba(255,255,255,.85); margin-top: 6px; }
+.shorts-embed-error { z-index: 3; background: #0a0a0a; }
+@media (max-width: 480px) { .shorts-slide { padding: 8px 16px; gap: 3px; } .shorts-overlay { padding-left: 12px; padding-right: 12px; } }
