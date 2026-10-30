@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
@@ -9,13 +9,18 @@ import { isShortsLocation, MAX_SHORT_PAGES, mixShorts, createShortsSession, read
 import ShortsComments from './ShortsComments';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
-function ShortEmbed({ video, onRecord, onMetadata, children }: {
-  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode;
+function ShortEmbed({ video, onRecord, onMetadata, children, active }: {
+  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode; active: boolean;
 }) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const detail = useRef<Video | null>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
+  const activeRef = useRef(active); activeRef.current = active;
+  const recorded = useRef(false);
+  const command = (func: string) => { if (frame.current?.contentWindow && url) frame.current.contentWindow.postMessage(JSON.stringify({ event: 'command', func, args: [] }), new URL(url).origin); };
+  const record = () => { if (activeRef.current && detail.current && !recorded.current) { recorded.current = true; callbacks.current.onRecord(detail.current); } };
   const callbacks = useRef({ onRecord, onMetadata }); callbacks.current = { onRecord, onMetadata };
   useEffect(() => {
     let cancelled = false;
@@ -31,14 +36,21 @@ function ShortEmbed({ video, onRecord, onMetadata, children }: {
       if (!metadata.aspectVerified) throw new Error('縦長のショートであることを確認できませんでした。');
       const parsed = new URL(rawUrl);
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
-      parsed.searchParams.delete('enablejsapi');
-      for (const [key, value] of Object.entries({ controls: '1', playsinline: '1', autoplay: '1', mute: '1', rel: '0' })) parsed.searchParams.set(key, value);
+      parsed.searchParams.set('enablejsapi', '1');
+      parsed.searchParams.set('origin', window.location.origin);
+      for (const [key, value] of Object.entries({ controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: '1', rel: '0' })) parsed.searchParams.set(key, value);
       detail.current = metadata; callbacks.current.onMetadata(metadata); setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
     return () => { cancelled = true; };
   }, [video.videoId, video.title, attempt]);
+  useEffect(() => {
+    if (!url) return;
+    const sync = () => { command(active ? 'playVideo' : 'pauseVideo'); if (active) record(); };
+    sync(); const timers = [300, 800, 1600].map(delay => window.setTimeout(sync, delay));
+    return () => timers.forEach(clearTimeout);
+  }, [active, url]);
   return <div className="shorts-frame">
-    {url && <iframe src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { if (detail.current) callbacks.current.onRecord(detail.current); }} />}
+    {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { command(activeRef.current ? 'playVideo' : 'pauseVideo'); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
     {error && <div className="shorts-embed-error" role="status"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="underline mt-3">再試行</button></div>}
@@ -70,6 +82,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [hasMore, setHasMore] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const [commentsId, setCommentsId] = useState('');
+  const [descriptionId, setDescriptionId] = useState('');
+  const [likes, setLikes] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('xerox_shorts_likes_v1') || '{}'); } catch { return {}; } });
   const scroll = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const activeRef = useRef(activeId); activeRef.current = activeId;
@@ -144,11 +158,13 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [move, commentsId]);
-  return <section className="shorts-viewer" aria-label="ショート動画">
+  return <section className={`shorts-viewer ${activeId && (commentsId === activeId || descriptionId === activeId) ? "shorts-has-panel" : ""}`} aria-label="ショート動画">
     <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え">
-      {videos.map(video => {
+      {videos.map((video, index) => {
         const info = metadata[video.videoId!] || video;
         const active = video.videoId === activeId;
+        const activeIndex = videos.findIndex(item => item.videoId === activeId);
+        const prepare = index >= activeIndex && index <= activeIndex + 2;
         const overlay = <div className="shorts-overlay">
           <button className="shorts-channel" onClick={() => onSelectChannel(info.authorId || info.author)} aria-label={`${info.author}のチャンネル`}>
             {active && (info.authorAvatar || metadata[video.videoId!]) ? <Avatar src={info.authorAvatar} name={info.author} channelId={info.authorId} videoId={info.videoId} className="w-9 h-9 text-sm" />
@@ -159,14 +175,20 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           <p className="shorts-overlay-stats">{info.viewCount > 0 ? `${formatNumberJP(info.viewCount)}回視聴` : ''}{info.likeCount == null ? '' : ` · 高評価 ${formatNumberJP(info.likeCount)}`}</p>
         </div>;
         return <article className="shorts-slide" key={video.videoId} data-short-id={video.videoId} aria-label={info.title}>
-          {active ? <ShortEmbed video={video} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
+          <div className="shorts-player-row">
+          {prepare ? <ShortEmbed video={video} active={active} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
             : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" />{overlay}</div>}
-          <div className="shorts-caption">
-            <details className="shorts-comment-disclosure" open={commentsId === video.videoId} onToggle={event => { if (video.videoId === activeRef.current) setCommentsId(event.currentTarget.open ? video.videoId! : ''); }}>
-              <summary className="text-sm text-gray-600 cursor-pointer py-2">コメント</summary>
-              {commentsId === video.videoId && <ShortsComments key={video.videoId} videoId={video.videoId!} inline onSelectChannel={onSelectChannel} />}
-            </details>
+          <div className="shorts-side-actions">
+            <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
+            <button aria-label="コメントを表示" onClick={() => { setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
+            <button aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
+          </div>
+          {active && (commentsId === video.videoId || descriptionId === video.videoId) && <aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>
+            <header><strong>{commentsId ? 'コメント' : '概要欄'}</strong><button aria-label="パネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }}><X size={22} /></button></header>
+            {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{formatNumberJP(info.viewCount || 0)}回視聴 {info.publishedText}</p><p className="whitespace-pre-wrap break-words">{info.description || '概要欄はありません。'}</p></div>}
+          </aside>}
+
         </article>;
       })}
       <div className="shorts-feed-end">
