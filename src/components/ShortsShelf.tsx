@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
 import { Video } from '../types';
-import { mixShorts } from '../lib/shortsFeed.mjs';
+import { mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
 import { fetchJSON, formatNumberJP } from '../utils';
 
 export type ShortsContext = { source: 'home' | 'search' | 'related'; q?: string; videoId?: string };
@@ -15,6 +15,7 @@ export function shortsQuery(context: ShortsContext) {
 export default function ShortsShelf({ context, onSelect }: {
   context: ShortsContext; onSelect: (video: Video, context: ShortsContext) => void;
 }) {
+  const [session] = useState(createShortsSession);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -23,15 +24,16 @@ export default function ShortsShelf({ context, onSelect }: {
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setVideos([]); setError('');
-    Promise.allSettled([fetchJSON(`/api/shorts?${query}`), fetchJSON('/api/shorts-ranking')]).then(([native, ranked]) => {
+    const seen = readSeenShorts();
+    Promise.allSettled([fetchJSON(discoveryRequest(query, 1, session, seen)), fetchJSON('/api/shorts-ranking')]).then(([native, ranked]) => {
       if (native.status === 'rejected') throw native.reason;
       const regular = (native.value.videos || []).filter((v: Video) => v.isShort);
-      const ranking = ranked.status === 'fulfilled' ? ranked.value.videos || [] : [];
+      const ranking = ranked.status === 'fulfilled' ? unseenRankingFirst(ranked.value.videos || [], seen) : [];
       if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [query, attempt]);
+  }, [query, session, attempt]);
   if (!loading && !error && !videos.length) return null;
   return <section className="shorts-shelf" aria-label="ショート動画のおすすめ">
     <div className="flex items-center justify-between gap-3 mb-4">

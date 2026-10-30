@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
+import type { ReactNode } from 'react';
+import Avatar from './Avatar';
 import { Video } from '../types';
 import { fetchJSON, formatNumberJP } from '../utils';
-import { isShortsLocation, MAX_SHORT_PAGES, mixShorts } from '../lib/shortsFeed.mjs';
+import { isShortsLocation, MAX_SHORT_PAGES, mixShorts, createShortsSession, readSeenShorts, recordSeenShort, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
 import ShortsComments from './ShortsComments';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
-function ShortEmbed({ video, onRecord, onMetadata }: {
-  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void;
+function ShortEmbed({ video, onRecord, onMetadata, children }: {
+  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode;
 }) {
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
@@ -38,6 +40,7 @@ function ShortEmbed({ video, onRecord, onMetadata }: {
   return <div className="shorts-frame">
     {url && <iframe src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { if (detail.current) callbacks.current.onRecord(detail.current); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
+    {children}
     {error && <div className="shorts-embed-error" role="status"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="underline mt-3">再試行</button></div>}
   </div>;
 }
@@ -51,6 +54,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const route = useRef(location); route.current = location;
   const navigateRef = useRef(navigate); navigateRef.current = navigate;
   const seed = useRef(initialId ? initialVideo || { videoId: initialId, title: 'ショート動画', author: 'チャンネル', isShort: true, viewCount: 0, publishedText: '', lengthSeconds: 0, videoThumbnails: [] } as Video : null);
+  const [session] = useState(createShortsSession);
+  const [seenOnEntry] = useState(readSeenShorts);
+  const regularRef = useRef<Video[]>([]);
   const [regular, setRegular] = useState<Video[]>(seed.current ? [seed.current] : []);
   const [ranking, setRanking] = useState<Video[]>([]);
   const [rankingReady, setRankingReady] = useState(false);
@@ -68,7 +74,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const pending = useRef(false);
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
-  const videos: Video[] = !rankingReady ? [] : ranking.length ? mixShorts(regular, ranking, seed.current?.videoId) : regular;
+  regularRef.current = regular;
+  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId);
+  const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
@@ -80,7 +88,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   }, []);
   useEffect(() => {
     let cancelled = false; pending.current = true; setLoading(true); setError('');
-    fetchJSON(`/api/shorts?${query}&page=${page}`).then(data => {
+    const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
+    fetchJSON(discoveryRequest(query, page, session, excluded)).then(data => {
       if (cancelled) return;
       const items: Video[] = (data.videos || []).filter((video: Video) => video.isShort);
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);
@@ -88,7 +97,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     }).catch(reason => { if (!cancelled) setError(reason.message || 'ショートを読み込めませんでした。'); })
       .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
     return () => { cancelled = true; };
-  }, [query, page, attempt]);
+  }, [query, page, session, attempt]);
   useEffect(() => {
     if (!videos.length) return;
     setActiveId(previous => videos.some(video => video.videoId === previous) ? previous : videos[0].videoId!);
@@ -139,13 +148,20 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え">
       {videos.map(video => {
         const info = metadata[video.videoId!] || video;
+        const active = video.videoId === activeId;
+        const overlay = <div className="shorts-overlay">
+          <button className="shorts-channel" onClick={() => onSelectChannel(info.authorId || info.author)} aria-label={`${info.author}のチャンネル`}>
+            {active && (info.authorAvatar || metadata[video.videoId!]) ? <Avatar src={info.authorAvatar} name={info.author} channelId={info.authorId} videoId={info.videoId} className="w-9 h-9 text-sm" />
+              : info.authorAvatar ? <img src={info.authorAvatar} alt="" className="w-9 h-9 rounded-full object-cover" loading="lazy" /> : <span className="shorts-channel-placeholder">{info.author.slice(0, 1)}</span>}
+            <span>{info.author}</span>
+          </button>
+          <h1 className="shorts-overlay-title">{info.title}</h1>
+          <p className="shorts-overlay-stats">{info.viewCount > 0 ? `${formatNumberJP(info.viewCount)}回視聴` : ''}{info.likeCount == null ? '' : ` · 高評価 ${formatNumberJP(info.likeCount)}`}</p>
+        </div>;
         return <article className="shorts-slide" key={video.videoId} data-short-id={video.videoId} aria-label={info.title}>
-          {video.videoId === activeId ? <ShortEmbed video={video} onRecord={onRecord} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))} />
-            : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" /></div>}
+          {active ? <ShortEmbed video={video} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
+            : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" />{overlay}</div>}
           <div className="shorts-caption">
-            <h1 className="font-semibold text-sm line-clamp-2">{info.title}</h1>
-            <button className="text-xs text-gray-600 hover:underline mt-1" onClick={() => onSelectChannel(info.authorId || info.author)}>{info.author}</button>
-            <p className="text-xs text-gray-500 mt-1">{info.viewCount > 0 ? `${formatNumberJP(info.viewCount)}回視聴` : ''}{info.likeCount == null ? '' : ` · 高評価 ${formatNumberJP(info.likeCount)}`}</p>
             <details className="shorts-comment-disclosure" open={commentsId === video.videoId} onToggle={event => { if (video.videoId === activeRef.current) setCommentsId(event.currentTarget.open ? video.videoId! : ''); }}>
               <summary className="text-sm text-gray-600 cursor-pointer py-2">コメント</summary>
               {commentsId === video.videoId && <ShortsComments key={video.videoId} videoId={video.videoId!} inline onSelectChannel={onSelectChannel} />}
