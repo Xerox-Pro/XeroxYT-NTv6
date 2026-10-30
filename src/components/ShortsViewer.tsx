@@ -33,7 +33,6 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active }: {
       }),
     ]).then(([metadata, rawUrl]) => {
       if (cancelled) return;
-      if (!metadata.shortEligible && !metadata.aspectVerified) throw new Error('縦長のショートであることを確認できませんでした。');
       const parsed = new URL(rawUrl);
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
       parsed.searchParams.set('enablejsapi', '1');
