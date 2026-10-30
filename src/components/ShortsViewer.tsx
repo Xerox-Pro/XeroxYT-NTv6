@@ -7,15 +7,15 @@ import { loadPlayerApi } from '../lib/youtubePlayer';
 import ShortsComments from './ShortsComments';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
-function ShortPlayback({ videoId, title, onRecord, onMetadata }: { videoId: string; title: string; onRecord: (video: Video) => void; onMetadata: (video: Video) => void }) {
+function ShortPlayback({ videoId, title, muted, onMutedChange, onRecord, onMetadata }: { videoId: string; title: string; muted: boolean; onMutedChange: (value: boolean) => void; onRecord: (video: Video) => void; onMetadata: (video: Video) => void }) {
   const [video, setVideo] = useState<Video | null>(null);
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [playing, setPlaying] = useState(true);
-  const [muted, setMuted] = useState(true);
+  const mutePreference = useRef(muted); mutePreference.current = muted;
   const [progress, setProgress] = useState(0);
   const [url, setUrl] = useState('');
-  const iframe = useRef<HTMLIFrameElement>(null);
+  const playerHost = useRef<HTMLDivElement>(null);
   const player = useRef<any>(null);
   const record = useRef(onRecord); record.current = onRecord;
   const metadataReady = useRef(onMetadata); metadataReady.current = onMetadata;
@@ -38,14 +38,22 @@ function ShortPlayback({ videoId, title, onRecord, onMetadata }: { videoId: stri
     return () => { cancelled = true; };
   }, [videoId, title, attempt]);
   useEffect(() => {
-    if (!url || !iframe.current || !video) return;
+    if (!url || !playerHost.current || !video) return;
+    const frame = document.createElement('iframe');
+    frame.src = url;
+    frame.title = video.title;
+    frame.className = 'shorts-iframe';
+    frame.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+    frame.referrerPolicy = 'strict-origin-when-cross-origin';
+    frame.tabIndex = -1;
+    playerHost.current.appendChild(frame);
     let cancelled = false;
     let instance: any;
     let recorded = false;
     loadPlayerApi().then(YT => {
-      if (cancelled || !iframe.current) return;
-      instance = new YT.Player(iframe.current, { events: {
-        onReady: () => { if (cancelled) return; player.current = instance; instance.mute(); instance.playVideo(); setMuted(true); setReady(true); },
+      if (cancelled || !frame.isConnected) return;
+      instance = new YT.Player(frame, { events: {
+        onReady: () => { if (cancelled) return; player.current = instance; if (mutePreference.current) instance.mute(); else instance.unMute(); instance.playVideo(); setReady(true); },
         onStateChange: (event: any) => {
           if (cancelled) return;
           setPlaying(event.data === 1);
@@ -60,18 +68,18 @@ function ShortPlayback({ videoId, title, onRecord, onMetadata }: { videoId: stri
     }, 500);
     const visibility = () => { if (document.hidden) instance?.pauseVideo?.(); };
     document.addEventListener('visibilitychange', visibility);
-    return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', visibility); instance?.destroy?.(); player.current = null; };
+    return () => { cancelled = true; clearInterval(timer); document.removeEventListener('visibilitychange', visibility); instance?.destroy?.(); frame.remove(); player.current = null; };
   }, [url, video]);
   const toggle = () => { if (playing) player.current?.pauseVideo?.(); else player.current?.playVideo?.(); };
   return <>
-    {url && !error && <iframe ref={iframe} src={url} title={video?.title || 'ショート動画プレイヤー'} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" referrerPolicy="strict-origin-when-cross-origin" tabIndex={-1} />}
+    <div ref={playerHost} className="absolute inset-0" />
     {!error && <button className="shorts-tap-area" onClick={toggle} aria-label={playing ? '一時停止' : '再生'} disabled={!ready}>{ready && !playing && <Play size={56} fill="white" />}</button>}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={32} /></div>}
     {error && <div role="status" className="absolute inset-0 z-20 flex flex-col justify-center items-center p-8 text-center gap-4 bg-neutral-950 text-sm"><p>{error}</p><button onClick={() => setAttempt(a => a + 1)} className="flex gap-2 items-center px-4 py-2 bg-white/15 rounded-full"><RotateCw size={16} />再試行</button></div>}
     {ready && !error && <>
       <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
         <button className="shorts-player-control pointer-events-auto" onClick={toggle} aria-label={playing ? '一時停止' : '再生'}>{playing ? <Pause size={21} /> : <Play size={21} />}</button>
-        <button className="shorts-player-control pointer-events-auto" onClick={() => { if (muted) player.current?.unMute(); else player.current?.mute(); setMuted(!muted); }} aria-label={muted ? '音声をオン' : 'ミュート'}>{muted ? <VolumeX size={21} /> : <Volume2 size={21} />}</button>
+        <button className="shorts-player-control pointer-events-auto" onClick={() => { if (muted) player.current?.unMute(); else player.current?.mute(); onMutedChange(!muted); }} aria-label={muted ? '音声をオン' : 'ミュート'}>{muted ? <VolumeX size={21} /> : <Volume2 size={21} />}</button>
       </div>
       <input type="range" min="0" max="100" step="0.1" value={progress} aria-label="ショートの再生位置" className="shorts-progress" onChange={event => { const value = Number(event.target.value); player.current?.seekTo(player.current.getDuration() * value / 100, true); setProgress(value); }} />
     </>}
@@ -93,6 +101,7 @@ export default function ShortsViewer({ initialId, context, onRecord, onSelectCha
   const [attempt, setAttempt] = useState(0);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [notice, setNotice] = useState('');
+  const [muted, setMuted] = useState(true);
   const [ratings, setRatings] = useState<Record<string, 'like' | 'dislike'>>(() => {
     try { return JSON.parse(localStorage.getItem('xerox_shorts_ratings_v1') || '{}'); } catch { return {}; }
   });
@@ -184,7 +193,7 @@ export default function ShortsViewer({ initialId, context, onRecord, onSelectCha
       <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="ショート動画。上下にスワイプして切り替え">
         {videos.map(video => <article className="shorts-slide" key={video.videoId} data-short-id={video.videoId} aria-label={video.title}>
           <div className="shorts-frame">
-            {video.videoId === activeId ? <ShortPlayback key={video.videoId} videoId={video.videoId!} title={video.title} onRecord={record} onMetadata={(detail) => setMetadata(old => ({ ...old, [detail.videoId!]: detail }))} />
+            {video.videoId === activeId ? <ShortPlayback key={video.videoId} videoId={video.videoId!} title={video.title} muted={muted} onMutedChange={setMuted} onRecord={record} onMetadata={(detail) => setMetadata(old => ({ ...old, [detail.videoId!]: detail }))} />
               : <img className="w-full h-full object-cover opacity-70" alt="" loading="lazy" src={video.videoThumbnails[0]?.url} />}
             <div className="shorts-caption">
               <button onClick={() => onSelectChannel((metadata[video.videoId!]?.authorId || video.authorId) || (metadata[video.videoId!]?.author || video.author))} className="font-bold text-sm mb-2 hover:underline">{metadata[video.videoId!]?.author || video.author}</button>

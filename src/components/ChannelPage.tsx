@@ -148,7 +148,7 @@ export default function ChannelPage({
           document.title = `${data.title} - XeroxYT-NTv6`;
         }
         setVideoList(data.videos || []);
-        setShortList(data.shortVideos || []);
+        setShortList((data.shortVideos || []).filter((v: Video) => v.isShort));
         setVideoPage(1);
         setShortPage(1);
         setVideoSort('latest');
@@ -197,7 +197,7 @@ export default function ChannelPage({
         if (res.videos && res.videos.length > 0) {
           setVideoList((prev) => {
             const existingIds = new Set(prev.map(v => v.videoId));
-            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            const newItems = res.videos.filter((v: Video) => v.isShort && !existingIds.has(v.videoId));
             return [...prev, ...newItems];
           });
           setVideoPage(nextPage);
@@ -219,7 +219,7 @@ export default function ChannelPage({
         if (res.videos && res.videos.length > 0) {
           setShortList((prev) => {
             const existingIds = new Set(prev.map(v => v.videoId));
-            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            const newItems = res.videos.filter((v: Video) => v.isShort && !existingIds.has(v.videoId));
             return [...prev, ...newItems];
           });
           setShortPage(nextPage);

@@ -880,8 +880,13 @@ export default function MainApp() {
   };
 
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
-    if (videoObj?.isShort) {
-      handleShortSelect(videoObj, { source: currentVideoId ? 'related' : 'home', ...(currentVideoId ? { videoId: currentVideoId } : {}) });
+    const selectedVideo = videoObj || videoCache[videoId] as Video | undefined;
+    if (selectedVideo?.isShort) {
+      handleShortSelect(selectedVideo, { source: currentVideoId ? 'related' : 'home', ...(currentVideoId ? { videoId: currentVideoId } : {}) });
+      return;
+    }
+    if (!videoObj && watchHistory.some(item => item.videoId === videoId && item.type === 'short')) {
+      navigate(`/shorts/${videoId}`);
       return;
     }
     if (videoObj) {

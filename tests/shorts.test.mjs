@@ -46,3 +46,11 @@ test('rejects unbounded/invalid inputs before calling YouTube; errors are retrya
  assert.equal((await call('/api/shorts/:id',{}, {id:'bad'})).code,400);
  assert.equal((await call('/api/shorts',{source:'search',q:'猫'})).code,502);
 });
+test('cold serverless instance re-verifies original aspect from upstream, not client parameters',async()=>{
+ const item=short();item.thumbnail=[];item.on_tap_endpoint.payload.thumbnail={isOriginalAspectRatio:true,thumbnails:[{url:'original',width:1080,height:1920}]};
+ const call=harness({getInfo:async()=>({basic_info:{title:'A short',duration:30},primary_info:{}}),search:async()=>({videos:[item]})});
+ const response=await call('/api/shorts/:id',{title:'A short',width:1080,height:1920},{id:'abcdefghijk'});
+ assert.equal(response.code,200); assert.equal(response.body.aspectVerified,true);
+ const mismatch=await call('/api/shorts/:id',{title:'A short',width:1080,height:1920},{id:'lmnopqrstuv'});
+ assert.equal(mismatch.code,422);
+});

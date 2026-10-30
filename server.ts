@@ -3529,7 +3529,7 @@ async function startServer() {
         const result = {
           page,
           comments: pageComments,
-          hasMore: session.hasMore || pageComments.length > 0,
+          hasMore: page < session.currentPage || session.hasMore,
         };
         setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
         res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
@@ -3570,7 +3570,7 @@ async function startServer() {
       const result = {
         page,
         comments: pageComments,
-        hasMore: session.hasMore || pageComments.length > 0,
+        hasMore: page < session.currentPage || session.hasMore,
       };
 
       if (pageComments.length > 0) {
@@ -3580,7 +3580,7 @@ async function startServer() {
       return res.json(result);
     } catch (err) {
       console.error("Comments fetch error:", err);
-      return res.json({ page, comments: [], hasMore: false });
+      return res.status(502).json({ error: "コメントを取得できませんでした。再試行してください。", page, comments: [], hasMore: false });
     }
   });
 
