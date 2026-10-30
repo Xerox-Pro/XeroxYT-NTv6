@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Router, createPath, parsePath } from 'react-router-dom';
-import type { Location, NavigationType, To } from 'react-router-dom';
+import { Router, createPath, parsePath, NavigationType } from 'react-router-dom';
+import type { Location, To } from 'react-router-dom';
 import App from './App.tsx';
 import './index.css';
 import { initPWA } from './pwa';
@@ -58,7 +58,7 @@ const initialEntry = initializeEntry();
 
 function CleanUrlRouter() {
   const [navigation, setNavigation] = useState<{ action: NavigationType; location: Location }>(() => ({
-    action: 'POP', location: makeLocation(initialEntry),
+    action: NavigationType.Pop, location: makeLocation(initialEntry),
   }));
 
   const navigator = useMemo(() => ({
@@ -71,19 +71,19 @@ function CleanUrlRouter() {
     push: (to: To, state?: unknown) => {
       const entry = newEntry(to, state);
       window.history.pushState({ ...window.history.state, [HISTORY_KEY]: entry }, '', '/');
-      setNavigation({ action: 'PUSH', location: makeLocation(entry) });
+      setNavigation({ action: NavigationType.Push, location: makeLocation(entry) });
     },
     replace: (to: To, state?: unknown) => {
       const entry = newEntry(to, state);
       window.history.replaceState({ ...window.history.state, [HISTORY_KEY]: entry }, '', '/');
-      setNavigation({ action: 'REPLACE', location: makeLocation(entry) });
+      setNavigation({ action: NavigationType.Replace, location: makeLocation(entry) });
     },
   }), []);
 
   useEffect(() => {
     const onPopState = () => {
       const entry = readEntry();
-      if (entry) setNavigation({ action: 'POP', location: makeLocation(entry) });
+      if (entry) setNavigation({ action: NavigationType.Pop, location: makeLocation(entry) });
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);

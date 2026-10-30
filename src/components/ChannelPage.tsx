@@ -148,7 +148,7 @@ export default function ChannelPage({
           document.title = `${data.title} - XeroxYT-NTv6`;
         }
         setVideoList(data.videos || []);
-        setShortList(data.shortVideos || []);
+        setShortList((data.shortVideos || []).filter((v: Video) => v.isShort));
         setVideoPage(1);
         setShortPage(1);
         setVideoSort('latest');
@@ -197,7 +197,7 @@ export default function ChannelPage({
         if (res.videos && res.videos.length > 0) {
           setVideoList((prev) => {
             const existingIds = new Set(prev.map(v => v.videoId));
-            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            const newItems = res.videos.filter((v: Video) => v.isShort && !existingIds.has(v.videoId));
             return [...prev, ...newItems];
           });
           setVideoPage(nextPage);
@@ -219,7 +219,7 @@ export default function ChannelPage({
         if (res.videos && res.videos.length > 0) {
           setShortList((prev) => {
             const existingIds = new Set(prev.map(v => v.videoId));
-            const newItems = res.videos.filter((v: Video) => !existingIds.has(v.videoId));
+            const newItems = res.videos.filter((v: Video) => v.isShort && !existingIds.has(v.videoId));
             return [...prev, ...newItems];
           });
           setShortPage(nextPage);
@@ -509,7 +509,7 @@ export default function ChannelPage({
                   {shortList.slice(0, 6).map((short) => (
                     <div
                       key={short.videoId}
-                      onClick={() => onVideoSelect(short.videoId)}
+                      onClick={() => navigate(`/shorts/${short.videoId}`)}
                       className="group cursor-pointer flex flex-col gap-2"
                     >
                       <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
@@ -608,7 +608,7 @@ export default function ChannelPage({
               {shortList.map((short) => (
                 <div
                   key={short.videoId}
-                  onClick={() => onVideoSelect(short.videoId)}
+                  onClick={() => navigate(`/shorts/${short.videoId}`)}
                   className="group cursor-pointer flex flex-col gap-2"
                 >
                   <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
@@ -620,7 +620,7 @@ export default function ChannelPage({
                     <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/80 to-transparent text-white">
                       <p className="text-xs font-bold line-clamp-2 leading-snug">{short.title}</p>
                       <span className="text-[10px] text-gray-300 mt-1 block">
-                        {formatNumberJP(short.viewCount || 500000)}回視聴
+                        {formatNumberJP(short.viewCount || 0)}回視聴
                       </span>
                     </div>
                   </div>

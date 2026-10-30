@@ -14,27 +14,8 @@ import Avatar from './Avatar';
 import LiveChat from './LiveChat';
 import KeyboardShortcutsModal from './KeyboardShortcutsModal';
 
-let playerApiPromise: Promise<any> | null = null;
-
-function loadPlayerApi(): Promise<any> {
-  const win = window as any;
-  if (win.YT?.Player) return Promise.resolve(win.YT);
-  if (playerApiPromise) return playerApiPromise;
-  playerApiPromise = new Promise((resolve, reject) => {
-    const previous = win.onYouTubeIframeAPIReady;
-    const timeout = window.setTimeout(() => reject(new Error('Player API timed out')), 15000);
-    win.onYouTubeIframeAPIReady = () => {
-      window.clearTimeout(timeout);
-      if (typeof previous === 'function') previous();
-      resolve(win.YT);
-    };
-    const script = document.createElement('script');
-    script.src = '/api/youtube-player/iframe-api';
-    script.onerror = () => { window.clearTimeout(timeout); reject(new Error('Player API unavailable')); };
-    document.head.appendChild(script);
-  }).catch(error => { playerApiPromise = null; throw error; });
-  return playerApiPromise;
-}
+import { loadPlayerApi } from '../lib/youtubePlayer';
+import ShortsShelf from './ShortsShelf';
 
 interface CommentItemProps {
   comment: Comment;
@@ -1569,8 +1550,10 @@ export default function VideoPlayer({
               ))}
             </div>
 
+            <ShortsShelf context={{ source: 'related', videoId }} onSelect={(video) => onVideoSelect(video.videoId!, video)} />
+
             {/* 関連動画リスト（履歴動画もしれっとブレンド） */}
-            {blendedRecommendations.map((recVideo, idx) => (
+            {blendedRecommendations.filter(v => !v.isShort).map((recVideo, idx) => (
               <div 
                 key={`${recVideo.videoId}-${recVideo.playlistId || ''}-${idx}`} 
                 className="flex gap-2.5 group cursor-pointer"

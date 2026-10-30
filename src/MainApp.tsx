@@ -10,6 +10,8 @@ import AIStudio from './components/AIStudio';
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
 import VideoCard from './components/VideoCard';
+import ShortsShelf, { ShortsContext, shortsQuery } from './components/ShortsShelf';
+import ShortsViewer from './components/ShortsViewer';
 import VideoSkeleton from './components/VideoSkeleton';
 import TopProgressBar from './components/TopProgressBar';
 import VideoPlayer from './components/VideoPlayer';
@@ -39,7 +41,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'aistudio'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'shorts' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'aistudio'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -108,12 +110,10 @@ export default function MainApp() {
       setView('home');
       if (category === 'すべて') fetchRecommendations(1, false);
       else fetchHomeCategory(category, 1, false);
-    } else if (path.startsWith('/shorts/')) {
-      const parts = path.split('/');
-      const shortId = parts[2]?.split('?')[0];
-      if (shortId) {
-        navigate(`/watch?v=${encodeURIComponent(shortId)}`, { replace: true });
-      }
+    } else if (path === '/shorts' || path.startsWith('/shorts/')) {
+      setCurrentVideoId(null);
+      setCurrentPlaylistId(null);
+      setView('shorts');
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -156,6 +156,8 @@ export default function MainApp() {
   useEffect(() => {
     if (view === 'search' && searchQuery) {
       document.title = `${searchQuery} - XeroxYT-NTv6`;
+    } else if (view === 'shorts') {
+      document.title = 'ショート - XeroxYT-NTv6';
     } else if (view === 'home') {
       document.title = 'XeroxYT-NTv6';
     } else if (view === 'subscriptions') {
@@ -872,7 +874,21 @@ export default function MainApp() {
     } else navigate(target);
   };
 
+  const handleShortSelect = (video: Video, context: ShortsContext) => {
+    updateCache([video]);
+    navigate(`/shorts/${video.videoId}?${shortsQuery(context)}`);
+  };
+
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
+    const selectedVideo = videoObj || videoCache[videoId] as Video | undefined;
+    if (selectedVideo?.isShort) {
+      handleShortSelect(selectedVideo, { source: currentVideoId ? 'related' : 'home', ...(currentVideoId ? { videoId: currentVideoId } : {}) });
+      return;
+    }
+    if (!videoObj && watchHistory.some(item => item.videoId === videoId && item.type === 'short')) {
+      navigate(`/shorts/${videoId}`);
+      return;
+    }
     if (videoObj) {
       localAI.processVideoInteraction(videoObj, 1.0);
       updateCache([videoObj]);
@@ -1069,7 +1085,20 @@ export default function MainApp() {
               )}
 
           {/* ビュー分岐 */}
-          {view === 'video' ? null : view === 'aistudio' ? (
+          {view === 'video' ? null : view === 'shorts' ? (
+            <ShortsViewer
+              key={['shorts', searchParams.get('source'), searchParams.get('q'), searchParams.get('videoId')].join(':')}
+              initialId={/^[\w-]{11}$/.test(location.pathname.split('/')[2] || '') ? location.pathname.split('/')[2] : undefined}
+              context={{
+                source: searchParams.get('source') === 'search' ? 'search' : searchParams.get('source') === 'related' ? 'related' : 'home',
+                q: searchParams.get('q') || undefined,
+                videoId: searchParams.get('videoId') || undefined,
+              }}
+              onRecord={(video) => { updateCache([video]); handleRecordShortHistory({ ...video, videoId: video.videoId! }); }}
+              onSelectChannel={handleSelectChannel}
+              onSave={setPlaylistModalVideo}
+            />
+          ) : view === 'aistudio' ? (
             <AIStudio />
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
@@ -1174,9 +1203,14 @@ export default function MainApp() {
                 </div>
               )}
 
+              <ShortsShelf
+                context={view === 'search' ? { source: 'search', q: searchQuery } : { source: 'home', q: selectedCategory === 'すべて' ? undefined : selectedCategory }}
+                onSelect={handleShortSelect}
+              />
+
               {/* 動画リスト */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-                {videos.map((video, idx) => (
+                {videos.filter(video => !video.isShort).map((video, idx) => (
                   <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard
                       video={video}

@@ -1,4 +1,5 @@
 import express from "express";
+import { registerShortsRoutes, normalizeShort } from "./shorts.mjs";
 import { handleDownloadMedia } from "./download-media.mjs";
 import path from "path";
 import crypto from "crypto";
@@ -1497,6 +1498,8 @@ async function startServer() {
     }
   });
 
+  registerShortsRoutes(app, getYt);
+
   // トレンド動画取得
   app.get("/api/trending", async (req, res) => {
     try {
@@ -1723,84 +1726,8 @@ async function startServer() {
     if (!v) return null;
     if (isUnwantedVideo(v)) return null;
 
-    // ShortsLockupView (YouTube.js の最新ショート動画構造)
-    if (v.type === "ShortsLockupView" || v.type === "ReelItem") {
-      const videoId =
-        v.on_tap_endpoint?.payload?.videoId ||
-        (typeof v.entity_id === "string"
-          ? v.entity_id.replace("shorts-shelf-item-", "")
-          : "") ||
-        v.id ||
-        v.videoId;
-      if (!videoId) return null;
-
-      const title =
-        v.overlay_metadata?.primary_text?.text ||
-        v.title?.text ||
-        (typeof v.title === "string" ? v.title : "") ||
-        v.accessibility_text ||
-        "ショート動画";
-      const viewText =
-        v.overlay_metadata?.secondary_text?.text || v.views?.text || "";
-
-      let authorName = "";
-      if (v.author) {
-        authorName =
-          typeof v.author === "string"
-            ? v.author
-            : v.author.name || v.author.text || "";
-      }
-      if (!isValidAuthorName(authorName)) {
-        authorName = isValidAuthorName(defaultAuthor) ? defaultAuthor : "チャンネル";
-      }
-
-      let authorId =
-        (v.author?.id && isValidChannelId(v.author.id) ? v.author.id : undefined) ||
-        (v.author?.endpoint?.browse_endpoint?.browse_id && isValidChannelId(v.author.endpoint.browse_endpoint.browse_id) ? v.author.endpoint.browse_endpoint.browse_id : undefined) ||
-        (v.on_tap_endpoint?.payload?.browseId && isValidChannelId(v.on_tap_endpoint.payload.browseId) ? v.on_tap_endpoint.payload.browseId : undefined) ||
-        (isValidChannelId(channelId) ? channelId : undefined);
-
-      let authorAvatar = "";
-      if (v.author?.best_thumbnail?.url)
-        authorAvatar = v.author.best_thumbnail.url;
-      else if (v.author?.thumbnails?.[0]?.url)
-        authorAvatar = v.author.thumbnails[0].url;
-      else if (v.author?.avatar?.[0]?.url)
-        authorAvatar = v.author.avatar[0].url;
-
-      if (authorAvatar && authorAvatar.startsWith("//"))
-        authorAvatar = "https:" + authorAvatar;
-
-      if (!authorAvatar && isValidAuthorName(authorName) && batchChannelCache.has(authorName)) {
-        const cached = batchChannelCache.get(authorName);
-        if (cached?.authorAvatar) authorAvatar = cached.authorAvatar;
-        if (!authorId && isValidChannelId(cached?.authorId)) authorId = cached!.authorId;
-      }
-
-      if (!authorAvatar) {
-        authorAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(authorName)}&background=random&color=fff&size=128`;
-      }
-
-      const thumbnails = v.on_tap_endpoint?.payload?.thumbnail?.thumbnails ||
-        v.thumbnails || [
-          { url: `https://i.ytimg.com/vi/${videoId}/frame0.jpg` },
-        ];
-
-      return {
-        videoId: videoId,
-        playlistId: undefined,
-        type: "video",
-        title: title,
-        author: authorName,
-        authorId: authorId,
-        authorAvatar: authorAvatar,
-        viewCount: extractViewCount(v) || parseCount(viewText) || 0,
-        publishedText: "",
-        lengthSeconds: 30,
-        videoThumbnails: thumbnails,
-        isLive: false,
-        isPremiere: false,
-      };
+    if (v.type === "ShortsLockupView" || v.type === "ReelItem" || v.content_type === "SHORT") {
+      return normalizeShort(v);
     }
 
     if (v.type === "LockupView") {
@@ -3602,7 +3529,7 @@ async function startServer() {
         const result = {
           page,
           comments: pageComments,
-          hasMore: session.hasMore || pageComments.length > 0,
+          hasMore: page < session.currentPage || session.hasMore,
         };
         setToMemoryCache(cacheKey, result, 15 * 60 * 1000);
         res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
@@ -3643,7 +3570,7 @@ async function startServer() {
       const result = {
         page,
         comments: pageComments,
-        hasMore: session.hasMore || pageComments.length > 0,
+        hasMore: page < session.currentPage || session.hasMore,
       };
 
       if (pageComments.length > 0) {
@@ -3653,7 +3580,7 @@ async function startServer() {
       return res.json(result);
     } catch (err) {
       console.error("Comments fetch error:", err);
-      return res.json({ page, comments: [], hasMore: false });
+      return res.status(502).json({ error: "コメントを取得できませんでした。再試行してください。", page, comments: [], hasMore: false });
     }
   });
 
