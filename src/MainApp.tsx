@@ -1088,6 +1088,7 @@ export default function MainApp() {
           {view === 'video' ? null : view === 'shorts' ? (
             <ShortsViewer
               key={['shorts', searchParams.get('source'), searchParams.get('q'), searchParams.get('videoId')].join(':')}
+              initialVideo={videoCache[location.pathname.split('/')[2]] as Video | undefined}
               initialId={/^[\w-]{11}$/.test(location.pathname.split('/')[2] || '') ? location.pathname.split('/')[2] : undefined}
               context={{
                 source: searchParams.get('source') === 'search' ? 'search' : searchParams.get('source') === 'related' ? 'related' : 'home',
@@ -1096,7 +1097,6 @@ export default function MainApp() {
               }}
               onRecord={(video) => { updateCache([video]); handleRecordShortHistory({ ...video, videoId: video.videoId! }); }}
               onSelectChannel={handleSelectChannel}
-              onSave={setPlaylistModalVideo}
             />
           ) : view === 'aistudio' ? (
             <AIStudio />

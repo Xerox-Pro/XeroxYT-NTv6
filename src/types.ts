@@ -32,6 +32,7 @@ export interface Video {
   isUpcoming?: boolean;
   isPlayerOnly?: boolean;
   isShort?: boolean;
+  shortSource?: 'youtube' | 'ranking';
   aspectVerified?: boolean;
   width?: number;
   height?: number;

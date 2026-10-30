@@ -1,5 +1,6 @@
 import express from "express";
 import { registerShortsRoutes, normalizeShort } from "./shorts.mjs";
+import { registerRankingRoute } from "./shorts-ranking.mjs";
 import { handleDownloadMedia } from "./download-media.mjs";
 import path from "path";
 import crypto from "crypto";
@@ -1498,6 +1499,7 @@ async function startServer() {
     }
   });
 
+  registerRankingRoute(app);
   registerShortsRoutes(app, getYt);
 
   // トレンド動画取得
