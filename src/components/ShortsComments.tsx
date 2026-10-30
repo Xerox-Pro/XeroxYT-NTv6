@@ -4,8 +4,8 @@ import { Comment } from '../types';
 import { fetchJSON } from '../utils';
 import Avatar from './Avatar';
 
-export default function ShortsComments({ videoId, onClose, onSelectChannel }: {
-  videoId: string; onClose: () => void; onSelectChannel: (id: string) => void;
+export default function ShortsComments({ videoId, onClose, onSelectChannel, inline = false }: {
+  videoId: string; onClose?: () => void; inline?: boolean; onSelectChannel: (id: string) => void;
 }) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [sort, setSort] = useState('top');
@@ -17,10 +17,11 @@ export default function ShortsComments({ videoId, onClose, onSelectChannel }: {
   const panel = useRef<HTMLElement>(null);
   const close = useRef<HTMLButtonElement>(null);
   useEffect(() => {
+    if (inline) return;
     const previous = document.activeElement as HTMLElement;
     close.current?.focus();
     return () => previous?.focus();
-  }, []);
+  }, [inline]);
   useEffect(() => {
     let cancelled = false;
     setLoading(true); setError('');
@@ -35,9 +36,10 @@ export default function ShortsComments({ videoId, onClose, onSelectChannel }: {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [videoId, sort, page, attempt]);
-  return <aside ref={panel} className="shorts-comments" role="dialog" aria-modal="true" aria-labelledby="shorts-comments-title" onKeyDown={event => {
+  return <aside ref={panel} className={inline ? "shorts-comments shorts-comments-inline" : "shorts-comments"} role={inline ? "region" : "dialog"} aria-modal={inline ? undefined : true} aria-labelledby="shorts-comments-title" onKeyDown={event => {
+    if (inline) return;
     event.stopPropagation();
-    if (event.key === 'Escape') onClose();
+    if (event.key === 'Escape') onClose?.();
     if (event.key === 'Tab') {
       const controls = panel.current?.querySelectorAll<HTMLElement>('button:not([disabled]), select, a[href]');
       if (!controls?.length) return;
@@ -48,7 +50,7 @@ export default function ShortsComments({ videoId, onClose, onSelectChannel }: {
   }}>
     <header className="flex items-center justify-between p-4 border-b border-gray-200 shrink-0">
       <h2 id="shorts-comments-title" className="font-bold text-lg">コメント</h2>
-      <button ref={close} onClick={onClose} aria-label="コメントを閉じる" className="p-2 rounded-full hover:bg-gray-100"><X size={22} /></button>
+      {!inline && <button ref={close} onClick={onClose} aria-label="コメントを閉じる" className="p-2 rounded-full hover:bg-gray-100"><X size={22} /></button>}
     </header>
     <div className="flex items-center gap-3 px-4 py-3 text-sm">
       <label htmlFor="shorts-comment-sort">並べ替え</label>
@@ -56,7 +58,7 @@ export default function ShortsComments({ videoId, onClose, onSelectChannel }: {
     </div>
     <div className="overflow-y-auto overscroll-contain p-4 space-y-5 flex-1">
       {comments.map(comment => <article key={comment.id} className="flex items-start gap-3">
-        <button onClick={() => { onClose(); onSelectChannel(comment.authorId || comment.author); }} aria-label={`${comment.author}のチャンネル`}>
+        <button onClick={() => { onClose?.(); onSelectChannel(comment.authorId || comment.author); }} aria-label={`${comment.author}のチャンネル`}>
           <Avatar src={comment.authorAvatar} name={comment.author} className="w-8 h-8 text-xs" />
         </button>
         <div className="min-w-0 flex-1"><p className="text-xs"><strong>{comment.author}</strong><span className="text-gray-500 ml-2">{comment.publishedTime}</span></p>

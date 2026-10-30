@@ -196,6 +196,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     const isGet = !options || !options.method || options.method === 'GET';
     const isApiCall = url.startsWith('/api/') || url.startsWith('/stream') || url.startsWith('/edu');
     const isTimeSensitive = 
+      url.startsWith('/api/shorts-ranking') ||
       url.startsWith('/api/home/') ||
       /^\/api\/channel\/[^/]+\/search(?:\?|$)/.test(url) ||
       url.includes('/sync/') || 
@@ -223,6 +224,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     }
 
     const reqOptions = { ...options };
+    if (url.startsWith('/api/shorts-ranking')) reqOptions.cache = 'no-store';
     const finalHeaders = new Headers(reqOptions.headers || {});
     const ytCreds = localStorage.getItem('xerox_youtube_credentials');
     if (ytCreds && !finalHeaders.has('x-youtube-credentials')) {

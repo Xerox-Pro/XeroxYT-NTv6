@@ -20,7 +20,7 @@ export function normalizeShort(item) {
   if (!portrait.length) return null;
   const text = value => typeof value === 'string' ? value : value?.text || '';
   return {
-    videoId, type: 'video', isShort: true,
+    videoId, type: 'video', isShort: true, shortSource: 'youtube',
     title: text(item.overlay_metadata?.primary_text) || text(item.title) || text(item.metadata?.title) || 'ショート動画',
     author: item.author?.name || (typeof item.author === 'string' ? item.author : '') || 'チャンネル',
     authorId: item.author?.id,
@@ -65,7 +65,7 @@ export function shortDetails(info, videoId, originalAspect) {
   }
   const owner = info.secondary_info?.owner;
   return { video: {
-    videoId, type: 'video', isShort: true, aspectVerified: true,
+    videoId, type: 'video', isShort: true, shortSource: 'youtube', aspectVerified: true,
     width: dimensions.width, height: dimensions.height,
     title: basic.title || info.primary_info?.title?.text || originalAspect?.title || 'ショート動画',
     author: owner?.author?.name || basic.author || originalAspect?.author || 'チャンネル',
@@ -104,7 +104,7 @@ export function registerShortsRoutes(app, getYoutube) {
     const videoId = typeof req.query.videoId === 'string' ? req.query.videoId : '';
     const page = Number(req.query.page || 1);
     if (!['home', 'search', 'related'].includes(source) || q.length > 200 ||
-      !Number.isInteger(page) || page < 1 || page > 6 ||
+      !Number.isInteger(page) || page < 1 || page > 20 ||
       (source === 'search' && !q) || (source === 'related' && !/^[\w-]{11}$/.test(videoId))) {
       return res.status(400).json({ error: 'ショートの取得条件を確認してください。' });
     }
@@ -135,11 +135,12 @@ export function registerShortsRoutes(app, getYoutube) {
         }
         for (let index = 1; index < page; index++) {
           if (!feed.has_continuation) return { videos: [], hasMore: false, page };
-          feed = await feed.getContinuation();
+          const previous = feed;
+          feed = await cached(`continuation:${source}:${query}:${videoId}:${index}`, () => previous.getContinuation());
         }
         return {
           videos: [...new Map([...relatedShorts, ...collectShorts(feed)].filter(v => v.videoId !== videoId).map(v => [v.videoId, v])).values()],
-          hasMore: Boolean(feed.has_continuation) && page < 6, page,
+          hasMore: Boolean(feed.has_continuation) && page < 20, page,
         };
       });
       rememberOriginalAspects(result.videos);
