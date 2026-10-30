@@ -6,7 +6,7 @@ test('accepts 9:16 and rejects landscape, square, missing and misleading title-o
  assert.equal(isShortAspect(1080,1920),true);
  for(const [w,h] of [[1920,1080],[720,720],[0,720],[NaN,720]]) assert.equal(isShortAspect(w,h),false);
  assert.equal(normalizeShort({type:'Video',id:'abcdefghijk',title:'short clip',duration:{seconds:15},thumbnails:[{width:405,height:720}]}),null);
- assert.equal(normalizeShort(short('abcdefghijk',{width:720,height:720})),null);
+ assert.ok(normalizeShort(short('abcdefghijk',{width:720,height:720})));
  assert.equal(normalizeShort(short()).videoId,'abcdefghijk');
  const emptyThumbnail=short();emptyThumbnail.thumbnail=[];emptyThumbnail.on_tap_endpoint.payload.thumbnail={thumbnails:[{url:'x',width:1080,height:1920}],isOriginalAspectRatio:true};
  assert.equal(normalizeShort(emptyThumbnail).videoId,'abcdefghijk');
@@ -16,14 +16,14 @@ test('extracts nested shelves and continuation memos without duplicates or circu
  assert.equal(collectShorts(root).length,1);
  assert.equal(collectShorts({page:{on_response_received_commands_memo:new Map([['ShortsLockupView',[short()]]])}}).length,1);
 });
-test('playback checks actual stream dimensions, not cropped thumbnails', () => {
+test('playback accepts unknown and landscape dimensions without inventing aspect verification', () => {
  const info={basic_info:{title:'x',duration:40,thumbnail:[{width:405,height:720}]},streaming_data:{adaptive_formats:[{width:1920,height:1080}]}};
- assert.equal(shortDetails(info,'abcdefghijk').status,422);
+ assert.equal(shortDetails(info,'abcdefghijk').video.shortEligible,true);
  info.streaming_data.adaptive_formats=[{width:1080,height:1920}];
  assert.equal(shortDetails(info,'abcdefghijk').video.aspectVerified,true);
- assert.equal(shortDetails({...info,streaming_data:{}},'abcdefghijk').status,422);
+ assert.equal(shortDetails({...info,streaming_data:{}},'abcdefghijk').video.shortEligible,true);
  assert.equal(shortDetails({...info,streaming_data:{}},'abcdefghijk',{width:1080,height:1920}).video.aspectVerified,true);
- assert.equal(shortDetails({...info,basic_info:{duration:900}},'abcdefghijk').status,422);
+ assert.equal(shortDetails({...info,basic_info:{duration:900}},'abcdefghijk').video.shortEligible,true);
 });
 function harness(youtube) {
  const routes={}; registerShortsRoutes({get:(path,handler)=>routes[path]=handler},async()=>youtube);
@@ -46,19 +46,19 @@ test('rejects unbounded/invalid inputs before calling YouTube; errors are retrya
  assert.equal((await call('/api/shorts/:id',{}, {id:'bad'})).code,400);
  assert.equal((await call('/api/shorts',{source:'search',q:'猫'})).code,502);
 });
-test('cold serverless instance re-verifies original aspect from upstream, not client parameters',async()=>{
+test('cold serverless instance permits unknown aspect without trusting client dimensions',async()=>{
  const item=short();item.thumbnail=[];item.on_tap_endpoint.payload.thumbnail={isOriginalAspectRatio:true,thumbnails:[{url:'original',width:1080,height:1920}]};
  const call=harness({getInfo:async()=>({basic_info:{title:'A short',duration:30},primary_info:{}}),search:async()=>({videos:[item]})});
  const response=await call('/api/shorts/:id',{title:'A short',width:1080,height:1920},{id:'abcdefghijk'});
- assert.equal(response.code,200); assert.equal(response.body.aspectVerified,true);
+ assert.equal(response.code,200); assert.equal(response.body.aspectVerified,false); assert.equal(response.body.shortEligible,true);
  const mismatch=await call('/api/shorts/:id',{title:'A short',width:1080,height:1920},{id:'lmnopqrstuv'});
- assert.equal(mismatch.code,422);
+ assert.equal(mismatch.code,200);
 });
 
-test('hashtag Shorts play without dimension proof, including description tags, but unrelated unknown videos stay rejected',()=>{
+test('Shorts playback accepts missing tags and missing dimensions',()=>{
  for(const basic_info of [{title:'clip #shorts'},{title:'clip',short_description:'Watch #SHORTS now'}]){
   const result=shortDetails({basic_info},'abcdefghijk');assert.equal(result.video.shortEligible,true);assert.equal(result.video.aspectVerified,false);
  }
- assert.equal(shortDetails({basic_info:{title:'clip #shortstuff'}},'abcdefghijk').status,422);
+ assert.equal(shortDetails({basic_info:{title:'clip without a tag'}},'abcdefghijk').video.shortEligible,true);
  assert.ok(normalizeShort({type:'Video',id:'abcdefghijk',title:'#shorts',thumbnails:[]}));
 });
