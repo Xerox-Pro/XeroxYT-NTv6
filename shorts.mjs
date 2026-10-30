@@ -161,16 +161,20 @@ export function registerShortsRoutes(app, getYoutube) {
         const candidates = [...primary, ...pools];
         rememberOriginalAspects(candidates);
         let videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
-        if (personal.length && videos.length >= 4) {
-          const picks = diversifyShorts(personal, `${session}:personal:${page}`, [...excluded, videoId].filter(Boolean), Math.floor(videos.length / 4));
+        if (personal.length) {
+          // Ranking still occupies half the final feed. Personalize 60% of
+          // this non-ranking pool to target 30% overall (3 of every 10 clips).
+          const picks = diversifyShorts(personal, `${session}:personal:${page}`, [...excluded, videoId].filter(Boolean), 18);
           const pickIds = new Set(picks.map(v => v.videoId));
           const general = videos.filter(v => !pickIds.has(v.videoId));
           const mixed = [];
-          for (let i = 0; i < general.length; i++) {
-            mixed.push(general[i]);
-            if ((i + 1) % 4 === 0 && picks.length) mixed.push(picks.shift());
+          for (let i = 0; i < 30 && (general.length || picks.length); i++) {
+            const preferPersonal = i % 5 === 0 || i % 5 === 2 || i % 5 === 4;
+            if (preferPersonal && picks.length) mixed.push(picks.shift());
+            else if (general.length) mixed.push(general.shift());
+            else if (picks.length) mixed.push(picks.shift());
           }
-          videos = mixed.slice(0, 30);
+          videos = mixed;
           rememberOriginalAspects(personal);
         }
         res.setHeader('Cache-Control', 'private, no-store');

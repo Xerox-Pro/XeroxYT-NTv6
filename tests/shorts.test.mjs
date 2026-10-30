@@ -74,3 +74,11 @@ test('personalized search adds only a small portion and failures preserve genera
  const fallback=harness({search:async q=>{if(q.startsWith('ギター '))throw Error('offline');return {videos:ids.map(id=>short(id))};}});
  assert.ok((await fallback('/api/shorts',{source:'home',session:'test',interest:'ギター'})).body.videos.length>0);
 });
+test('personalized clips target 30 percent of the final ranking-alternated feed', async () => {
+ const general=Array.from({length:30},(_,i)=>short(`general${String(i).padStart(4,'0')}`));
+ const personal=Array.from({length:24},(_,i)=>short(`personal${String(i).padStart(3,'0')}`));
+ const call=harness({search:async q=>({videos:q.startsWith('ギター ')?personal:general})});
+ const res=await call('/api/shorts',{source:'home',session:'ratio',interest:'ギター'});
+ assert.equal(res.body.videos.length,30);
+ assert.equal(res.body.videos.filter(v=>v.videoId.startsWith('personal')).length,18);
+});
