@@ -1,6 +1,10 @@
 import { discoveryQueries, diversifyShorts } from './shorts-discovery.mjs';
 // Shorts are identified by YouTube's renderer/endpoint AND a portrait thumbnail,
 // never by a title, hashtag or duration. Playback verifies actual video dimensions.
+export function hasShortsTag(item) {
+  const text = value => typeof value === 'string' ? value : value?.text || '';
+  return /#shorts(?![\p{L}\p{N}_])/iu.test([text(item?.title), text(item?.description), text(item?.short_description), ...(item?.hashtags || []).map(tag => '#' + String(tag).replace(/^#/, ''))].join(' '));
+}
 export function isShortAspect(width, height) {
   const ratio = Number(width) / Number(height);
   return Number(width) > 0 && Number(height) > 0 && ratio >= 0.48 && ratio <= 0.65;
@@ -12,13 +16,14 @@ export function normalizeShort(item) {
   const nativeShort = ['ShortsLockupView', 'ReelItem'].includes(item.type) ||
     item.content_type === 'SHORT' || endpoint?.metadata?.api_url?.includes('/reel/') ||
     endpoint?.name === 'reelWatchEndpoint';
-  if (!nativeShort) return null;
+  const tagged = hasShortsTag(item);
+  if (!nativeShort && !tagged) return null;
   const videoId = endpoint?.payload?.videoId || item.id || item.content_id ||
     (typeof item.entity_id === 'string' ? item.entity_id.replace(/^shorts-shelf-item-/, '') : '');
   if (!/^[\w-]{11}$/.test(videoId)) return null;
   const thumbnails = [item.thumbnail, item.thumbnails, item.content_image?.image, endpoint?.payload?.thumbnail?.thumbnails].filter(Array.isArray).flat();
   const portrait = Array.isArray(thumbnails) ? thumbnails.filter(t => isShortAspect(t.width, t.height)) : [];
-  if (!portrait.length) return null;
+  if (!portrait.length && !tagged) return null;
   const text = value => typeof value === 'string' ? value : value?.text || '';
   return {
     videoId, type: 'video', isShort: true, shortSource: 'youtube',
@@ -31,7 +36,7 @@ export function normalizeShort(item) {
       : undefined,
     viewCount: 0,
     viewCountText: text(item.overlay_metadata?.secondary_text) || text(item.views),
-    publishedText: '', lengthSeconds: 0, videoThumbnails: portrait,
+    publishedText: '', lengthSeconds: 0, videoThumbnails: portrait.length ? portrait : thumbnails.length ? thumbnails : [{ url: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` }],
   };
 }
 
@@ -54,20 +59,21 @@ export function collectShorts(feed) {
   return [...result.values()];
 }
 
-export function shortDetails(info, videoId, originalAspect) {
+export function shortDetails(info, videoId, originalAspect, fallbackTitle = '') {
   const basic = info.basic_info || {};
   const formats = [...(info.streaming_data?.adaptive_formats || []), ...(info.streaming_data?.formats || [])];
   const dimensions = formats.find(f => f.width > 0 && f.height > 0) || originalAspect;
   // Only YouTube thumbnails explicitly marked isOriginalAspectRatio may substitute
   // for unavailable stream dimensions. Ordinary cropped covers are never trusted.
-  if (!dimensions) return { error: '動画の縦横比を確認できませんでした。再試行するか次のショートへ移動してください。', status: 422 };
-  if (!isShortAspect(dimensions.width, dimensions.height) || basic.is_live || basic.duration > 180) {
+  const tagged = hasShortsTag({ ...basic, title: basic.title || info.primary_info?.title?.text || originalAspect?.title || fallbackTitle });
+  if (!dimensions && !tagged) return { error: '動画の縦横比を確認できませんでした。再試行するか次のショートへ移動してください。', status: 422 };
+  if (basic.is_live || (!tagged && (!isShortAspect(dimensions?.width, dimensions?.height) || basic.duration > 180))) {
     return { error: 'この動画は縦長のショート動画ではありません。', status: 422 };
   }
   const owner = info.secondary_info?.owner;
   return { video: {
-    videoId, type: 'video', isShort: true, shortSource: 'youtube', aspectVerified: true,
-    width: dimensions.width, height: dimensions.height,
+    videoId, type: 'video', isShort: true, shortSource: 'youtube', aspectVerified: Boolean(dimensions && isShortAspect(dimensions.width, dimensions.height)), shortEligible: true,
+    width: dimensions?.width, height: dimensions?.height,
     title: basic.title || info.primary_info?.title?.text || originalAspect?.title || 'ショート動画',
     author: owner?.author?.name || basic.author || originalAspect?.author || 'チャンネル',
     authorId: owner?.author?.id || basic.channel_id,
@@ -201,7 +207,8 @@ export function registerShortsRoutes(app, getYoutube) {
       const info = await cached(`info:${req.params.id}`, async () => (await getYoutube()).getInfo(req.params.id));
       let original = originalAspects.get(req.params.id);
       if (original?.expires < Date.now()) original = undefined;
-      if (!original && !info.streaming_data?.adaptive_formats?.some(f => f.width && f.height)) {
+      const fallbackTitle = typeof req.query.title === 'string' ? req.query.title.slice(0, 500) : '';
+      if (!hasShortsTag({ ...info.basic_info, title: info.basic_info?.title || fallbackTitle }) && !original && !info.streaming_data?.adaptive_formats?.some(f => f.width && f.height)) {
         // Recover proof on a cold serverless instance. Never trust client dimensions.
         const title = info.basic_info?.title || (typeof req.query.title === 'string' ? req.query.title.slice(0, 160) : '') || req.params.id;
         const youtube = await getYoutube();
@@ -210,7 +217,7 @@ export function registerShortsRoutes(app, getYoutube) {
         rememberOriginalAspects(matches);
         original = originalAspects.get(req.params.id);
       }
-      const result = shortDetails(info, req.params.id, original);
+      const result = shortDetails(info, req.params.id, original, fallbackTitle);
       if (result.error) return res.status(result.status).json({ error: result.error });
       res.setHeader('Cache-Control', 'public, s-maxage=300');
       return res.json(result.video);

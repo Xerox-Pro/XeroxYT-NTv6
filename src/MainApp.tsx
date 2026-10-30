@@ -1,3 +1,4 @@
+import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -227,14 +228,8 @@ export default function MainApp() {
   });
 
   // Watch history
-  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('xerox_watch_history');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => loadWatchHistories().videos);
+  const [shortHistory, setShortHistory] = useState<WatchHistoryItem[]>(() => loadWatchHistories().shorts);
 
   const [youtubeHistory, setYoutubeHistory] = useState<WatchHistoryItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -358,11 +353,12 @@ export default function MainApp() {
   useEffect(() => {
     try {
       localStorage.setItem('xerox_watch_history', JSON.stringify(watchHistory));
-      window.dispatchEvent(new CustomEvent('xerox-history-change', { detail: watchHistory }));
+      localStorage.setItem('xerox_short_history', JSON.stringify(shortHistory));
+      window.dispatchEvent(new CustomEvent('xerox-history-change', { detail: [...watchHistory, ...shortHistory] }));
     } catch (e) {
       console.error(e);
     }
-  }, [watchHistory]);
+  }, [watchHistory, shortHistory]);
 
   useEffect(() => {
     try {
@@ -373,13 +369,14 @@ export default function MainApp() {
   }, [playlists]);
 
   useEffect(() => {
-    const onRemote = (event: Event) => setWatchHistory((event as CustomEvent<WatchHistoryItem[]>).detail);
+    const onRemote = (event: Event) => { const split = splitWatchHistory((event as CustomEvent<WatchHistoryItem[]>).detail); setWatchHistory(split.videos); setShortHistory(split.shorts); };
     window.addEventListener('xerox-history-remote', onRemote);
     return () => window.removeEventListener('xerox-history-remote', onRemote);
   }, []);
 
   // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {
+    if (video.isShort || (videoCache[video.videoId!] as Video)?.isShort || /#shorts(?![\p{L}\p{N}_])/iu.test(video.title || '')) { handleRecordShortHistory({ ...video, videoId: video.videoId! }); return; }
     setWatchHistory(prev => {
       const filtered = prev.filter(item => item.videoId !== video.videoId);
       const newItem: WatchHistoryItem = {
@@ -399,7 +396,7 @@ export default function MainApp() {
 
   // 閲覧履歴（ショート動画）記録
   const handleRecordShortHistory = (short: ShortVideo) => {
-    setWatchHistory(prev => {
+    setShortHistory(prev => {
       const filtered = prev.filter(item => item.videoId !== short.videoId);
       const newItem: WatchHistoryItem = {
         videoId: short.videoId,
@@ -885,7 +882,7 @@ export default function MainApp() {
       handleShortSelect(selectedVideo, { source: currentVideoId ? 'related' : 'home', ...(currentVideoId ? { videoId: currentVideoId } : {}) });
       return;
     }
-    if (!videoObj && watchHistory.some(item => item.videoId === videoId && item.type === 'short')) {
+    if (!videoObj && shortHistory.some(item => item.videoId === videoId && item.type === 'short')) {
       navigate(`/shorts/${videoId}`);
       return;
     }
@@ -1141,10 +1138,11 @@ export default function MainApp() {
               </div>
             ) : (
               <HistoryPage
-                history={[...watchHistory, ...youtubeHistory.filter(item => !watchHistory.some(local => local.videoId === item.videoId))].sort((a, b) => b.timestamp - a.timestamp)}
+                history={[...shortHistory, ...watchHistory, ...youtubeHistory.filter(item => !watchHistory.some(local => local.videoId === item.videoId))].sort((a, b) => b.timestamp - a.timestamp)}
                 onVideoSelect={(id) => handleVideoSelect(id)}
-                onClearHistory={() => { setWatchHistory([]); setYoutubeHistory([]); }}
-                onRemoveHistoryItem={(id) => {
+                onClearHistory={(type) => { if (type === 'short') setShortHistory([]); else { setWatchHistory([]); setYoutubeHistory([]); } }}
+                onRemoveHistoryItem={(id, type) => {
+                  if (type === 'short') { setShortHistory(prev => prev.filter(i => i.videoId !== id)); return; }
                   setWatchHistory(prev => prev.filter(i => i.videoId !== id));
                   setYoutubeHistory(prev => prev.filter(i => i.videoId !== id));
                 }}

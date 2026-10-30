@@ -5,7 +5,7 @@ const short = (id='abcdefghijk', dimensions={width:405,height:720}) => ({ type:'
 test('accepts 9:16 and rejects landscape, square, missing and misleading title-only videos', () => {
  assert.equal(isShortAspect(1080,1920),true);
  for(const [w,h] of [[1920,1080],[720,720],[0,720],[NaN,720]]) assert.equal(isShortAspect(w,h),false);
- assert.equal(normalizeShort({type:'Video',id:'abcdefghijk',title:'#shorts',duration:{seconds:15},thumbnails:[{width:405,height:720}]}),null);
+ assert.equal(normalizeShort({type:'Video',id:'abcdefghijk',title:'short clip',duration:{seconds:15},thumbnails:[{width:405,height:720}]}),null);
  assert.equal(normalizeShort(short('abcdefghijk',{width:720,height:720})),null);
  assert.equal(normalizeShort(short()).videoId,'abcdefghijk');
  const emptyThumbnail=short();emptyThumbnail.thumbnail=[];emptyThumbnail.on_tap_endpoint.payload.thumbnail={thumbnails:[{url:'x',width:1080,height:1920}],isOriginalAspectRatio:true};
@@ -53,4 +53,12 @@ test('cold serverless instance re-verifies original aspect from upstream, not cl
  assert.equal(response.code,200); assert.equal(response.body.aspectVerified,true);
  const mismatch=await call('/api/shorts/:id',{title:'A short',width:1080,height:1920},{id:'lmnopqrstuv'});
  assert.equal(mismatch.code,422);
+});
+
+test('hashtag Shorts play without dimension proof, including description tags, but unrelated unknown videos stay rejected',()=>{
+ for(const basic_info of [{title:'clip #shorts'},{title:'clip',short_description:'Watch #SHORTS now'}]){
+  const result=shortDetails({basic_info},'abcdefghijk');assert.equal(result.video.shortEligible,true);assert.equal(result.video.aspectVerified,false);
+ }
+ assert.equal(shortDetails({basic_info:{title:'clip #shortstuff'}},'abcdefghijk').status,422);
+ assert.ok(normalizeShort({type:'Video',id:'abcdefghijk',title:'#shorts',thumbnails:[]}));
 });

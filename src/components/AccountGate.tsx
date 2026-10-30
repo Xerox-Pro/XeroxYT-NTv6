@@ -9,7 +9,7 @@ const LEGACY_KEY = 'xerox_watch_history';
 const SESSION_HINT_KEY = 'xerox_site_session_hint';
 const accountKey = (id: string) => `xerox_account_history_${id}`;
 // These values are device-local; keep them separate when accounts share a browser.
-const deviceKeys = ['xerox_youtube_credentials', 'xerox_user_info', 'xerox_subscriptions', 'xerox_user_playlists', 'xerox_ai_interests', 'xerox_video_cache'];
+const deviceKeys = ['xerox_short_history', 'xerox_youtube_credentials', 'xerox_user_info', 'xerox_subscriptions', 'xerox_user_playlists', 'xerox_ai_interests', 'xerox_video_cache'];
 function switchDeviceAccount(id: string) {
   const previous = localStorage.getItem('xerox_last_account_id');
   if (previous === id) return;
@@ -26,10 +26,11 @@ const merge = (...lists: Item[][]): Item[] => {
   const seen = new Map<string, Item>();
   lists.flat().forEach(item => {
     if (!item || typeof item.videoId !== 'string') return;
-    const previous = seen.get(item.videoId);
-    if (!previous || Number(item.timestamp || 0) > Number(previous.timestamp || 0)) seen.set(item.videoId, item);
+    const previous = seen.get(`${item.type || 'video'}:${item.videoId}`);
+    if (!previous || Number(item.timestamp || 0) > Number(previous.timestamp || 0)) seen.set(`${item.type || 'video'}:${item.videoId}`, item);
   });
-  return [...seen.values()].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0)).slice(0, 50);
+  const sorted = [...seen.values()].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+  return [...sorted.filter(item => item.type !== 'short').slice(0, 50), ...sorted.filter(item => item.type === 'short').slice(0, 50)];
 };
 async function api(path: string, method = 'GET', body?: unknown) {
   const response = await fetch(`/api/account${path}`, { method, credentials: 'same-origin', cache: 'no-store', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -75,7 +76,8 @@ export default function AccountGate({ children }: { children: ReactNode }) {
       }
       switchDeviceAccount(u.id);
       cache.current = { history, version: remote.version, dirty };
-      localStorage.setItem(LEGACY_KEY, JSON.stringify(history));
+      localStorage.setItem(LEGACY_KEY, JSON.stringify(history.filter(item => item.type !== 'short')));
+      localStorage.setItem('xerox_short_history', JSON.stringify(history.filter(item => item.type === 'short')));
       localStorage.setItem('xerox_last_account_id', u.id);
       localStorage.setItem(SESSION_HINT_KEY, JSON.stringify(u));
       active.current = u; persist(u); setUser(u); setPhase('ready');

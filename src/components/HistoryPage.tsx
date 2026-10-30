@@ -7,8 +7,8 @@ import Avatar from './Avatar';
 interface HistoryPageProps {
   history: WatchHistoryItem[];
   onVideoSelect: (videoId: string, videoObj?: Video) => void;
-  onClearHistory: () => void;
-  onRemoveHistoryItem: (videoId: string) => void;
+  onClearHistory: (type: 'video' | 'short') => void;
+  onRemoveHistoryItem: (videoId: string, type: 'video' | 'short') => void;
   onSelectChannel: (channelIdOrName: string) => void;
 }
 
@@ -19,7 +19,7 @@ export default function HistoryPage({
   onRemoveHistoryItem,
   onSelectChannel
 }: HistoryPageProps) {
-  const [activeTab, setActiveTab] = useState<'all' | 'video' | 'short'>('all');
+  const [activeTab, setActiveTab] = useState<'video' | 'short'>('video');
 
   const filteredHistory = history.filter((item) => {
     if (activeTab === 'video') return item.type === 'video';
@@ -43,11 +43,11 @@ export default function HistoryPage({
 
         {history.length > 0 && (
           <button
-            onClick={onClearHistory}
+            onClick={() => onClearHistory(activeTab)}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gray-100 hover:bg-red-50 text-gray-700 hover:text-red-600 text-xs font-bold transition-colors duration-200"
           >
             <Trash2 size={15} />
-            <span>すべての再生履歴を消去</span>
+            <span>{activeTab === 'short' ? 'ショート履歴を消去' : '通常動画の履歴を消去'}</span>
           </button>
         )}
       </div>
@@ -55,15 +55,15 @@ export default function HistoryPage({
       {/* タブ切り替え（すべて・動画・ショート） */}
       <div className="flex items-center gap-3 mb-8 border-b border-gray-100 pb-3 overflow-x-auto no-scrollbar">
         <button
-          onClick={() => setActiveTab('all')}
+          onClick={() => setActiveTab('short')}
           className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs sm:text-sm font-bold transition-all whitespace-nowrap ${
-            activeTab === 'all'
+            activeTab === 'short'
               ? 'bg-black text-white shadow-2xs'
               : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
           }`}
         >
           <Layers size={16} />
-          <span>すべて ({history.length})</span>
+          <span>ショート ({history.filter(item => item.type === 'short').length})</span>
         </button>
 
         <button
@@ -112,7 +112,7 @@ export default function HistoryPage({
               </div>
 
               <button
-                onClick={() => onRemoveHistoryItem(item.videoId)}
+                onClick={() => onRemoveHistoryItem(item.videoId, activeTab)}
                 className="absolute top-2 right-2 bg-black/70 hover:bg-red-600 text-white p-1 rounded-md opacity-0 group-hover:opacity-100 transition-all duration-200"
                 title="履歴から削除"
               >
@@ -163,7 +163,7 @@ export default function HistoryPage({
                       {item.title}
                     </h3>
                     <button
-                      onClick={() => onRemoveHistoryItem(item.videoId)}
+                      onClick={() => onRemoveHistoryItem(item.videoId, activeTab)}
                       className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors shrink-0"
                       title="履歴から削除"
                     >
