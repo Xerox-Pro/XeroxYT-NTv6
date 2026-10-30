@@ -50,7 +50,7 @@ export class LocalIntelligence {
    * Process a video interaction (watch, click, etc.)
    */
   processVideoInteraction(video: any, weight: number = 1.0) {
-    if (!video) return;
+    if (!video || video.isShort || video.type === 'short' || /#shorts(?![\p{L}\p{N}_])/iu.test(video.title || '')) return;
 
     this.profile.interactions.push({
       type: 'watch',

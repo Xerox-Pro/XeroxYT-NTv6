@@ -28,7 +28,7 @@ export function readSeenShorts() {
     const saved = JSON.parse(localStorage.getItem(seenKey()) || '[]');
     const items = Array.isArray(saved) ? saved : [];
     const recent = items.filter(item => /^[\w-]{11}$/.test(item?.id) && Date.now() - item.at < 30 * 86400000).map(item => item.id);
-    const history = JSON.parse(localStorage.getItem('xerox_watch_history') || '[]');
+    const history = [...JSON.parse(localStorage.getItem('xerox_watch_history') || '[]'), ...JSON.parse(localStorage.getItem('xerox_short_history') || '[]')];
     const earlier = Array.isArray(history) ? history.filter(item => item?.type === 'short' && /^[\w-]{11}$/.test(item.videoId)).map(item => item.videoId) : [];
     return [...new Set([...recent, ...earlier])].slice(0, 1000);
   } catch { return []; }
