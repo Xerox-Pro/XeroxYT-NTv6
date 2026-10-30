@@ -47,6 +47,11 @@ test('shorts can leave for home, search, history, channel and browser back durin
    await settle();await settle();
    const frame=document.querySelector('iframe');assert.ok(frame,'native iframe appears');
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
+   for(const embed of document.querySelectorAll('.shorts-iframe')) {
+     const url = new URL(embed.src);
+     assert.equal(url.searchParams.get('loop'), '1');
+     assert.equal(url.searchParams.get('playlist'), url.pathname.split('/').pop());
+   }
    assert.equal(document.querySelector('.shorts-tap-area'),null);
    assert.equal(document.querySelector('.shorts-actions'),null);
    const frames=[...document.querySelectorAll('iframe')];assert.equal(frames.length,3,'active and next two embeds are prepared');

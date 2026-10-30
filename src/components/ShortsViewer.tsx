@@ -37,7 +37,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active }: {
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
       parsed.searchParams.set('enablejsapi', '1');
       parsed.searchParams.set('origin', window.location.origin);
-      for (const [key, value] of Object.entries({ controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: '1', rel: '0' })) parsed.searchParams.set(key, value);
+      for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: '1', rel: '0' })) parsed.searchParams.set(key, value);
       detail.current = metadata; callbacks.current.onMetadata(metadata); setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
     return () => { cancelled = true; };
