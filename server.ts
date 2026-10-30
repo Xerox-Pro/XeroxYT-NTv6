@@ -472,7 +472,7 @@ async function startServer() {
   // --- Daily Quotas & Rate Limiting System (Protect Vercel Serverless CPU & Bandwidth) ---
   const DAILY_VIDEO_LIMIT = Math.max(1, parseInt(process.env.DAILY_VIDEO_LIMIT || "15", 10));
   const DAILY_SEARCH_LIMIT = Math.max(1, parseInt(process.env.DAILY_SEARCH_LIMIT || "100", 10));
-  const DAILY_TOTAL_LIMIT = Math.max(1, parseInt(process.env.DAILY_TOTAL_LIMIT || "600", 10));
+  const DAILY_TOTAL_LIMIT = 0; // Total requests are unlimited; retain usage counting.
   const BURST_LIMIT_PER_MINUTE = Math.max(1, parseInt(process.env.BURST_LIMIT_PER_MINUTE || "80", 10));
   const USAGE_SECRET = process.env.LIMIT_SECRET || "xerox-daily-limit-secret-salt-2026";
 
@@ -608,7 +608,7 @@ async function startServer() {
     const record = getOrCreateRecord(clientId, today, req);
     const isVideoLimited = record.videos >= DAILY_VIDEO_LIMIT;
     const isSearchLimited = record.searches >= DAILY_SEARCH_LIMIT;
-    const isTotalLimited = record.total >= DAILY_TOTAL_LIMIT;
+    const isTotalLimited = false;
 
     const token = signUsage(clientId, today, record.videos, record.searches, record.total);
     res.setHeader("X-Daily-Usage-Token", token);
@@ -632,7 +632,7 @@ async function startServer() {
       total: {
         used: record.total,
         limit: DAILY_TOTAL_LIMIT,
-        remaining: Math.max(0, DAILY_TOTAL_LIMIT - record.total),
+        remaining: null,
       },
       resetAt: getNextJstMidnightIso(),
       resetSeconds: getSecondsUntilJstMidnight(),
@@ -693,21 +693,6 @@ async function startServer() {
         code: "BURST_LIMIT_EXCEEDED",
         type: "burst",
         retryAfter: 60,
-      });
-    }
-
-    // 2. 1日の総リクエスト上限チェック
-    if (record.total >= DAILY_TOTAL_LIMIT) {
-      res.setHeader("Retry-After", String(getSecondsUntilJstMidnight()));
-      return res.status(429).json({
-        error: `本日の総合リクエスト上限（${DAILY_TOTAL_LIMIT}回）に達しました。Vercelサーバー負荷保護のため、明日午前0時(JST)のリセットまでお待ちください。`,
-        code: "DAILY_TOTAL_LIMIT_EXCEEDED",
-        type: "total",
-        limit: DAILY_TOTAL_LIMIT,
-        used: record.total,
-        remaining: 0,
-        resetAt: getNextJstMidnightIso(),
-        resetSeconds: getSecondsUntilJstMidnight(),
       });
     }
 

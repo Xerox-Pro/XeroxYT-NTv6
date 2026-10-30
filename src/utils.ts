@@ -116,9 +116,9 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
       data.searches.remaining = Math.max(0, data.searches.limit - mergedSearches);
 
       data.total.used = mergedTotal;
-      data.total.remaining = Math.max(0, data.total.limit - mergedTotal);
+      data.total.remaining = null;
 
-      data.isLimited = mergedVideos >= data.videos.limit || mergedSearches >= data.searches.limit || mergedTotal >= data.total.limit;
+      data.isLimited = mergedVideos >= data.videos.limit || mergedSearches >= data.searches.limit;
 
       try {
         localStorage.setItem('xerox_client_usage', JSON.stringify({
@@ -136,15 +136,15 @@ export async function fetchLimits(): Promise<DailyUsageLimits> {
     // ネットワークエラー時もローカルの利用量をそのまま返却
     const vLimit = DAILY_VIDEO_LIMIT;
     const sLimit = 100;
-    const tLimit = 600;
+    const tLimit = 0; // Unlimited total requests.
     return {
       videos: { used: localUsage.videos, limit: vLimit, remaining: Math.max(0, vLimit - localUsage.videos) },
       searches: { used: localUsage.searches, limit: sLimit, remaining: Math.max(0, sLimit - localUsage.searches) },
-      total: { used: localUsage.total, limit: tLimit, remaining: Math.max(0, tLimit - localUsage.total) },
+      total: { used: localUsage.total, limit: tLimit, remaining: null },
       resetAt: new Date(Date.now() + 86400000).toISOString(),
       resetSeconds: 3600,
-      isLimited: localUsage.videos >= vLimit || localUsage.searches >= sLimit || localUsage.total >= tLimit,
-      limitedType: localUsage.videos >= vLimit ? 'video' : localUsage.searches >= sLimit ? 'search' : localUsage.total >= tLimit ? 'total' : null
+      isLimited: localUsage.videos >= vLimit || localUsage.searches >= sLimit,
+      limitedType: localUsage.videos >= vLimit ? 'video' : localUsage.searches >= sLimit ? 'search' : null
     };
   }
 }
