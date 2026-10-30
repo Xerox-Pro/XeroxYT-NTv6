@@ -1,3 +1,4 @@
+import { personalShortsTerm } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X } from 'lucide-react';
@@ -102,7 +103,10 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     let cancelled = false; pending.current = true; setLoading(true); setError('');
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
-    fetchJSON(discoveryRequest(query, page, session, excluded)).then(data => {
+    const discovery = new URLSearchParams(query);
+    const interest = personalShortsTerm(page);
+    if (interest) discovery.set('interest', interest);
+    fetchJSON(discoveryRequest(discovery.toString(), page, session, excluded)).then(data => {
       if (cancelled) return;
       const items: Video[] = (data.videos || []).filter((video: Video) => video.isShort);
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);

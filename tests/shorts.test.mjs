@@ -62,3 +62,15 @@ test('Shorts playback accepts missing tags and missing dimensions',()=>{
  assert.equal(shortDetails({basic_info:{title:'clip without a tag'}},'abcdefghijk').video.shortEligible,true);
  assert.ok(normalizeShort({type:'Video',id:'abcdefghijk',title:'#shorts',thumbnails:[]}));
 });
+test('personalized search adds only a small portion and failures preserve general discovery', async () => {
+ const ids = Array.from({length:24}, (_,i)=>`general${String(i).padStart(4,'0')}`);
+ const searched=[];
+ const call=harness({search:async q=>{searched.push(q); return {videos:q.startsWith('ギター ') ? [short('personal001'),short('personal002')] : ids.map(id=>short(id))};}});
+ const response=await call('/api/shorts',{source:'home',session:'test',interest:'ギター',exclude:'personal002'});
+ assert.ok(searched.includes('ギター #shorts'));
+ assert.ok(response.body.videos.some(v=>v.videoId==='personal001'));
+ assert.ok(!response.body.videos.some(v=>v.videoId==='personal002'));
+ assert.equal(response.body.videos.filter(v=>v.videoId.startsWith('personal')).length,1);
+ const fallback=harness({search:async q=>{if(q.startsWith('ギター '))throw Error('offline');return {videos:ids.map(id=>short(id))};}});
+ assert.ok((await fallback('/api/shorts',{source:'home',session:'test',interest:'ギター'})).body.videos.length>0);
+});

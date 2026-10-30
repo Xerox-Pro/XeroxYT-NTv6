@@ -1,3 +1,4 @@
+import { saveShortsInterest, saveVideoHashtags } from './lib/shortsInterests.mjs';
 import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
 /**
  * @license
@@ -377,6 +378,7 @@ export default function MainApp() {
   // 閲覧履歴（通常動画）記録
   const handleRecordHistory = (video: Video) => {
     if (video.isShort || (videoCache[video.videoId!] as Video)?.isShort || /#shorts(?![\p{L}\p{N}_])/iu.test(video.title || '')) { handleRecordShortHistory({ ...video, videoId: video.videoId! }); return; }
+    saveVideoHashtags(video);
     setWatchHistory(prev => {
       const filtered = prev.filter(item => item.videoId !== video.videoId);
       const newItem: WatchHistoryItem = {
@@ -858,6 +860,7 @@ export default function MainApp() {
   }, [handleScroll]);
 
   const handleSearch = (q: string) => {
+    saveShortsInterest(q);
     navigate(`/results?search_query=${encodeURIComponent(q)}`);
   };
 

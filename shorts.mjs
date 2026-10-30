@@ -101,12 +101,13 @@ export function registerShortsRoutes(app, getYoutube) {
   app.get('/api/shorts', async (req, res) => {
     const source = req.query.source || 'home';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const interest = typeof req.query.interest === 'string' ? req.query.interest.trim() : '';
     const videoId = typeof req.query.videoId === 'string' ? req.query.videoId : '';
     const page = Number(req.query.page || 1);
     const session = typeof req.query.session === 'string' ? req.query.session : '';
     const excludeText = typeof req.query.exclude === 'string' ? req.query.exclude : '';
     const excluded = excludeText ? excludeText.split(',') : [];
-    if (!['home', 'search', 'related'].includes(source) || q.length > 200 ||
+    if (!['home', 'search', 'related'].includes(source) || q.length > 200 || interest.length > 160 ||
       (session && !/^[\w-]{1,80}$/.test(session)) || excluded.length > 300 || excluded.some(id => !/^[\w-]{11}$/.test(id)) ||
       !Number.isInteger(page) || page < 1 || page > 20 ||
       (source === 'search' && !q) || (source === 'related' && !/^[\w-]{11}$/.test(videoId))) {
@@ -143,12 +144,35 @@ export function registerShortsRoutes(app, getYoutube) {
         if (source === 'home' && !q && page === 1) tasks.push((async () => {
           try { return collectShorts(await cached('home-feed', () => youtube.getHomeFeed())); } catch { return []; }
         })());
-        const results = await Promise.allSettled(tasks);
+        const personalTask = interest ? (async () => {
+          const term = interest.replace(/#shorts(?![\p{L}\p{N}_])/giu, '').trim();
+          if (!term) return [];
+          const feed = await cached(`personal-shorts:${term}`, async () => {
+            let search = await youtube.search(`${term} #shorts`, { type: 'all' });
+            const chip = search.refinement_filters?.find(name => /^(shorts|ショート(?:動画)?)$/i.test(name));
+            if (chip) search = await search.applyRefinement(chip);
+            return search;
+          });
+          return collectShorts(feed);
+        })().catch(() => []) : Promise.resolve([]);
+        const [results, personal] = await Promise.all([Promise.allSettled(tasks), personalTask]);
         const pools = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
         if (!primary.length && results.every(result => result.status === 'rejected')) throw new Error('All discovery sources failed');
         const candidates = [...primary, ...pools];
         rememberOriginalAspects(candidates);
-        const videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
+        let videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
+        if (personal.length && videos.length >= 4) {
+          const picks = diversifyShorts(personal, `${session}:personal:${page}`, [...excluded, videoId].filter(Boolean), Math.floor(videos.length / 4));
+          const pickIds = new Set(picks.map(v => v.videoId));
+          const general = videos.filter(v => !pickIds.has(v.videoId));
+          const mixed = [];
+          for (let i = 0; i < general.length; i++) {
+            mixed.push(general[i]);
+            if ((i + 1) % 4 === 0 && picks.length) mixed.push(picks.shift());
+          }
+          videos = mixed.slice(0, 30);
+          rememberOriginalAspects(personal);
+        }
         res.setHeader('Cache-Control', 'private, no-store');
         return res.json({ videos, hasMore: page < 20, page });
       }
