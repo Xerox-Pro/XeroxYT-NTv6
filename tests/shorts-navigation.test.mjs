@@ -24,7 +24,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
  const ranking=[video('12345678901','ranking'),video('23456789012','ranking')];
  globalThis.fetch=async url=>{
   const address=String(url);
-  if(address.startsWith('/api/shorts-ranking'))return new Response(JSON.stringify({videos:ranking,count:2,updatedAt:'today'}));
+  if(address.startsWith('https://shorts-ranking.com/latest.json?'))return new Response(JSON.stringify({items:ranking.map(v=>({video_id:v.videoId,title:v.title,channel_title:v.author,views:v.viewCount})),updated_at:'today'}));
   if(address.startsWith('/api/shorts?'))return new Response(JSON.stringify({videos:regular,hasMore:false}));
   if(address.startsWith('/api/edu/'))return new Response(`https://www.youtubeeducation.com/embed/${address.split('/').pop()}?controls=0`);
   if(address.includes('/comments'))return new Response(JSON.stringify({comments:[],hasMore:false}));

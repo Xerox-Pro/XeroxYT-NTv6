@@ -29,7 +29,10 @@ export function createRankingLoader(fetchUpstream = fetch) {
       try {
         for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 2 * 1024 * 1024) throw new Error('ランキングのデータが大きすぎます。'); chunks.push(value); }
       } finally { await reader.cancel().catch(() => {}); }
-      return parseRanking(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+      const bytes = new Uint8Array(size);
+      let offset = 0;
+      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+      return parseRanking(JSON.parse(new TextDecoder().decode(bytes)));
     })();
     try { return await pending; } finally { pending = undefined; }
   };

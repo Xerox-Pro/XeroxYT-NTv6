@@ -1,3 +1,4 @@
+import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -94,7 +95,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
-    (context.source === 'search' ? Promise.resolve({ videos: [], updatedAt: '' }) : fetchJSON('/api/shorts-ranking')).then(data => {
+    (context.source === 'search' ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
       if (!cancelled) { setRanking(data.videos || []); setRankingUpdated(data.updatedAt || ''); }
     }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
