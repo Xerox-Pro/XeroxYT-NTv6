@@ -65,6 +65,7 @@ export function rankCandidates(videos,{short=false,seed='local',seen=[]}={}) {
     const pick=result.length%5===4?[...options].sort((a,b)=>noise(b.v.videoId)-noise(a.v.videoId))[0]:options[0];
     result.push(pick.v);last=String(pick.v.authorId||pick.v.author||pick.v.videoId);pool.splice(pool.indexOf(pick),1);
   }
+  try { localStorage.setItem(`${storeKey()}_debug_${short?'short':'normal'}`, JSON.stringify({at:Date.now(),videos:result.slice(0,50).map((v,i)=>({rank:i+1,title:v.title,author:v.author,score:Number(score(v).toFixed(3)),seen:seenSet.has(v.videoId),terms:features(v).filter(t=>(scores.get(t)||0)!==0)}))})); } catch {}
   return result;
 }
 export function createPlaybackTracker(video,commit=learnInteraction) {
@@ -92,4 +93,10 @@ export function createPlaybackTracker(video,commit=learnInteraction) {
   },
   stats:()=>({seconds,loops,duration})
  };
+}
+
+export function recommendationDebug(short=false) {
+ let snapshot=null;
+ try { snapshot=JSON.parse(localStorage.getItem(`${storeKey()}_debug_${short?'short':'normal'}`)||'null'); } catch {}
+ return {topics:[...topicScores(short)].sort((a,b)=>b[1]-a[1]).slice(0,30),snapshot};
 }

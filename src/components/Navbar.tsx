@@ -1,3 +1,4 @@
+import RecommendationDebug from './RecommendationDebug';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -21,6 +22,7 @@ export default function Navbar({
   toggleSidebar, 
   initialSearchQuery
 }: NavbarProps) {
+  const [recommendationDebugOpen, setRecommendationDebugOpen] = useState(false);
   const navigate = useNavigate();
   const account = useSiteAccount();
   const [query, setQuery] = useState(initialSearchQuery);
@@ -688,6 +690,8 @@ export default function Navbar({
           <summary className="list-none cursor-pointer flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 w-9 h-9 text-gray-700" aria-label={`アカウント: ${account.username}`} title={account.username}><User size={19} /></summary>
           <div className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-gray-200 bg-white shadow-lg p-2 z-[110]">
             <div className="px-3 py-2 text-sm font-semibold text-gray-800 truncate">{account.username}</div>
+            <button type="button" onClick={() => setRecommendationDebugOpen(true)} className="w-full px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-100 text-gray-700">デバッグ</button>
+            {recommendationDebugOpen && <RecommendationDebug onClose={() => setRecommendationDebugOpen(false)} />}
             <button type="button" onClick={() => void account.logout()} className="w-full px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-100 text-gray-700">ログアウト</button>
           </div>
         </details>}
