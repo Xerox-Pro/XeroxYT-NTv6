@@ -315,6 +315,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
 
     return data;
   } catch (err: any) {
+    if (options?.signal?.aborted) throw err;
     if (err.message && err.message.includes('Unexpected token')) {
       throw new Error('サーバーからの応答を解析できませんでした。');
     }

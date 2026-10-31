@@ -10,7 +10,7 @@ import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import Navbar from './components/Navbar';
-import AIStudio from './components/AIStudio';
+const AIStudio = React.lazy(() => import('./components/AIStudio'));
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
 import VideoCard from './components/VideoCard';
@@ -1105,7 +1105,7 @@ export default function MainApp() {
               onSelectChannel={handleSelectChannel}
             />
           ) : view === 'aistudio' ? (
-            <AIStudio />
+            <React.Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>}><AIStudio /></React.Suspense>
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
               channelId={selectedChannelId}

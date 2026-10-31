@@ -102,3 +102,17 @@ test('Shorts descriptions support secondary text, basic descriptions and structu
  assert.equal(shortDetails({basic_info:{description:'Basic description'}},'abcdefghijk').video.description,'Basic description');
  assert.equal(shortDetails({page:[{type:'ExpandableVideoDescriptionBody',description:{runs:[{text:'line1'},{text:'\nline2'}]}}]},'abcdefghijk').video.description,'line1\nline2');
 });
+
+test('simultaneous details share upstream work and failed work is retried', async () => {
+ let calls=0, release;
+ const call=harness({getInfo:async()=>{calls++; if(calls===1) await new Promise(resolve=>{release=resolve}); return {basic_info:{title:'clip',duration:30}};}});
+ const first=call('/api/shorts/:id',{}, {id:'abcdefghijk'});
+ const second=call('/api/shorts/:id',{}, {id:'abcdefghijk'});
+ await new Promise(resolve=>setImmediate(resolve)); release();
+ const results=await Promise.all([first,second]); assert.deepEqual(results.map(r=>r.code),[200,200]); assert.equal(calls,1);
+ let attempts=0;
+ const retry=harness({getInfo:async()=>{if(++attempts===1)throw Error('temporary');return {basic_info:{title:'clip'}};}});
+ assert.equal((await retry('/api/shorts/:id',{}, {id:'abcdefghijk'})).code,502);
+ assert.equal((await retry('/api/shorts/:id',{}, {id:'abcdefghijk'})).code,200);
+ assert.equal(attempts,2);
+});
