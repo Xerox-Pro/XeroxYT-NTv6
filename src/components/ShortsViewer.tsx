@@ -80,7 +80,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [session] = useState(createShortsSession);
   const [seenOnEntry] = useState(readSeenShorts);
   const regularRef = useRef<Video[]>([]);
-  const [regular, setRegular] = useState<Video[]>(channelMode && channelStart ? [...channelStart.videos].reverse() : seed.current ? [seed.current] : []);
+  const [regular, setRegular] = useState<Video[]>(channelMode && channelStart ? [...channelStart.videos] : seed.current ? [seed.current] : []);
   const [ranking, setRanking] = useState<Video[]>([]);
   const [rankingReady, setRankingReady] = useState(false);
   const [rankingError, setRankingError] = useState('');
@@ -118,10 +118,10 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         if (cancelled) return;
         const current = scroll.current?.querySelector<HTMLElement>(`[data-short-id="${activeRef.current}"]`);
         if (current) anchor.current = { id: activeRef.current, top: current.getBoundingClientRect().top };
-        const older = (data.videos || []).filter((video: Video) => video.videoId).reverse();
-        const combined: Video[] = [...new Map([...older, ...regularRef.current].map(video => [video.videoId, video])).values()] as Video[];
+        const older = (data.videos || []).filter((video: Video) => video.videoId);
+        const combined: Video[] = [...new Map([...regularRef.current, ...older].map(video => [video.videoId, video])).values()] as Video[];
         setRegular(combined);
-        try { sessionStorage.setItem(`xerox_channel_shorts_${context.channelId}`, JSON.stringify({ videos: [...combined].reverse(), page, hasMore: Boolean(data.hasMore) })); } catch {}
+        try { sessionStorage.setItem(`xerox_channel_shorts_${context.channelId}`, JSON.stringify({ videos: combined, page, hasMore: Boolean(data.hasMore) })); } catch {}
         setHasMore(Boolean(data.hasMore));
       }).catch(reason => { if (!cancelled) setError(reason.message || 'チャンネルのショートを取得できませんでした。'); })
         .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
@@ -183,7 +183,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     const index = videos.findIndex(video => video.videoId === activeId);
     const filledRanking = ranking.length > 0 && videos.length >= ranking.length * 2;
-    if (rankingReady && !filledRanking && (channelMode ? videos.length > 0 && index === 0 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
+    if (rankingReady && !filledRanking && (channelMode ? videos.length > 0 && index >= videos.length - 3 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
   }, [activeId, ids, rankingReady, ranking.length, hasMore, loading, error, page]);
   const move = useCallback((direction: number) => {
     const index = videos.findIndex(video => video.videoId === activeRef.current);
@@ -233,7 +233,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         {(loading || !rankingReady) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
         {error && <p role="status">{error}<button className="underline ml-2" onClick={() => setAttempt(value => value + 1)}>再試行</button></p>}
         {!loading && rankingReady && !error && (!channelMode || !videos.length) && <p>{videos.length ? 'ここまでのショートを表示しました。' : '表示できる縦長ショートがありません。'}</p>}
-        {!loading && !error && hasMore && (!channelMode || activeId === videos[0]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
+        {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>
     </div>
     <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>

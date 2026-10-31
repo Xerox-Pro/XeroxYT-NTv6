@@ -75,14 +75,19 @@ test('shorts can leave for home, search, history, channel and browser back durin
   const channelRoot=createRoot(document.getElementById('root'));
   await act(async()=>channelRoot.render(React.createElement(MemoryRouter,{initialEntries:['/shorts/abcdefghijk?source=channel&channelId=test']},React.createElement(Viewer,{initialId:'abcdefghijk',initialVideo:regular[0],context:{source:'channel',channelId:'test'},onRecord:()=>{},onSelectChannel:()=>{}}))));
   await settle();await settle();
-  assert.deepEqual([...document.querySelectorAll('article[data-short-id]')].map(n=>n.dataset.shortId),['lmnopqrstuv','abcdefghijk','12345678901'],'channel feed runs older to newer around selected short');
+  assert.deepEqual([...document.querySelectorAll('article[data-short-id]')].map(n=>n.dataset.shortId),['12345678901','abcdefghijk','lmnopqrstuv'],'channel feed runs newest to oldest in posting order');
   assert.equal(document.querySelector('.shorts-feed-source a'),null,'channel mode does not mix ranking');
   assert.equal(document.querySelector('.shorts-feed-end'),null,'no scrollable tail after newest channel clip');
   let boundaryMoves=0;
   dom.window.HTMLElement.prototype.scrollIntoView=function(){boundaryMoves++;};
   await act(async()=>{for(const observer of observers){const newest=observer.nodes.find(n=>n.dataset.shortId==='12345678901');if(newest)observer.callback([{target:newest,isIntersecting:true,intersectionRatio:1}]);}});
-  await act(async()=>window.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
+  await act(async()=>window.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowUp',bubbles:true})));
   assert.equal(boundaryMoves,0,'moving beyond newest clip neither wraps nor scrolls');
+  let targetId='';
+  dom.window.HTMLElement.prototype.scrollIntoView=function(){targetId=this.dataset.shortId;};
+  await act(async()=>window.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
+  assert.equal(targetId,'abcdefghijk','down from newest selects the next older upload');
+
 
   await act(async()=>channelRoot.unmount());
  }finally{dom.window.close();await rm(temporary,{recursive:true,force:true});}
