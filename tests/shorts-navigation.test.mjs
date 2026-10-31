@@ -77,6 +77,13 @@ test('shorts can leave for home, search, history, channel and browser back durin
   await settle();await settle();
   assert.deepEqual([...document.querySelectorAll('article[data-short-id]')].map(n=>n.dataset.shortId),['lmnopqrstuv','abcdefghijk','12345678901'],'channel feed runs older to newer around selected short');
   assert.equal(document.querySelector('.shorts-feed-source a'),null,'channel mode does not mix ranking');
+  assert.equal(document.querySelector('.shorts-feed-end'),null,'no scrollable tail after newest channel clip');
+  let boundaryMoves=0;
+  dom.window.HTMLElement.prototype.scrollIntoView=function(){boundaryMoves++;};
+  await act(async()=>{for(const observer of observers){const newest=observer.nodes.find(n=>n.dataset.shortId==='12345678901');if(newest)observer.callback([{target:newest,isIntersecting:true,intersectionRatio:1}]);}});
+  await act(async()=>window.dispatchEvent(new dom.window.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true})));
+  assert.equal(boundaryMoves,0,'moving beyond newest clip neither wraps nor scrolls');
+
   await act(async()=>channelRoot.unmount());
  }finally{dom.window.close();await rm(temporary,{recursive:true,force:true});}
 });
