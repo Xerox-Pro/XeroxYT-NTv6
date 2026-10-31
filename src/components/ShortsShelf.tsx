@@ -5,7 +5,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
 import { Video } from '../types';
-import { excludeSeenShorts, mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst, recordSeenShort } from '../lib/shortsFeed.mjs';
+import { excludeSeenShorts, createShortsSession, readSeenShorts, discoveryRequest } from '../lib/shortsFeed.mjs';
 import { fetchJSON, formatNumberJP } from '../utils';
 
 export type ShortsContext = { source: 'home' | 'search' | 'related' | 'channel'; q?: string; videoId?: string; channelId?: string };
@@ -31,27 +31,16 @@ export default function ShortsShelf({ context, onSelect }: {
     setLoading(true); setVideos([]); setError('');
     const seen = readSeenShorts();
     Promise.allSettled([fetchJSON(discoveryRequest(withShortsInterests(query), 1, session, seen)), context.source === 'search' ? Promise.resolve({ videos: [] }) : loadShortsRanking()]).then(([native, ranked]) => {
-      if (native.status === 'rejected') throw native.reason;
+      if (native.status === 'rejected' && (context.source === 'search' || ranked.status === 'rejected' || !ranked.value.videos?.length)) throw native.reason;
       const currentSeen = readSeenShorts();
-      const candidates = excludeSeenShorts((native.value.videos || []).filter((v: Video) => v.isShort), currentSeen);
+      const candidates = excludeSeenShorts((native.status === 'fulfilled' ? native.value.videos || [] : []).filter((v: Video) => v.isShort), currentSeen);
       const regular = context.source === 'search' ? candidates : rankCandidates(candidates, { short: true, seed: session, seen });
       const ranking = ranked.status === 'fulfilled' ? rankCandidates(excludeSeenShorts(ranked.value.videos || [], currentSeen), { short: true, seed: session, seen }) : [];
-      if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
+      if (!cancelled) setVideos(context.source === 'search' ? regular : rankCandidates([...regular, ...ranking], { short: true, seed: session, seen }));
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [query, session, attempt]);
-  useEffect(() => {
-    if (!shelf.current) return;
-    const observer = new IntersectionObserver(entries => {
-      for (const entry of entries) if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
-        recordSeenShort((entry.target as HTMLElement).dataset.shortId!);
-        observer.unobserve(entry.target);
-      }
-    }, { threshold: 0.6 });
-    shelf.current.querySelectorAll('[data-short-id]').forEach(node => observer.observe(node));
-    return () => observer.disconnect();
-  }, [videos]);
   if (!loading && !error && !videos.length) return null;
   return <section className="shorts-shelf" aria-label="ショート動画のおすすめ">
     <div className="flex items-center justify-between gap-3 mb-4">

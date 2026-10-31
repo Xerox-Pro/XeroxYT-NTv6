@@ -1,4 +1,20 @@
 export const MAX_SHORT_PAGES = 20;
+// Keep played clips and the two prepared embeds fixed while reranking the tail.
+// Candidate sources can be unequal or unavailable without truncating the feed.
+export function mergeShortsQueue(previous, candidates, activeId = '', startId = '') {
+  const activeIndex = previous.findIndex(v => v.videoId === activeId);
+  const fixed = activeIndex >= 0 ? previous.slice(0, activeIndex + 3) : [];
+  const ids = new Set(fixed.map(v => v.videoId));
+  const tail = candidates.filter(v => {
+    if (!v?.videoId || ids.has(v.videoId)) return false;
+    ids.add(v.videoId); return true;
+  });
+  if (!fixed.length && startId) {
+    const start = tail.findIndex(v => v.videoId === startId);
+    if (start > 0) tail.unshift(...tail.splice(start, 1));
+  }
+  return [...fixed, ...tail];
+}
 // A clip belongs to one source only. New pages add pairs after existing pairs.
 export function mixShorts(regular, ranking, startId = '') {
   const unique = list => [...new Map(list.filter(v => v?.videoId).map(v => [v.videoId, v])).values()];

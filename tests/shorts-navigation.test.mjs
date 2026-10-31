@@ -12,7 +12,7 @@ import { MemoryRouter, useLocation, useNavigate } from 'react-router-dom';
 test('shorts can leave for home, search, history, channel and browser back during exit; only native embed remains',async()=>{
  const temporary=await mkdtemp(path.resolve('node_modules/.shorts-navigation-'));
  const outfile=path.join(temporary,'viewer.mjs');
- await build({entryPoints:['src/components/ShortsViewer.tsx'],outfile,bundle:true,packages:'external',platform:'node',format:'esm',jsx:'automatic',plugins:[{name:'network-boundary',setup(builder){builder.onLoad({filter:/\/src\/utils\.ts$/},()=>({contents:'export const fetchJSON=async(url)=>{const r=await fetch(url);if(!r.ok)throw new Error("failed");return r.json()};export const formatNumberJP=n=>String(n);',loader:'js'}));}}]});
+ await build({entryPoints:['src/components/ShortsViewer.tsx'],outfile,bundle:true,packages:'external',platform:'node',format:'esm',jsx:'automatic',plugins:[{name:'network-boundary',setup(builder){builder.onLoad({filter:/[\\/]src[\\/]utils\.ts$/},()=>({contents:'export const fetchJSON=async(url)=>{const r=await fetch(url);if(!r.ok)throw new Error("failed");return r.json()};export const formatNumberJP=n=>String(n);',loader:'js'}));}}]});
  const {default:Viewer}=await import(pathToFileURL(outfile));
  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test/'});
  for(const key of ['window','document','HTMLElement','HTMLIFrameElement','Event','MouseEvent','localStorage','sessionStorage']) Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});
@@ -47,6 +47,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
    const root=createRoot(document.getElementById('root'));
    await act(async()=>root.render(React.createElement(MemoryRouter,{initialEntries:['/','/shorts/abcdefghijk?source=home'],initialIndex:1},React.createElement(Harness))));
    await settle();await settle();
+   assert.equal(localStorage.getItem('xerox_shorts_seen_v1_local'),null,'rendering and preparing embeds does not mark them watched');
    const frame=document.querySelector('iframe');assert.ok(frame,'native iframe appears');
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
    for(const embed of document.querySelectorAll('.shorts-iframe')) {
@@ -59,8 +60,8 @@ test('shorts can leave for home, search, history, channel and browser back durin
    const frames=[...document.querySelectorAll('iframe')];assert.equal(frames.length,3,'active and next two embeds are prepared');
    for(const next of frames.slice(1))assert.equal(new URL(next.src).searchParams.get('autoplay'),'0','preloaded videos do not autoplay');
    assert.ok(document.querySelector('[aria-label="コメントを表示"]'));assert.ok(document.querySelector('[aria-label="概要欄を表示"]'));
-   assert.ok(document.querySelector('[aria-label="高評価（この端末に保存）"]'));
-   assert.equal(document.querySelector('[aria-label="興味なし"]'),null,'quick swipes learn automatically without a rejection button');
+   assert.equal(document.querySelector('[aria-label="高評価（この端末に保存）"]'), null, 'no like button is shown');
+   assert.equal(document.querySelector('[aria-label="興味なし"]'), null, 'interest is inferred without a feedback button');
    assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
    assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
    await act(async()=>document.querySelector('[aria-label="概要欄を表示"]').click());
@@ -74,6 +75,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
      const source=document.querySelector('iframe').contentWindow;
      const deliver=time=>window.dispatchEvent(new dom.window.MessageEvent('message',{source,origin:'https://www.youtubeeducation.com',data:JSON.stringify({event:'infoDelivery',info:{currentTime:time,duration:20,playerState:1}})}));
      deliver(0);now=1500;deliver(0.5);
+     assert.equal(JSON.parse(localStorage.getItem('xerox_shorts_seen_v1_local'))[0].id,'abcdefghijk','visible playback marks only the active video watched');
     } finally {Date.now=originalNow;}
     const nextId=document.querySelectorAll('article[data-short-id]')[1].dataset.shortId;
     await act(async()=>{for(const observer of observers){const next=observer.nodes.find(n=>n.dataset.shortId===nextId);if(next)observer.callback([{target:next,isIntersecting:true,intersectionRatio:1}]);}});

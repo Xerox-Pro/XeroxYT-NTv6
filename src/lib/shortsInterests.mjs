@@ -33,7 +33,9 @@ export function personalShortsHashtags() {
 export function withShortsInterests(query, page = 1) {
   const params = new URLSearchParams(query);
   if (params.get('source') !== 'search') {
-    const tags = personalShortsHashtags();
+    const allTags = personalShortsHashtags();
+    const offset = ((page - 1) * 2) % Math.max(1, allTags.length);
+    const tags = [...allTags.slice(offset), ...allTags.slice(0, offset)].slice(0, 2);
     if (tags.length) params.set('interests', JSON.stringify(tags));
     const searches = readShortsInterests().filter(x => x.kind === 'search');
     const learned = learnedTerms(true, 8);

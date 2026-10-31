@@ -1,4 +1,5 @@
 import { randomBytes, scryptSync, createHash, timingSafeEqual } from 'node:crypto';
+import { handleEmbed } from './embed.mjs';
 
 const MAX_AGE = 60 * 60 * 24 * 30;
 const hash = value => createHash('sha256').update(value).digest('hex');
@@ -61,6 +62,9 @@ export default {
       }
       const user = await currentUser(request, env.DB);
       if (!user) return json({ error: 'ログインが必要です。' }, 401);
+      if (request.method === 'GET' && path.startsWith('/embed/')) {
+        return handleEmbed(request, path.slice('/embed/'.length));
+      }
       if (request.method === 'POST' && path === '/logout') {
         const token = /(?:^|;\s*)__Host-xy_session=([a-f0-9]{64})(?:;|$)/.exec(request.headers.get('Cookie') || '')?.[1];
         if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(hash(token)).run();
