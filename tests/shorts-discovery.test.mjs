@@ -26,7 +26,7 @@ test('discovery API queries multiple sources and excludes already watched IDs on
  const yt={search:async q=>{queries.push(q);return{videos:[node('abcdefghijk'),node('lmnopqrstuv')],refinement_filters:[]}}};
  registerShortsRoutes({get:(path,handler)=>routes[path]=handler},async()=>yt);
  const res={code:200,setHeader(key,value){this[key]=value},status(code){this.code=code;return this},json(body){this.body=body;return this}};
- await routes['/api/shorts']({query:{source:'search',q:'piano',session:'fresh-session',exclude:'abcdefghijk'},params:{}},res);
+ await routes['/api/shorts']({query:{source:'home',q:'piano',session:'fresh-session',exclude:'abcdefghijk'},params:{}},res);
  assert.equal(queries.length,3);assert.equal(res.code,200);assert.equal(res['Cache-Control'],'private, no-store');
  assert.deepEqual(res.body.videos.map(v=>v.videoId),['lmnopqrstuv']);
  assert.equal(res.body.hasMore,true);
@@ -35,7 +35,7 @@ test('discovery survives one failed query and still returns other topic clips',a
  const routes={};let count=0;
  registerShortsRoutes({get:(path,handler)=>routes[path]=handler},async()=>({search:async()=>{if(++count===1)throw Error('topic failed');return{videos:[node('abcdefghijk')],refinement_filters:[]}}}));
  const res={setHeader(){},status(code){this.code=code;return this},json(body){this.body=body;return this}};
- await routes['/api/shorts']({query:{source:'search',q:'piano',session:'fresh'},params:{}},res);
+ await routes['/api/shorts']({query:{source:'home',q:'piano',session:'fresh'},params:{}},res);
  assert.equal(res.body.videos.length,1);
 });
 test('client tracks seen clips per account, carries old short history, and sends bounded exclusions',()=>{

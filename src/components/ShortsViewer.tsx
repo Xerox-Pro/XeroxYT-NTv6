@@ -1,4 +1,4 @@
-import { personalShortsTerm } from '../lib/shortsInterests.mjs';
+import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X } from 'lucide-react';
@@ -94,7 +94,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
-    fetchJSON('/api/shorts-ranking').then(data => {
+    (context.source === 'search' ? Promise.resolve({ videos: [], updatedAt: '' }) : fetchJSON('/api/shorts-ranking')).then(data => {
       if (!cancelled) { setRanking(data.videos || []); setRankingUpdated(data.updatedAt || ''); }
     }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
@@ -103,10 +103,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     let cancelled = false; pending.current = true; setLoading(true); setError('');
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
-    const discovery = new URLSearchParams(query);
-    const interest = personalShortsTerm(page);
-    if (interest) discovery.set('interest', interest);
-    fetchJSON(discoveryRequest(discovery.toString(), page, session, excluded)).then(data => {
+    fetchJSON(discoveryRequest(withShortsInterests(query, page), page, session, excluded)).then(data => {
       if (cancelled) return;
       const items: Video[] = (data.videos || []).filter((video: Video) => video.isShort);
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);
@@ -201,6 +198,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         {!loading && !error && hasMore && page < MAX_SHORT_PAGES && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>続きを読み込む</button>}
       </div>
     </div>
-    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
+    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }

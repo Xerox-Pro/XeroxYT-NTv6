@@ -77,8 +77,22 @@ test('personalized search adds only a small portion and failures preserve genera
 test('personalized clips target 30 percent of the final ranking-alternated feed', async () => {
  const general=Array.from({length:30},(_,i)=>short(`general${String(i).padStart(4,'0')}`));
  const personal=Array.from({length:24},(_,i)=>short(`personal${String(i).padStart(3,'0')}`));
- const call=harness({search:async q=>({videos:q.startsWith('ギター ')?personal:general})});
- const res=await call('/api/shorts',{source:'home',session:'ratio',interest:'ギター'});
+ const call=harness({search:async q=>({videos:q.startsWith('ギター ')?personal:q.startsWith('#音楽 ')?personal.map((v,i)=>short(`music${String(i).padStart(6,'0')}`)):q.startsWith('#演奏 ')?personal.map((v,i)=>short(`stage${String(i).padStart(6,'0')}`)):general})});
+ const res=await call('/api/shorts',{source:'home',session:'ratio',interest:'ギター',interests:JSON.stringify(['#音楽','#演奏'])});
  assert.equal(res.body.videos.length,30);
- assert.equal(res.body.videos.filter(v=>v.videoId.startsWith('personal')).length,18);
+ assert.equal(res.body.videos.filter(v=>!v.videoId.startsWith('general')).length,18);
+});
+test('search Shorts use only the exact search context, ignoring personalization and unrelated topics',async()=>{
+ const queries=[];
+ const call=harness({search:async q=>{queries.push(q);return {videos:[short()]};}});
+ const res=await call('/api/shorts',{source:'search',q:'ピアノ',session:'search-only',interest:'ゲーム',interests:JSON.stringify(['#料理'])});
+ assert.equal(res.code,200); assert.deepEqual(queries,['ピアノ']);
+});
+test('at most five hashtags each fetch ten clips, deduplicate, and reject oversized tag lists',async()=>{
+ const queries=[];
+ const call=harness({search:async q=>{queries.push(q);return {videos:Array.from({length:20},(_,i)=>short(`${q.startsWith('#猫')?'cats':'dogs'}${String(i).padStart(7,'0')}`))};}});
+ const res=await call('/api/shorts',{source:'home',session:'tag-pools',interests:JSON.stringify(['#猫','#犬'])});
+ assert.equal(res.body.videos.filter(v=>v.videoId.startsWith('cats')).length<=10,true);
+ assert.ok(queries.includes('#猫 #shorts'));assert.ok(queries.includes('#犬 #shorts'));
+ assert.equal((await call('/api/shorts',{session:'invalid',interests:JSON.stringify(Array(6).fill('#猫'))})).code,400);
 });

@@ -1,3 +1,4 @@
+import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
@@ -25,7 +26,7 @@ export default function ShortsShelf({ context, onSelect }: {
     let cancelled = false;
     setLoading(true); setVideos([]); setError('');
     const seen = readSeenShorts();
-    Promise.allSettled([fetchJSON(discoveryRequest(query, 1, session, seen)), fetchJSON('/api/shorts-ranking')]).then(([native, ranked]) => {
+    Promise.allSettled([fetchJSON(discoveryRequest(withShortsInterests(query), 1, session, seen)), context.source === 'search' ? Promise.resolve({ videos: [] }) : fetchJSON('/api/shorts-ranking')]).then(([native, ranked]) => {
       if (native.status === 'rejected') throw native.reason;
       const regular = (native.value.videos || []).filter((v: Video) => v.isShort);
       const ranking = ranked.status === 'fulfilled' ? unseenRankingFirst(ranked.value.videos || [], seen) : [];

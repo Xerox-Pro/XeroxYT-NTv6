@@ -22,3 +22,20 @@ export function personalShortsTerm(page) {
   const terms = [...new Set([...saved.map(x => clean(x.term)), ...tags.map(clean)].filter(Boolean))].slice(0, 40);
   return terms.length ? terms[(page - 1) % terms.length] : '';
 }
+
+export function personalShortsHashtags() {
+  let history = [];
+  try { history = JSON.parse(localStorage.getItem('xerox_watch_history') || '[]'); } catch {}
+  const tags = Array.isArray(history) ? history.filter(x => x.type !== 'short').flatMap(x => (x.title || '').match(/#[\p{L}\p{N}_]+/gu) || []) : [];
+  return [...new Set([...readShortsInterests().filter(x => x.kind === 'hashtag').map(x => clean(x.term)), ...tags.map(clean)].filter(x => /^#[\p{L}\p{N}_]+$/u.test(x)))].slice(0, 5);
+}
+export function withShortsInterests(query, page = 1) {
+  const params = new URLSearchParams(query);
+  if (params.get('source') !== 'search') {
+    const tags = personalShortsHashtags();
+    if (tags.length) params.set('interests', JSON.stringify(tags));
+    const searches = readShortsInterests().filter(x => x.kind === 'search');
+    if (searches.length) params.set('interest', searches[(page - 1) % searches.length].term);
+  }
+  return params.toString();
+}

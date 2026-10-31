@@ -102,6 +102,9 @@ export function registerShortsRoutes(app, getYoutube) {
     const source = req.query.source || 'home';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const interest = typeof req.query.interest === 'string' ? req.query.interest.trim() : '';
+    let interests = [];
+    try { interests = req.query.interests ? JSON.parse(String(req.query.interests)) : []; } catch { return res.status(400).json({ error: 'ハッシュタグの指定を確認してください。' }); }
+    if (!Array.isArray(interests) || interests.length > 5 || interests.some(tag => typeof tag !== 'string' || tag.length > 160 || !/^#[\p{L}\p{N}_]+$/u.test(tag))) return res.status(400).json({ error: 'ハッシュタグは最大5個まで指定できます。' });
     const videoId = typeof req.query.videoId === 'string' ? req.query.videoId : '';
     const page = Number(req.query.page || 1);
     const session = typeof req.query.session === 'string' ? req.query.session : '';
@@ -125,8 +128,8 @@ export function registerShortsRoutes(app, getYoutube) {
             if (page === 1) primary = collectShorts(info);
           } catch { /* Topic discovery still works if the source metadata is unavailable. */ }
         }
-        const queries = discoveryQueries(session, page, context);
-        const round = Math.floor((page - 1) / 10);
+        const queries = source === 'search' ? [q] : discoveryQueries(session, page, context);
+        const round = source === 'search' ? page - 1 : Math.floor((page - 1) / 10);
         const tasks = queries.map(async query => {
           let feed = await cached(`discovery:${query}`, async () => {
             let search = await youtube.search(query, { type: 'all' });
@@ -144,27 +147,40 @@ export function registerShortsRoutes(app, getYoutube) {
         if (source === 'home' && !q && page === 1) tasks.push((async () => {
           try { return collectShorts(await cached('home-feed', () => youtube.getHomeFeed())); } catch { return []; }
         })());
-        const personalTask = interest ? (async () => {
-          const term = interest.replace(/#shorts(?![\p{L}\p{N}_])/giu, '').trim();
+        const terms = source === 'search' ? [] : [...new Set([...interests, interest].filter(Boolean))];
+        const personalTask = Promise.all(terms.map(async rawTerm => {
+          const term = rawTerm.replace(/#shorts(?![\p{L}\p{N}_])/giu, '').trim();
           if (!term) return [];
-          const feed = await cached(`personal-shorts:${term}`, async () => {
+          let feed = await cached(`personal-shorts:${term}`, async () => {
             let search = await youtube.search(`${term} #shorts`, { type: 'all' });
             const chip = search.refinement_filters?.find(name => /^(shorts|ショート(?:動画)?)$/i.test(name));
             if (chip) search = await search.applyRefinement(chip);
             return search;
           });
-          return collectShorts(feed);
-        })().catch(() => []) : Promise.resolve([]);
+          const found = new Map();
+          for (let round = 0; round < 3; round++) {
+            for (const video of collectShorts(feed)) if (!excluded.includes(video.videoId) && video.videoId !== videoId) found.set(video.videoId, video);
+            if (found.size >= 10 || !feed.has_continuation) break;
+            const previous = feed;
+            feed = await cached(`personal-continuation:${term}:${round}`, () => previous.getContinuation());
+          }
+          return [...found.values()].slice(0, 10);
+        }).map(task => task.catch(() => []))).then(pools => {
+          // Round-robin the selected tags so one tag cannot occupy every slot.
+          const result = [];
+          for (let i = 0; i < 10; i++) for (const pool of pools) if (pool[i]) result.push(pool[i]);
+          return result;
+        });
         const [results, personal] = await Promise.all([Promise.allSettled(tasks), personalTask]);
         const pools = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
-        if (!primary.length && results.every(result => result.status === 'rejected')) throw new Error('All discovery sources failed');
+        if (!primary.length && !personal.length && results.every(result => result.status === 'rejected')) throw new Error('All discovery sources failed');
         const candidates = [...primary, ...pools];
         rememberOriginalAspects(candidates);
         let videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
         if (personal.length) {
           // Ranking still occupies half the final feed. Personalize 60% of
           // this non-ranking pool to target 30% overall (3 of every 10 clips).
-          const picks = diversifyShorts(personal, `${session}:personal:${page}`, [...excluded, videoId].filter(Boolean), 18);
+          const picks = [...new Map(personal.map(video => [video.videoId, video])).values()].slice(0, 18);
           const pickIds = new Set(picks.map(v => v.videoId));
           const general = videos.filter(v => !pickIds.has(v.videoId));
           const mixed = [];

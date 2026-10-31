@@ -12,3 +12,13 @@ test('interests save normal hashtags and searches per account, exclude shorts an
  localStorage.setItem('xerox_last_account_id','bob'); assert.equal(readShortsInterests().length,0);
  saveShortsInterest('ゲーム'); assert.equal(personalShortsTerm(1),'ゲーム');
 });
+test('shelves and viewer share five saved hashtags while search keeps its own context', async()=>{
+ const {withShortsInterests}=await import('../src/lib/shortsInterests.mjs');
+ for(let i=0;i<8;i++)saveVideoHashtags({title:`#tag${i}`});
+ const home=new URLSearchParams(withShortsInterests('source=home'));
+ assert.equal(JSON.parse(home.get('interests')).length,5);
+ const related=new URLSearchParams(withShortsInterests('source=related&videoId=abcdefghijk'));
+ assert.deepEqual(JSON.parse(related.get('interests')),JSON.parse(home.get('interests')));
+ const search=new URLSearchParams(withShortsInterests('source=search&q=piano'));
+ assert.equal(search.has('interests'),false);assert.equal(search.has('interest'),false);
+});
