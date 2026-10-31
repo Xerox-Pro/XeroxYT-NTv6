@@ -509,7 +509,11 @@ export default function ChannelPage({
                   {shortList.slice(0, 6).map((short) => (
                     <div
                       key={short.videoId}
-                      onClick={() => navigate(`/shorts/${short.videoId}`)}
+                      onClick={() => {
+                        const id = channelData.id || channelId;
+                        try { sessionStorage.setItem(`xerox_channel_shorts_${id}`, JSON.stringify({ videos: shortList, page: shortPage, hasMore: hasMoreShorts })); } catch {}
+                        navigate(`/shorts/${short.videoId}?source=channel&channelId=${encodeURIComponent(id)}`);
+                      }}
                       className="group cursor-pointer flex flex-col gap-2"
                     >
                       <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">
@@ -608,7 +612,11 @@ export default function ChannelPage({
               {shortList.map((short) => (
                 <div
                   key={short.videoId}
-                  onClick={() => navigate(`/shorts/${short.videoId}`)}
+                  onClick={() => {
+                        const id = channelData.id || channelId;
+                        try { sessionStorage.setItem(`xerox_channel_shorts_${id}`, JSON.stringify({ videos: shortList, page: shortPage, hasMore: hasMoreShorts })); } catch {}
+                        navigate(`/shorts/${short.videoId}?source=channel&channelId=${encodeURIComponent(id)}`);
+                      }}
                   className="group cursor-pointer flex flex-col gap-2"
                 >
                   <div className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200">

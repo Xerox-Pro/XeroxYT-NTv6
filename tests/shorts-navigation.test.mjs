@@ -15,7 +15,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
  await build({entryPoints:['src/components/ShortsViewer.tsx'],outfile,bundle:true,packages:'external',platform:'node',format:'esm',jsx:'automatic',plugins:[{name:'network-boundary',setup(builder){builder.onLoad({filter:/\/src\/utils\.ts$/},()=>({contents:'export const fetchJSON=async(url)=>{const r=await fetch(url);if(!r.ok)throw new Error("failed");return r.json()};export const formatNumberJP=n=>String(n);',loader:'js'}));}}]});
  const {default:Viewer}=await import(pathToFileURL(outfile));
  const dom=new JSDOM('<div id="root"></div>',{url:'https://example.test/'});
- for(const key of ['window','document','HTMLElement','HTMLIFrameElement','Event','MouseEvent','localStorage']) Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});
+ for(const key of ['window','document','HTMLElement','HTMLIFrameElement','Event','MouseEvent','localStorage','sessionStorage']) Object.defineProperty(globalThis,key,{value:dom.window[key],configurable:true});
  globalThis.IS_REACT_ACT_ENVIRONMENT=true;
  const observers=[];
  globalThis.IntersectionObserver=class{constructor(callback){this.callback=callback;this.nodes=[];observers.push(this)} observe(node){this.nodes.push(node)} disconnect(){this.nodes=[]}};
@@ -25,6 +25,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
  globalThis.fetch=async url=>{
   const address=String(url);
   if(address.startsWith('https://shorts-ranking.com/latest.json?'))return new Response(JSON.stringify({items:ranking.map(v=>({video_id:v.videoId,title:v.title,channel_title:v.author,views:v.viewCount})),updated_at:'today'}));
+  if(address.startsWith('/api/channel/'))return new Response(JSON.stringify({videos:[ranking[0],...regular],hasMore:false}));
   if(address.startsWith('/api/shorts?'))return new Response(JSON.stringify({videos:regular,hasMore:false}));
   if(address.startsWith('/api/edu/'))return new Response(`https://www.youtubeeducation.com/embed/${address.split('/').pop()}?controls=0`);
   if(address.includes('/comments'))return new Response(JSON.stringify({comments:[],hasMore:false}));
@@ -70,5 +71,12 @@ test('shorts can leave for home, search, history, channel and browser back durin
    assert.equal(document.querySelector('[data-path]').textContent,target==='back'?'/':target,`navigation remains at ${target}`);
    await act(async()=>root.unmount());observers.length=0;
   }
+  sessionStorage.setItem('xerox_channel_shorts_test',JSON.stringify({videos:[ranking[0],...regular],page:1,hasMore:false}));
+  const channelRoot=createRoot(document.getElementById('root'));
+  await act(async()=>channelRoot.render(React.createElement(MemoryRouter,{initialEntries:['/shorts/abcdefghijk?source=channel&channelId=test']},React.createElement(Viewer,{initialId:'abcdefghijk',initialVideo:regular[0],context:{source:'channel',channelId:'test'},onRecord:()=>{},onSelectChannel:()=>{}}))));
+  await settle();await settle();
+  assert.deepEqual([...document.querySelectorAll('article[data-short-id]')].map(n=>n.dataset.shortId),['lmnopqrstuv','abcdefghijk','12345678901'],'channel feed runs older to newer around selected short');
+  assert.equal(document.querySelector('.shorts-feed-source a'),null,'channel mode does not mix ranking');
+  await act(async()=>channelRoot.unmount());
  }finally{dom.window.close();await rm(temporary,{recursive:true,force:true});}
 });

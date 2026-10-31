@@ -1,6 +1,6 @@
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -66,11 +66,21 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const location = useLocation();
   const route = useRef(location); route.current = location;
   const navigateRef = useRef(navigate); navigateRef.current = navigate;
+  const channelMode = context.source === 'channel' && !!context.channelId;
+  const [channelStart] = useState(() => {
+    try {
+      const data = JSON.parse(sessionStorage.getItem(`xerox_channel_shorts_${context.channelId}`) || 'null');
+      if (channelMode && Array.isArray(data?.videos)) return data;
+    } catch {}
+    return null;
+  });
+  const positioned = useRef(false);
+  const anchor = useRef<{ id: string; top: number } | null>(null);
   const seed = useRef(initialId ? initialVideo || { videoId: initialId, title: 'ショート動画', author: 'チャンネル', isShort: true, viewCount: 0, publishedText: '', lengthSeconds: 0, videoThumbnails: [] } as Video : null);
   const [session] = useState(createShortsSession);
   const [seenOnEntry] = useState(readSeenShorts);
   const regularRef = useRef<Video[]>([]);
-  const [regular, setRegular] = useState<Video[]>(seed.current ? [seed.current] : []);
+  const [regular, setRegular] = useState<Video[]>(channelMode && channelStart ? [...channelStart.videos].reverse() : seed.current ? [seed.current] : []);
   const [ranking, setRanking] = useState<Video[]>([]);
   const [rankingReady, setRankingReady] = useState(false);
   const [rankingError, setRankingError] = useState('');
@@ -79,7 +89,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [metadata, setMetadata] = useState<Record<string, Video>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [page, setPage] = useState(1);
+  const [page, setPage] = useState(channelStart?.page || 1);
   const [hasMore, setHasMore] = useState(true);
   const [attempt, setAttempt] = useState(0);
   const [commentsId, setCommentsId] = useState('');
@@ -95,7 +105,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
-    (context.source === 'search' ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
+    ((context.source === 'search' || channelMode) ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
       if (!cancelled) { setRanking(data.videos || []); setRankingUpdated(data.updatedAt || ''); }
     }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
@@ -103,6 +113,20 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   }, []);
   useEffect(() => {
     let cancelled = false; pending.current = true; setLoading(true); setError('');
+    if (channelMode) {
+      fetchJSON(`/api/channel/${encodeURIComponent(context.channelId!)}/tab/shorts?page=${page}&sort=latest`).then(data => {
+        if (cancelled) return;
+        const current = scroll.current?.querySelector<HTMLElement>(`[data-short-id="${activeRef.current}"]`);
+        if (current) anchor.current = { id: activeRef.current, top: current.getBoundingClientRect().top };
+        const older = (data.videos || []).filter((video: Video) => video.videoId).reverse();
+        const combined: Video[] = [...new Map([...older, ...regularRef.current].map(video => [video.videoId, video])).values()] as Video[];
+        setRegular(combined);
+        try { sessionStorage.setItem(`xerox_channel_shorts_${context.channelId}`, JSON.stringify({ videos: [...combined].reverse(), page, hasMore: Boolean(data.hasMore) })); } catch {}
+        setHasMore(Boolean(data.hasMore));
+      }).catch(reason => { if (!cancelled) setError(reason.message || 'チャンネルのショートを取得できませんでした。'); })
+        .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
+      return () => { cancelled = true; };
+    }
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
     fetchJSON(discoveryRequest(withShortsInterests(query, page), page, session, excluded)).then(data => {
       if (cancelled) return;
@@ -113,6 +137,18 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
     return () => { cancelled = true; };
   }, [query, page, session, attempt]);
+  useLayoutEffect(() => {
+    if (!channelMode || !scroll.current || !videos.length) return;
+    const selected = scroll.current.querySelector<HTMLElement>(`[data-short-id="${initialId}"]`);
+    if (!positioned.current && selected) {
+      scroll.current.scrollTop += selected.getBoundingClientRect().top - scroll.current.getBoundingClientRect().top;
+      positioned.current = true;
+    } else if (anchor.current) {
+      const node = scroll.current.querySelector<HTMLElement>(`[data-short-id="${anchor.current.id}"]`);
+      if (node) scroll.current.scrollTop += node.getBoundingClientRect().top - anchor.current.top;
+    }
+    anchor.current = null;
+  }, [ids]);
   useEffect(() => {
     if (!videos.length) return;
     setActiveId(previous => videos.some(video => video.videoId === previous) ? previous : videos[0].videoId!);
@@ -147,7 +183,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     const index = videos.findIndex(video => video.videoId === activeId);
     const filledRanking = ranking.length > 0 && videos.length >= ranking.length * 2;
-    if (rankingReady && !filledRanking && index >= videos.length - 6 && hasMore && !loading && !pending.current && !error && page < MAX_SHORT_PAGES) setPage(value => value + 1);
+    if (rankingReady && !filledRanking && (channelMode ? index <= 3 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
   }, [activeId, ids, rankingReady, ranking.length, hasMore, loading, error, page]);
   const move = useCallback((direction: number) => {
     const index = videos.findIndex(video => video.videoId === activeRef.current);
@@ -197,9 +233,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         {(loading || !rankingReady) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
         {error && <p role="status">{error}<button className="underline ml-2" onClick={() => setAttempt(value => value + 1)}>再試行</button></p>}
         {!loading && rankingReady && !error && <p>{videos.length ? 'ここまでのショートを表示しました。' : '表示できる縦長ショートがありません。'}</p>}
-        {!loading && !error && hasMore && page < MAX_SHORT_PAGES && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>続きを読み込む</button>}
+        {!loading && !error && hasMore && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>続きを読み込む</button>}
       </div>
     </div>
-    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
+    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }

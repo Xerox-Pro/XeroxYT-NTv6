@@ -1088,11 +1088,12 @@ export default function MainApp() {
           {/* ビュー分岐 */}
           {view === 'video' ? null : view === 'shorts' ? (
             <ShortsViewer
-              key={['shorts', searchParams.get('source'), searchParams.get('q'), searchParams.get('videoId')].join(':')}
+              key={['shorts', searchParams.get('source'), searchParams.get('q'), searchParams.get('videoId'), searchParams.get('channelId')].join(':')}
               initialVideo={videoCache[location.pathname.split('/')[2]] as Video | undefined}
               initialId={/^[\w-]{11}$/.test(location.pathname.split('/')[2] || '') ? location.pathname.split('/')[2] : undefined}
               context={{
-                source: searchParams.get('source') === 'search' ? 'search' : searchParams.get('source') === 'related' ? 'related' : 'home',
+                channelId: searchParams.get('channelId') || undefined,
+                source: searchParams.get('source') === 'channel' ? 'channel' : searchParams.get('source') === 'search' ? 'search' : searchParams.get('source') === 'related' ? 'related' : 'home',
                 q: searchParams.get('q') || undefined,
                 videoId: searchParams.get('videoId') || undefined,
               }}

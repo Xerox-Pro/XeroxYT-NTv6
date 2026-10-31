@@ -7,10 +7,11 @@ import { Video } from '../types';
 import { mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst, recordSeenShort } from '../lib/shortsFeed.mjs';
 import { fetchJSON, formatNumberJP } from '../utils';
 
-export type ShortsContext = { source: 'home' | 'search' | 'related'; q?: string; videoId?: string };
+export type ShortsContext = { source: 'home' | 'search' | 'related' | 'channel'; q?: string; videoId?: string; channelId?: string };
 export function shortsQuery(context: ShortsContext) {
   const params = new URLSearchParams({ source: context.source });
   if (context.q) params.set('q', context.q.slice(0, 200));
+  if (context.channelId) params.set('channelId', context.channelId);
   if (context.videoId) params.set('videoId', context.videoId);
   return params;
 }
