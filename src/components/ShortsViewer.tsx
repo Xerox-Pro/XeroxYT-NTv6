@@ -3,7 +3,7 @@ import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ThumbsDown } from 'lucide-react';
+import { Loader2, MessageCircle, AlignLeft, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
@@ -113,19 +113,17 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [attempt, setAttempt] = useState(0);
   const [commentsId, setCommentsId] = useState('');
   const [descriptionId, setDescriptionId] = useState('');
-  const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
-  const [likes, setLikes] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('xerox_shorts_likes_v1') || '{}'); } catch { return {}; } });
   const scroll = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
-  const videos: Video[] = (channelMode || context.source === 'search' ? regular : queue).filter(video => !dismissed.has(video.videoId!));
+  const videos: Video[] = channelMode || context.source === 'search' ? regular : queue;
   useEffect(() => {
     if (!rankingReady || channelMode || context.source === 'search') return;
-    const candidates = rankCandidates([...regular, ...ranking].filter(video => !dismissed.has(video.videoId!)), { short: true, seed: session, seen: readSeenShorts() });
-    setQueue(previous => mergeShortsQueue(previous.filter(video => !dismissed.has(video.videoId!)), candidates, activeId, seed.current?.videoId));
-  }, [regular, ranking, rankingReady, activeId, dismissed, channelMode, context.source, session]);
+    const candidates = rankCandidates([...regular, ...ranking], { short: true, seed: session, seen: readSeenShorts() });
+    setQueue(previous => mergeShortsQueue(previous, candidates, activeId, seed.current?.videoId));
+  }, [regular, ranking, rankingReady, activeId, channelMode, context.source, session]);
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
@@ -239,13 +237,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           {prepare ? <ShortEmbed video={video} active={active} isSelected={() => !isShortsLocation(route.current.pathname) || activeRef.current === video.videoId} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
             : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" />{overlay}</div>}
           <div className="shorts-side-actions">
-            <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
-            {!channelMode && <button aria-label="興味なし" onClick={() => {
-              learnInteraction(info, 'notInterested');
-              const nextId = videos[index + 1]?.videoId || videos[index - 1]?.videoId || '';
-              setDismissed(previous => new Set([...previous, video.videoId!]));
-              setCommentsId(''); setDescriptionId(''); setActiveId(nextId);
-            }}><span><ThumbsDown size={24} /></span><small>興味なし</small></button>}
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
             <button aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>

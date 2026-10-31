@@ -60,8 +60,8 @@ test('shorts can leave for home, search, history, channel and browser back durin
    const frames=[...document.querySelectorAll('iframe')];assert.equal(frames.length,3,'active and next two embeds are prepared');
    for(const next of frames.slice(1))assert.equal(new URL(next.src).searchParams.get('autoplay'),'0','preloaded videos do not autoplay');
    assert.ok(document.querySelector('[aria-label="コメントを表示"]'));assert.ok(document.querySelector('[aria-label="概要欄を表示"]'));
-   assert.ok(document.querySelector('[aria-label="高評価（この端末に保存）"]'));
-   assert.ok(document.querySelector('[aria-label="興味なし"]'), 'explicit feedback is available');
+   assert.equal(document.querySelector('[aria-label="高評価（この端末に保存）"]'), null, 'no like button is shown');
+   assert.equal(document.querySelector('[aria-label="興味なし"]'), null, 'interest is inferred without a feedback button');
    assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
    assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
    await act(async()=>document.querySelector('[aria-label="概要欄を表示"]').click());
