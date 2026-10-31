@@ -106,6 +106,7 @@ export function registerShortsRoutes(app, getYoutube) {
   // Public feed cache, bounded and independent of serverless affinity. Cold instances
   // replay real continuations, rather than inventing another search query per page.
   const cache = new Map();
+  const inflight = new Map();
   const originalAspects = new Map();
   function rememberOriginalAspects(videos) {
     for (const video of videos) if (video.originalAspect) {
@@ -115,11 +116,22 @@ export function registerShortsRoutes(app, getYoutube) {
   }
   const cached = async (key, load) => {
     const old = cache.get(key);
-    if (old && old.expires > Date.now()) return old.value;
-    const value = await load();
-    if (cache.size >= 100) cache.delete(cache.keys().next().value);
-    cache.set(key, { value, expires: Date.now() + 300000 });
-    return value;
+    if (old && old.expires > Date.now()) {
+      cache.delete(key); cache.set(key, old);
+      return old.value;
+    }
+    if (old) cache.delete(key);
+    if (inflight.has(key)) return inflight.get(key);
+    const promise = (async () => {
+      const value = await load();
+      if (cache.size >= 100) cache.delete(cache.keys().next().value);
+      cache.set(key, { value, expires: Date.now() + 300000 });
+      return value;
+    })();
+    // Limit bookkeeping; requests beyond the cap still execute normally.
+    if (inflight.size < 100) inflight.set(key, promise);
+    try { return await promise; }
+    finally { if (inflight.get(key) === promise) inflight.delete(key); }
   };
   app.get('/api/shorts', async (req, res) => {
     const source = req.query.source || 'home';

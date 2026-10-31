@@ -10,6 +10,7 @@ import { Video } from '../types';
 import { fetchJSON, formatNumberJP } from '../utils';
 import { excludeSeenShorts, isShortsLocation, MAX_SHORT_PAGES, mixShorts, createShortsSession, readSeenShorts, recordSeenShort, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
 import ShortsComments from './ShortsComments';
+import { getShortEmbedUrl } from '../lib/shortsEmbedCache.mjs';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
 function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected }: {
@@ -27,13 +28,11 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected 
   const callbacks = useRef({ onRecord, onMetadata, isSelected }); callbacks.current = { onRecord, onMetadata, isSelected };
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setUrl(''); setError(''); detail.current = null;
     Promise.all([
-      fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}&details=2`),
-      fetch(`/api/edu/${video.videoId}`).then(async response => {
-        if (!response.ok) throw new Error('埋め込み動画を読み込めませんでした。');
-        return response.text();
-      }),
+      fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}&details=2`, { signal: controller.signal }),
+      getShortEmbedUrl(video.videoId, controller.signal),
     ]).then(([metadata, rawUrl]) => {
       if (cancelled) return;
       const parsed = new URL(rawUrl);
@@ -43,7 +42,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected 
       for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: '1', rel: '0' })) parsed.searchParams.set(key, value);
       detail.current = metadata; callbacks.current.onMetadata(metadata); setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [video.videoId, video.title, attempt]);
   useEffect(() => {
     if (!url) return;
