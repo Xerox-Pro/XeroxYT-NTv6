@@ -44,3 +44,11 @@ test('an account change does not attribute an old playback session to the new ac
  tracker.update(0,10,true,true,0);tracker.update(1,10,true,true,1000);
  localStorage.setItem('xerox_last_account_id','other');tracker.finish();assert.equal(count,0);
 });
+
+test('unliking and liking again restore the current preference rather than retaining a stale negative',()=>{
+ storage();learnInteraction(guitar,'like');learnInteraction(guitar,'unlike');
+ assert.deepEqual(learnedTerms(true),[]);
+ learnInteraction(guitar,'like');assert.ok(learnedTerms(true).includes('ギター'));
+ learnInteraction(guitar,'save');learnInteraction(guitar,'unsave');
+ assert.ok(learnedTerms(true).includes('ギター'));
+});

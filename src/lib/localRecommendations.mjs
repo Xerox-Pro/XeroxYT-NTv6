@@ -21,10 +21,11 @@ export function learnInteraction(video, kind, value=1) {
   const weight=Math.max(-6,Math.min(6,(weights[kind]||0)*value));
   if(!weight)return;
   const model=readLocalModel();const rows=model[lane];
-  const id=`${kind}:${video.videoId}`;
+  const family = kind === 'unlike' ? 'like' : kind === 'unsave' ? 'save' : kind;
+  const id=`${family}:${video.videoId}`;
   const old=rows[id];
   // Repeated callbacks for a single video cannot endlessly strengthen its topic.
-  const strength=kind==='watch'?Math.max(-2,Math.min(2,(old?.score||0)+weight)):weight;
+  const strength=(kind==='unlike'||kind==='unsave')?0:kind==='watch'?Math.max(-2,Math.min(2,(old?.score||0)+weight)):weight;
   rows[id]={score:strength,at:Date.now(),terms:features(video),channel:String(video.authorId||video.author||'').slice(0,160)};
   model[lane]=Object.fromEntries(Object.entries(rows).sort((a,b)=>b[1].at-a[1].at).slice(0,500));
   try{localStorage.setItem(storeKey(),JSON.stringify(model));}catch{}
