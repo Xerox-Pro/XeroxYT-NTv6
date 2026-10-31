@@ -25,8 +25,21 @@ export function getShortEmbedUrl(id, signal) {
     const timer = setTimeout(() => controller.abort(), 10000);
     request = { controller, users: 0, promise: null };
     const current = request;
-    request.promise = fetch(`/api/edu/${encodeURIComponent(id)}`, { signal: controller.signal, credentials: 'omit' })
-      .then(async response => {
+    request.promise = (async () => {
+      try {
+        const response = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, { signal: controller.signal, cache: 'no-store', credentials: 'omit' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        let clean = (await response.text()).replace(/&amp;/g, '&').trim();
+        if (clean.startsWith('{')) { try { const config = JSON.parse(clean); if (typeof config?.params === 'string') clean = config.params.replace(/&amp;/g, '&').trim(); } catch {} }
+        const index = clean.indexOf('?');
+        if (index !== -1) clean = clean.substring(index);
+        else if (clean && !clean.startsWith('&')) clean = '?' + clean;
+        return new Response(`https://www.youtubeeducation.com/embed/${encodeURIComponent(id)}${clean || '?rel=0&autoplay=1&mute=1'}`);
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        return fetch(`/api/edu/${encodeURIComponent(id)}`, { signal: controller.signal, credentials: 'omit' });
+      }
+    })().then(async response => {
         if (!response.ok) throw new Error('埋め込み動画を読み込めませんでした。');
         const value = await response.text();
         const url = new URL(value);
