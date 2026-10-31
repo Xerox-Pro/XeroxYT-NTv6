@@ -1,3 +1,4 @@
+import { learnSearch, learnInteraction, learnedTerms } from './lib/localRecommendations.mjs';
 import { prioritizeUnshown } from './lib/recommendationImpressions.mjs';
 import { saveShortsInterest, saveVideoHashtags } from './lib/shortsInterests.mjs';
 import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
@@ -666,7 +667,7 @@ export default function MainApp() {
     setError('');
 
     try {
-      const keywords = getHistoryKeywords();
+      const keywords = [...learnedTerms(false, 5), getHistoryKeywords()].filter(Boolean).join(' ');
       const historyIds = watchHistory.slice(0, 20).map(h => h.videoId).join(',');
       const userHashtags = JSON.stringify(localAI.getHashtagsMap());
       let data = [];
@@ -862,6 +863,7 @@ export default function MainApp() {
 
   const handleSearch = (q: string) => {
     saveShortsInterest(q);
+    learnSearch(q);
     navigate(`/results?search_query=${encodeURIComponent(q)}`);
   };
 
@@ -924,6 +926,8 @@ export default function MainApp() {
   };
 
   const handleToggleVideoInPlaylist = (playlistId: string, video: Video) => {
+    const target = playlists.find(pl => pl.id === playlistId);
+    if (target) learnInteraction(video, target.videos.some(v => v.videoId === video.videoId) ? 'unsave' : 'save');
     setPlaylists(prev => prev.map(pl => {
       if (pl.id !== playlistId) return pl;
       const exists = pl.videos.some(v => v.videoId === video.videoId);

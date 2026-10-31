@@ -1,3 +1,4 @@
+import { rankCandidates } from '../lib/localRecommendations.mjs';
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useEffect, useState, useRef } from 'react';
@@ -31,8 +32,9 @@ export default function ShortsShelf({ context, onSelect }: {
     const seen = readSeenShorts();
     Promise.allSettled([fetchJSON(discoveryRequest(withShortsInterests(query), 1, session, seen)), context.source === 'search' ? Promise.resolve({ videos: [] }) : loadShortsRanking()]).then(([native, ranked]) => {
       if (native.status === 'rejected') throw native.reason;
-      const regular = (native.value.videos || []).filter((v: Video) => v.isShort);
-      const ranking = ranked.status === 'fulfilled' ? unseenRankingFirst(ranked.value.videos || [], seen, '', session) : [];
+      const candidates = (native.value.videos || []).filter((v: Video) => v.isShort);
+      const regular = context.source === 'search' ? candidates : rankCandidates(candidates, { short: true, seed: session, seen });
+      const ranking = ranked.status === 'fulfilled' ? rankCandidates(ranked.value.videos || [], { short: true, seed: session, seen }) : [];
       if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });

@@ -1,3 +1,4 @@
+import { learnedTerms } from './localRecommendations.mjs';
 const key = () => `xerox_shorts_interests_v1_${localStorage.getItem('xerox_last_account_id') || 'local'}`;
 const clean = value => String(value || '').replace(/#shorts(?![\p{L}\p{N}_])/giu, '').trim().slice(0, 160);
 export function readShortsInterests() {
@@ -35,7 +36,9 @@ export function withShortsInterests(query, page = 1) {
     const tags = personalShortsHashtags();
     if (tags.length) params.set('interests', JSON.stringify(tags));
     const searches = readShortsInterests().filter(x => x.kind === 'search');
-    if (searches.length) params.set('interest', searches[(page - 1) % searches.length].term);
+    const learned = learnedTerms(true, 8);
+    const choices = [...new Set([...searches.map(x => x.term), ...learned])];
+    if (choices.length) params.set('interest', choices[(page - 1) % choices.length]);
   }
   return params.toString();
 }

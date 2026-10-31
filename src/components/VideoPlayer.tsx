@@ -1,3 +1,4 @@
+import { createPlaybackTracker, learnInteraction } from '../lib/localRecommendations.mjs';
 import { prioritizeUnshown } from '../lib/recommendationImpressions.mjs';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -170,6 +171,7 @@ export default function VideoPlayer({
   const activeVideo: Video = videoData?.videoId === videoId ? videoData : fallbackVideo;
 
   const handleLike = () => {
+    learnInteraction(activeVideo, isLiked ? 'unlike' : 'like');
     if (isLiked) {
       setIsLiked(false);
       setLikeCountDelta(0);
@@ -181,6 +183,7 @@ export default function VideoPlayer({
   };
 
   const handleDislike = () => {
+    if (!isDisliked) learnInteraction(activeVideo, 'dislike');
     if (isDisliked) {
       setIsDisliked(false);
     } else {
@@ -370,26 +373,21 @@ export default function VideoPlayer({
     }
   }, [activeVideo?.multipleChannelIds]);
 
-  // Track video viewing duration for recommendation AI
+  // Playback progress, rather than time spent waiting on the page, trains the model.
   useEffect(() => {
-    watchSecondsRef.current = 0;
+    let tracker: ReturnType<typeof createPlaybackTracker> | null = null;
+    let trackedId = '';
     const interval = setInterval(() => {
-      watchSecondsRef.current += 1;
-      // Periodic engagement update every 20 seconds
-      if (watchSecondsRef.current % 20 === 0 && activeVideoRef.current) {
-        localAI.processWatchDuration(activeVideoRef.current, watchSecondsRef.current);
+      const video = activeVideoRef.current;
+      if (!video || !playerTimeReceivedRef.current) return;
+      if (trackedId !== video.videoId) {
+        tracker?.finish(); tracker = createPlaybackTracker(video); trackedId = video.videoId!;
       }
+      tracker?.update(currentTimeRef.current, durationRef.current || video.lengthSeconds, playerStateRef.current === 1, document.visibilityState !== 'hidden');
     }, 1000);
-
-    return () => {
-      clearInterval(interval);
-      if (activeVideoRef.current && watchSecondsRef.current > 0) {
-        localAI.processWatchDuration(activeVideoRef.current, watchSecondsRef.current);
-      }
-    };
+    return () => { clearInterval(interval); tracker?.finish(); };
   }, [videoId]);
 
-  // ─── プレイヤー制御 & グローバルキーボードショートカット ───
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const apiPlayerRef = useRef<any>(null);
   const playlistRef = useRef(playlistId);

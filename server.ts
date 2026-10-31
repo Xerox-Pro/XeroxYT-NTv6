@@ -2281,72 +2281,7 @@ async function startServer() {
         }
       }
 
-      // Gemini Flashでユーザーの好みを予測してクエリ生成 (1ページ目)
-      if (
-        page === 1 &&
-        process.env.GEMINI_API_KEY &&
-        (historyVideoTitles.length > 0 || keywords.length > 3)
-      ) {
-        try {
-          const promptInput = `
-            あなたはYouTubeのおすすめレコメンドAIです。
-            ユーザーの直近の視聴履歴と興味関心キーワードから、今このユーザーが「見たい！」と思うような魅力的で具体的なYouTube検索クエリ（日本語）を8つ予測して生成してください。
-            
-            毎回ホームに戻るたびに新鮮でワクワクする体験ができるよう、履歴の直接的な関連（同じ投稿者やシリーズ）だけでなく、潜在的な興味（関連ジャンル、類似トピック、最新トレンド、コラボ動画）も含めてバラエティ豊かにしてください。
-            除外対象: 作業用BGM、長時間メドレー、まとめ動画、スパム的な内容。
-
-            【コンテキスト】
-            - ユーザーが最近見た動画: ${historyVideoTitles.join(" / ") || "なし"}
-            - 好きなクリエイター/チャンネル: ${historyAuthors.join(" / ") || "なし"}
-            - 興味関心キーワード: ${keywords || "なし"}
-            - リフレッシュ乱数シード: ${seed}
-
-            返信は以下のJSON形式の配列のみを出力してください:
-            ["クエリ1", "クエリ2", "クエリ3", "クエリ4", "クエリ5", "クエリ6", "クエリ7", "クエリ8"]
-          `;
-
-          const interaction = await genAI.interactions.create({
-            model: "gemini-3.7-flash",
-            input: promptInput,
-            response_format: {
-              type: "application/json",
-            },
-          });
-
-          let text = "";
-          for (const step of interaction.steps) {
-            if (step.type === "model_output") {
-              const textContent = step.content?.find((c) => c.type === "text");
-              if (textContent && textContent.text) {
-                text += textContent.text;
-              }
-            }
-          }
-
-          if (text) {
-            const parsed = JSON.parse(text);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              geminiKeywords = parsed;
-              usedAi = true;
-            }
-          }
-        } catch (e: any) {
-          if (
-            e?.message?.includes("401") ||
-            e?.status === 401 ||
-            String(e).includes("401")
-          ) {
-            console.warn(
-              "[Recs] Gemini recommendation analysis skipped: Invalid or missing API key. Using fallback algorithm.",
-            );
-          } else {
-            console.warn(
-              "[Recs] Gemini recommendation analysis skipped:",
-              e.message || String(e),
-            );
-          }
-        }
-      }
+      // Recommendation inference runs on the client; no external AI call.
 
       // 一般ジャンルプール
       const categoryPool = [

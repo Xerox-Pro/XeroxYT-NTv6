@@ -1,3 +1,4 @@
+import { createPlaybackTracker, learnInteraction, rankCandidates } from '../lib/localRecommendations.mjs';
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -50,8 +51,24 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active }: {
     sync(); const timers = [300, 800, 1600].map(delay => window.setTimeout(sync, delay));
     return () => timers.forEach(clearTimeout);
   }, [active, url]);
+  useEffect(() => {
+    if (!active || !url) return;
+    const tracker = createPlaybackTracker(detail.current || video);
+    let playing = false;
+    const receive = (event: MessageEvent) => {
+      if (event.source !== frame.current?.contentWindow || event.origin !== new URL(url).origin) return;
+      try {
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        if (!['infoDelivery', 'initialDelivery'].includes(data?.event) || !data.info) return;
+        if (typeof data.info.playerState === 'number') playing = data.info.playerState === 1;
+        if (typeof data.info.currentTime === 'number') tracker.update(data.info.currentTime, data.info.duration || detail.current?.lengthSeconds, playing, document.visibilityState !== 'hidden');
+      } catch {}
+    };
+    window.addEventListener('message', receive);
+    return () => { window.removeEventListener('message', receive); tracker.finish(); };
+  }, [active, url, video.videoId]);
   return <div className="shorts-frame">
-    {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { command(activeRef.current ? 'playVideo' : 'pauseVideo'); record(); }} />}
+    {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(activeRef.current ? 'playVideo' : 'pauseVideo'); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
     {error && <div className="shorts-embed-error" role="status"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="underline mt-3">再試行</button></div>}
@@ -100,13 +117,13 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
-  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId, session);
+  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId);
   const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
     ((context.source === 'search' || channelMode) ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
-      if (!cancelled) { setRanking(data.videos || []); setRankingUpdated(data.updatedAt || ''); }
+      if (!cancelled) { setRanking(rankCandidates(data.videos || [], { short: true, seed: session, seen: seenOnEntry })); setRankingUpdated(data.updatedAt || ''); }
     }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
     return () => { cancelled = true; };
@@ -130,7 +147,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
     fetchJSON(discoveryRequest(withShortsInterests(query, page), page, session, excluded)).then(data => {
       if (cancelled) return;
-      const items: Video[] = (data.videos || []).filter((video: Video) => video.isShort);
+      const items: Video[] = rankCandidates((data.videos || []).filter((video: Video) => video.isShort), { short: true, seed: session, seen: readSeenShorts() });
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);
       setHasMore(Boolean(data.hasMore));
     }).catch(reason => { if (!cancelled) setError(reason.message || 'ショートを読み込めませんでした。'); })
@@ -185,6 +202,18 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     const filledRanking = ranking.length > 0 && videos.length >= ranking.length * 2;
     if (rankingReady && !filledRanking && (channelMode ? videos.length > 0 && index >= videos.length - 3 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
   }, [activeId, ids, rankingReady, ranking.length, hasMore, loading, error, page]);
+  useEffect(() => {
+    if (channelMode || context.source === 'search' || !activeId) return;
+    // Preserve everything already visited and the two prepared embeds.
+    const index = videos.findIndex(v => v.videoId === activeId);
+    const locked = new Set(videos.slice(0, index + 3).map(v => v.videoId));
+    const adapt = (list: Video[]) => {
+      let end = 0;
+      list.forEach((v, i) => { if (locked.has(v.videoId)) end = i + 1; });
+      return [...list.slice(0, end), ...rankCandidates(list.slice(end), { short: true, seed: session, seen: readSeenShorts() })];
+    };
+    setRegular(adapt); setRanking(adapt);
+  }, [activeId]);
   const move = useCallback((direction: number) => {
     const index = videos.findIndex(video => video.videoId === activeRef.current);
     (scroll.current?.querySelectorAll<HTMLElement>('[data-short-id]')[index + direction])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -217,8 +246,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           {prepare ? <ShortEmbed video={video} active={active} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
             : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" />{overlay}</div>}
           <div className="shorts-side-actions">
-            <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
-            <button aria-label="コメントを表示" onClick={() => { setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
+            <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
+            <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
+            {!channelMode && context.source !== 'search' && <button aria-label="興味なし" onClick={() => { learnInteraction(info, 'notInterested'); move(1); }}><span><X size={22} /></span><small>興味なし</small></button>}
             <button aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
           </div>
