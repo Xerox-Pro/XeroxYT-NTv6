@@ -8,6 +8,5 @@ export function recordImpression(id) {
   try { const rows=JSON.parse(localStorage.getItem(key()) || '[]'); localStorage.setItem(key(),JSON.stringify([{id,at:Date.now()},...(Array.isArray(rows)?rows:[]).filter(x=>x.id!==id)].slice(0,2000))); } catch {}
 }
 export function prioritizeUnshown(videos) {
- const seen = readImpressions();
- return rankCandidates(videos.filter(video => !seen.has(video.videoId)), { seen: [...seen] });
+ return rankCandidates(videos, { seen: [...readImpressions()] });
 }
