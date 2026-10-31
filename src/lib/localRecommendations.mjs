@@ -1,19 +1,26 @@
 // Local content-based online learner. No remote model or cross-user tracking.
 const storeKey = () => `xerox_recommender_v1_${localStorage.getItem('xerox_last_account_id') || 'local'}`;
 const HALF_LIFE = 21 * 86400000;
+const segmenter = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter('ja', { granularity: 'word' }) : null;
 const stop = new Set(['shorts','short','動画','公式','これ','それ','こと','さん','です','ます','する','ある','いる','なる','youtube','official']);
 export function features(video) {
   const text = [video.title, ...(video.hashtags || []), ...(video.tags || [])].filter(x=>typeof x==='string').join(' ').toLowerCase().slice(0,1500);
   const tags = `${text} ${(video.description || '').slice(0,5000)}`.match(/#[\p{L}\p{N}_]+/gu) || [];
   let words = text.match(/[\p{L}\p{N}_]{2,30}/gu) || [];
-  if (typeof Intl.Segmenter === 'function') words = [...new Intl.Segmenter('ja',{granularity:'word'}).segment(text)].filter(x=>x.isWordLike).map(x=>x.segment);
-  return [...new Set([...tags,...words.filter(x=>x.length>=2&&!stop.has(x))])].slice(0,32);
+  if (segmenter) words = [...segmenter.segment(text)].filter(x=>x.isWordLike).map(x=>x.segment);
+  return [...new Set([...tags,...words].filter(x=>x.length>=2&&!stop.has(x.replace(/^#/,''))))].slice(0,32);
 }
 export function readLocalModel() {
-  try {const x=JSON.parse(localStorage.getItem(storeKey())||'null');if(x?.normal&&x?.short)return x;} catch {}
+  try {
+    const x=JSON.parse(localStorage.getItem(storeKey())||'null');
+    if(x?.normal&&x?.short) {
+      for (const lane of [x.normal,x.short]) for (const [key,row] of Object.entries(lane)) if (row && !row.kind) row.kind=key.split(':')[0];
+      return x;
+    }
+  } catch {}
   return {normal:{},short:{}};
 }
-const decay = row => Math.pow(0.5,Math.max(0,Date.now()-row.at)/HALF_LIFE);
+const decay = row => Math.pow(0.5,Math.max(0,Date.now()-row.at)/(row.kind === 'watch' ? 7 * 86400000 : HALF_LIFE));
 export function learnInteraction(video, kind, value=1) {
   if (!video?.videoId) return;
   const lane=video.isShort||video.type==='short'?'short':'normal';
@@ -26,7 +33,7 @@ export function learnInteraction(video, kind, value=1) {
   const old=rows[id];
   // Repeated callbacks for a single video cannot endlessly strengthen its topic.
   const strength=(kind==='unlike'||kind==='unsave')?0:kind==='watch'?Math.max(-2,Math.min(2,(old?.score||0)+weight)):weight;
-  rows[id]={score:strength,at:Date.now(),terms:features(video),channel:String(video.authorId||video.author||'').slice(0,160)};
+  rows[id]={score:strength,kind,at:Date.now(),terms:features(video),channel:String(video.authorId||video.author||'').slice(0,160)};
   model[lane]=Object.fromEntries(Object.entries(rows).sort((a,b)=>b[1].at-a[1].at).slice(0,500));
   try{localStorage.setItem(storeKey(),JSON.stringify(model));}catch{}
 }
@@ -54,16 +61,23 @@ export function rankCandidates(videos,{short=false,seed='local',seen=[]}={}) {
   for(const [lane,factor] of short?[[model.normal,0.65],[model.short,1]]:[[model.normal,1]]) for(const row of Object.values(lane)) { if(row.channel) channels.set(row.channel,(channels.get(row.channel)||0)+row.score*decay(row)*factor); }
   const seenSet=new Set(seen);const unique=[...new Map(videos.filter(v=>v?.videoId).map(v=>[v.videoId,v])).values()];
   const noise=id=>{let n=2166136261;for(const c of `${seed}:${id}`)n=Math.imul(n^c.charCodeAt(0),16777619);return(n>>>0)/4294967296;};
-  const score=v=>features(v).reduce((sum,t)=>sum+Math.tanh((scores.get(t)||0)/4),0)/Math.sqrt(Math.max(1,features(v).length))+Math.tanh((channels.get(String(v.authorId||v.author||''))||0)/6)*0.3+noise(v.videoId)*0.35;
-  const pool=unique.map(v=>({v,s:score(v)})).sort((a,b)=>Number(seenSet.has(a.v.videoId))-Number(seenSet.has(b.v.videoId))||b.s-a.s);
-  const result=[];let last='';
+  const rejected = new Set(Object.keys(model[short?'short':'normal']).filter(key=>key.startsWith('notInterested:')).map(key=>key.slice(14)));
+  const score=v=>features(v).reduce((sum,t)=>sum+Math.tanh((scores.get(t)||0)/4),0)/Math.sqrt(Math.max(1,features(v).length))+Math.tanh((channels.get(String(v.authorId||v.author||''))||0)/6)*0.3+noise(v.videoId)*0.25;
+  const pool=unique.filter(v=>!rejected.has(v.videoId)).map(v=>({v,s:score(v),terms:new Set(features(v)),channel:String(v.authorId||v.author||v.videoId)})).sort((a,b)=>Number(seenSet.has(a.v.videoId))-Number(seenSet.has(b.v.videoId))||b.s-a.s);
+  const result=[];const recent=[];let last='';
   while(pool.length){
     const unshown=pool.some(x=>!seenSet.has(x.v.videoId));
     const eligible=pool.filter(x=>!unshown||!seenSet.has(x.v.videoId));
-    const diverse=eligible.filter(x=>!last||String(x.v.authorId||x.v.author||x.v.videoId)!==last);
+    const diverse=eligible.filter(x=>!last||x.channel!==last);
     const options=diverse.length?diverse:eligible;
-    const pick=result.length%5===4?[...options].sort((a,b)=>noise(b.v.videoId)-noise(a.v.videoId))[0]:options[0];
-    result.push(pick.v);last=String(pick.v.authorId||pick.v.author||pick.v.videoId);pool.splice(pool.indexOf(pick),1);
+    const repetition = x => recent.reduce((penalty, row) => {
+      const overlap = [...x.terms].filter(t=>row.terms.has(t)).length / Math.max(1, Math.min(x.terms.size,row.terms.size));
+      return penalty + overlap * 0.45 + (x.channel===row.channel?0.6:0);
+    },0);
+    const explore = short && result.length % 5 === 4;
+    const utility = x => (explore ? noise(x.v.videoId)*0.6 + Math.min(0,x.s) : x.s) - repetition(x);
+    const pick=options.reduce((best,x)=>utility(x)>utility(best)?x:best);
+    result.push(pick.v);last=pick.channel;recent.push(pick);if(recent.length>8)recent.shift();pool.splice(pool.indexOf(pick),1);
   }
   try { localStorage.setItem(`${storeKey()}_debug_${short?'short':'normal'}`, JSON.stringify({at:Date.now(),videos:result.slice(0,50).map((v,i)=>({rank:i+1,title:v.title,author:v.author,score:Number(score(v).toFixed(3)),seen:seenSet.has(v.videoId),terms:features(v).filter(t=>(scores.get(t)||0)!==0)}))})); } catch {}
   return result;

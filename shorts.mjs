@@ -1,3 +1,4 @@
+import { createAsyncCache } from './async-cache.mjs';
 import { discoveryQueries, diversifyShorts } from './shorts-discovery.mjs';
 // Shorts are identified by YouTube's renderer/endpoint AND a portrait thumbnail,
 // never by a title, hashtag or duration. Playback verifies actual video dimensions.
@@ -103,9 +104,15 @@ export function shortDetails(info, videoId, originalAspect, fallbackTitle = '') 
 }
 
 export function registerShortsRoutes(app, getYoutube) {
-  // Public feed cache, bounded and independent of serverless affinity. Cold instances
-  // replay real continuations, rather than inventing another search query per page.
-  const cache = new Map();
+  // Public parser feeds are reused only within this warm instance. Cold instances
+  // rebuild them; concurrent identical work shares one promise.
+  const cached = createAsyncCache({ ttlMs: 300000, maxEntries: 100 });
+  const normalized = new WeakMap();
+  const shortsFrom = feed => {
+    if (!feed || typeof feed !== 'object') return [];
+    if (!normalized.has(feed)) normalized.set(feed, collectShorts(feed));
+    return normalized.get(feed);
+  };
   const originalAspects = new Map();
   function rememberOriginalAspects(videos) {
     for (const video of videos) if (video.originalAspect) {
@@ -113,14 +120,6 @@ export function registerShortsRoutes(app, getYoutube) {
       originalAspects.set(video.videoId, { ...video, ...video.originalAspect, expires: Date.now() + 300000 });
     }
   }
-  const cached = async (key, load) => {
-    const old = cache.get(key);
-    if (old && old.expires > Date.now()) return old.value;
-    const value = await load();
-    if (cache.size >= 100) cache.delete(cache.keys().next().value);
-    cache.set(key, { value, expires: Date.now() + 300000 });
-    return value;
-  };
   app.get('/api/shorts', async (req, res) => {
     const source = req.query.source || 'home';
     const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -148,7 +147,7 @@ export function registerShortsRoutes(app, getYoutube) {
           try {
             const info = await cached(`info:${videoId}`, () => youtube.getInfo(videoId));
             context = info.basic_info?.title?.replace(/#[^\s]+/g, '').slice(0, 100) || '';
-            if (page === 1) primary = collectShorts(info);
+            if (page === 1) primary = shortsFrom(info);
           } catch { /* Topic discovery still works if the source metadata is unavailable. */ }
         }
         const queries = source === 'search' ? [q] : discoveryQueries(session, page, context);
@@ -165,10 +164,10 @@ export function registerShortsRoutes(app, getYoutube) {
             const previous = feed;
             feed = await cached(`discovery-continuation:${query}:${index}`, () => previous.getContinuation());
           }
-          return collectShorts(feed);
+          return shortsFrom(feed);
         });
         if (source === 'home' && !q && page === 1) tasks.push((async () => {
-          try { return collectShorts(await cached('home-feed', () => youtube.getHomeFeed())); } catch { return []; }
+          try { return shortsFrom(await cached('home-feed', () => youtube.getHomeFeed())); } catch { return []; }
         })());
         const terms = source === 'search' ? [] : [...new Set([...interests, interest].filter(Boolean))];
         const personalTask = Promise.all(terms.map(async rawTerm => {
@@ -182,7 +181,7 @@ export function registerShortsRoutes(app, getYoutube) {
           });
           const found = new Map();
           for (let round = 0; round < 3; round++) {
-            for (const video of collectShorts(feed)) if (!excluded.includes(video.videoId) && video.videoId !== videoId) found.set(video.videoId, video);
+            for (const video of shortsFrom(feed)) if (!excluded.includes(video.videoId) && video.videoId !== videoId) found.set(video.videoId, video);
             if (found.size >= 10 || !feed.has_continuation) break;
             const previous = feed;
             feed = await cached(`personal-continuation:${term}:${round}`, () => previous.getContinuation());
@@ -201,8 +200,8 @@ export function registerShortsRoutes(app, getYoutube) {
         rememberOriginalAspects(candidates);
         let videos = diversifyShorts(candidates, `${session}:${page}`, [...excluded, videoId].filter(Boolean));
         if (personal.length) {
-          // Ranking still occupies half the final feed. Personalize 60% of
-          // this non-ranking pool to target 30% overall (3 of every 10 clips).
+          // Reserve up to 60% of this candidate pool for selected interests.
+          // The client combines all sources and reranks for relevance/diversity.
           const picks = [...new Map(personal.map(video => [video.videoId, video])).values()].slice(0, 18);
           const pickIds = new Set(picks.map(v => v.videoId));
           const general = videos.filter(v => !pickIds.has(v.videoId));
@@ -227,12 +226,12 @@ export function registerShortsRoutes(app, getYoutube) {
         if (source === 'home' && !q) {
           try {
             const home = await cached('home-feed', () => youtube.getHomeFeed());
-            if (collectShorts(home).length) feed = home;
+            if (shortsFrom(home).length) feed = home;
           } catch { /* Some anonymous sessions have no home feed. */ }
         }
         if (source === 'related') {
           const info = await cached(`info:${videoId}`, () => youtube.getInfo(videoId));
-          if (page === 1) relatedShorts = collectShorts(info).filter(v => v.videoId !== videoId);
+          if (page === 1) relatedShorts = shortsFrom(info).filter(v => v.videoId !== videoId);
           query = info.basic_info?.title?.slice(0, 160) || '';
         }
         if (!feed) {
@@ -249,7 +248,7 @@ export function registerShortsRoutes(app, getYoutube) {
           feed = await cached(`continuation:${source}:${query}:${videoId}:${index}`, () => previous.getContinuation());
         }
         return {
-          videos: [...new Map([...relatedShorts, ...collectShorts(feed)].filter(v => v.videoId !== videoId).map(v => [v.videoId, v])).values()],
+          videos: [...new Map([...relatedShorts, ...shortsFrom(feed)].filter(v => v.videoId !== videoId).map(v => [v.videoId, v])).values()],
           hasMore: Boolean(feed.has_continuation) && page < 20, page,
         };
       });
