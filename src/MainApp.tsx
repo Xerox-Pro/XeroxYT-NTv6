@@ -1,3 +1,4 @@
+import { prioritizeUnshown } from './lib/recommendationImpressions.mjs';
 import { saveShortsInterest, saveVideoHashtags } from './lib/shortsInterests.mjs';
 import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
 /**
@@ -719,7 +720,7 @@ export default function MainApp() {
           uniqueMap.set(v.videoId, v);
         }
       });
-      const finalData = Array.from(uniqueMap.values());
+      const finalData = prioritizeUnshown(Array.from(uniqueMap.values()));
 
       if (append) {
         setVideos(prev => {
@@ -754,7 +755,7 @@ export default function MainApp() {
       const params = new URLSearchParams({ name: category, page: String(pageNum) });
       const data = await fetchJSON(`/api/home/category?${params}`);
       if (requestId !== recommendationRequestIdRef.current) return;
-      const result: Video[] = Array.isArray(data.videos) ? data.videos : [];
+      const result: Video[] = prioritizeUnshown(Array.isArray(data.videos) ? data.videos : []);
       updateCache(result);
       if (append) {
         setVideos(previous => {

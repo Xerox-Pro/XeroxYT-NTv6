@@ -89,7 +89,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
-  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId);
+  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId, session);
   const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
@@ -124,6 +124,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       // reactivate or navigate from a feed after the user has left its route.
       if (!isShortsLocation(route.current.pathname)) return;
       for (const entry of entries) if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        recordSeenShort((entry.target as HTMLElement).dataset.shortId!);
         setActiveId((entry.target as HTMLElement).dataset.shortId!); setCommentsId('');
       }
     }, { root: container, threshold: [0.6] });

@@ -48,7 +48,11 @@ export function discoveryRequest(query, page, session, excluded = []) {
   if (ids.length) params.set('exclude', ids.join(','));
   return `/api/shorts?${params}`;
 }
-export function unseenRankingFirst(videos, seenIds, keepId) {
+export function unseenRankingFirst(videos, seenIds, keepId, seed) {
+  if (seed) {
+    const hash = id => { let n = 2166136261; for (const c of `${seed}:${id}`) n = Math.imul(n ^ c.charCodeAt(0), 16777619); return n >>> 0; };
+    videos = [...videos].sort((a, b) => hash(a.videoId) - hash(b.videoId));
+  }
   const seen = new Set(seenIds);
   return [...videos.filter(video => video.videoId === keepId || !seen.has(video.videoId)), ...videos.filter(video => video.videoId !== keepId && seen.has(video.videoId))];
 }

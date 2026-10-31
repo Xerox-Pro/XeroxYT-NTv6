@@ -1,3 +1,4 @@
+import { recordImpression } from '../lib/recommendationImpressions.mjs';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Video } from '../types';
@@ -48,6 +49,8 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
 
   return (
     <motion.div 
+      viewport={{ once: true, amount: 0.6 }}
+      onViewportEnter={() => { if (!video.isShort) recordImpression(video.videoId); }}
       whileHover={{ y: -3 }}
       whileTap={{ scale: 0.98 }}
       transition={{ duration: 0.18, ease: "easeOut" }}

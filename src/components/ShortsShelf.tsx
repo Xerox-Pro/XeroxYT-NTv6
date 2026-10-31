@@ -1,9 +1,9 @@
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
 import { Video } from '../types';
-import { mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
+import { mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst, recordSeenShort } from '../lib/shortsFeed.mjs';
 import { fetchJSON, formatNumberJP } from '../utils';
 
 export type ShortsContext = { source: 'home' | 'search' | 'related'; q?: string; videoId?: string };
@@ -16,6 +16,7 @@ export function shortsQuery(context: ShortsContext) {
 export default function ShortsShelf({ context, onSelect }: {
   context: ShortsContext; onSelect: (video: Video, context: ShortsContext) => void;
 }) {
+  const shelf = useRef<HTMLDivElement>(null);
   const [session] = useState(createShortsSession);
   const [videos, setVideos] = useState<Video[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,12 +30,23 @@ export default function ShortsShelf({ context, onSelect }: {
     Promise.allSettled([fetchJSON(discoveryRequest(withShortsInterests(query), 1, session, seen)), context.source === 'search' ? Promise.resolve({ videos: [] }) : fetchJSON('/api/shorts-ranking')]).then(([native, ranked]) => {
       if (native.status === 'rejected') throw native.reason;
       const regular = (native.value.videos || []).filter((v: Video) => v.isShort);
-      const ranking = ranked.status === 'fulfilled' ? unseenRankingFirst(ranked.value.videos || [], seen) : [];
+      const ranking = ranked.status === 'fulfilled' ? unseenRankingFirst(ranked.value.videos || [], seen, '', session) : [];
       if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [query, session, attempt]);
+  useEffect(() => {
+    if (!shelf.current) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        recordSeenShort((entry.target as HTMLElement).dataset.shortId!);
+        observer.unobserve(entry.target);
+      }
+    }, { threshold: 0.6 });
+    shelf.current.querySelectorAll('[data-short-id]').forEach(node => observer.observe(node));
+    return () => observer.disconnect();
+  }, [videos]);
   if (!loading && !error && !videos.length) return null;
   return <section className="shorts-shelf" aria-label="ショート動画のおすすめ">
     <div className="flex items-center justify-between gap-3 mb-4">
@@ -43,8 +55,8 @@ export default function ShortsShelf({ context, onSelect }: {
     </div>
     {loading ? <div className="flex items-center gap-2 text-sm text-gray-500 py-8"><Loader2 size={18} className="animate-spin" />ショートを読み込み中…</div>
       : error ? <div className="text-sm text-gray-500"><p role="status">{error}</p><button className="mt-2 underline" onClick={() => setAttempt(a => a + 1)}>再試行</button></div>
-      : <div className="shorts-shelf-scroll">
-        {videos.map(video => <button key={video.videoId} className="shorts-cover text-left group" onClick={() => onSelect(video, context)}>
+      : <div className="shorts-shelf-scroll" ref={shelf}>
+        {videos.map(video => <button key={video.videoId} data-short-id={video.videoId} className="shorts-cover text-left group" onClick={() => onSelect(video, context)}>
           <div className="aspect-[9/16] overflow-hidden rounded-xl bg-gray-100 relative">
             <img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
             <span className="absolute bottom-2 left-2 text-[11px] bg-black/60 text-white rounded px-2 py-1">ショート</span>

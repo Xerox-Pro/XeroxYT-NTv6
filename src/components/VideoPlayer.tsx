@@ -1,3 +1,4 @@
+import { prioritizeUnshown } from '../lib/recommendationImpressions.mjs';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Video, Comment, ChannelSubscription, WatchHistoryItem, ShortVideo } from '../types';
@@ -810,7 +811,7 @@ export default function VideoPlayer({
           }
 
           if (data && data.recommendedVideos) {
-            setRelatedVideos(data.recommendedVideos);
+            setRelatedVideos(prioritizeUnshown(data.recommendedVideos));
             // 初回から自動で2ページ目もバックグラウンドで先読みして結合（ボタン不要で最初から豊富なリストを提供）
             fetchJSON(`/api/video/${videoId}/related?page=2&filter=all`)
               .then((res2) => {
