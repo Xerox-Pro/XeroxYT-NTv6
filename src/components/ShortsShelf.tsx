@@ -5,7 +5,7 @@ import { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { Zap, ChevronRight, Loader2 } from 'lucide-react';
 import { Video } from '../types';
-import { mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst, recordSeenShort } from '../lib/shortsFeed.mjs';
+import { excludeSeenShorts, mixShorts, createShortsSession, readSeenShorts, discoveryRequest, unseenRankingFirst, recordSeenShort } from '../lib/shortsFeed.mjs';
 import { fetchJSON, formatNumberJP } from '../utils';
 
 export type ShortsContext = { source: 'home' | 'search' | 'related' | 'channel'; q?: string; videoId?: string; channelId?: string };
@@ -32,9 +32,10 @@ export default function ShortsShelf({ context, onSelect }: {
     const seen = readSeenShorts();
     Promise.allSettled([fetchJSON(discoveryRequest(withShortsInterests(query), 1, session, seen)), context.source === 'search' ? Promise.resolve({ videos: [] }) : loadShortsRanking()]).then(([native, ranked]) => {
       if (native.status === 'rejected') throw native.reason;
-      const candidates = (native.value.videos || []).filter((v: Video) => v.isShort);
+      const currentSeen = readSeenShorts();
+      const candidates = excludeSeenShorts((native.value.videos || []).filter((v: Video) => v.isShort), currentSeen);
       const regular = context.source === 'search' ? candidates : rankCandidates(candidates, { short: true, seed: session, seen });
-      const ranking = ranked.status === 'fulfilled' ? rankCandidates(ranked.value.videos || [], { short: true, seed: session, seen }) : [];
+      const ranking = ranked.status === 'fulfilled' ? rankCandidates(excludeSeenShorts(ranked.value.videos || [], currentSeen), { short: true, seed: session, seen }) : [];
       if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });

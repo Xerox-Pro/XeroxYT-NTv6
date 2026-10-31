@@ -43,6 +43,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
  }
  try{
   for(const target of ['/','/results','/feed/history','/channel/test','back']){
+   localStorage.clear();
    const root=createRoot(document.getElementById('root'));
    await act(async()=>root.render(React.createElement(MemoryRouter,{initialEntries:['/','/shorts/abcdefghijk?source=home'],initialIndex:1},React.createElement(Harness))));
    await settle();await settle();

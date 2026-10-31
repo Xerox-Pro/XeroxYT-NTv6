@@ -27,10 +27,10 @@ export function readSeenShorts() {
   try {
     const saved = JSON.parse(localStorage.getItem(seenKey()) || '[]');
     const items = Array.isArray(saved) ? saved : [];
-    const recent = items.filter(item => /^[\w-]{11}$/.test(item?.id) && Date.now() - item.at < 30 * 86400000).map(item => item.id);
+    const recent = items.filter(item => /^[\w-]{11}$/.test(item?.id)).map(item => item.id);
     const history = [...JSON.parse(localStorage.getItem('xerox_watch_history') || '[]'), ...JSON.parse(localStorage.getItem('xerox_short_history') || '[]')];
     const earlier = Array.isArray(history) ? history.filter(item => item?.type === 'short' && /^[\w-]{11}$/.test(item.videoId)).map(item => item.videoId) : [];
-    return [...new Set([...recent, ...earlier])].slice(0, 1000);
+    return [...new Set([...recent, ...earlier])];
   } catch { return []; }
 }
 export function recordSeenShort(id) {
@@ -38,7 +38,7 @@ export function recordSeenShort(id) {
   try {
     const saved = JSON.parse(localStorage.getItem(seenKey()) || '[]');
     const items = Array.isArray(saved) ? saved : [];
-    localStorage.setItem(seenKey(), JSON.stringify([{ id, at: Date.now() }, ...items.filter(item => item?.id !== id)].slice(0, 1000)));
+    localStorage.setItem(seenKey(), JSON.stringify([{ id, at: Date.now() }, ...items.filter(item => item?.id !== id)]));
   } catch { /* Watching remains available without storage. */ }
 }
 export function discoveryRequest(query, page, session, excluded = []) {
@@ -55,4 +55,9 @@ export function unseenRankingFirst(videos, seenIds, keepId, seed) {
   }
   const seen = new Set(seenIds);
   return [...videos.filter(video => video.videoId === keepId || !seen.has(video.videoId)), ...videos.filter(video => video.videoId !== keepId && seen.has(video.videoId))];
+}
+
+export function excludeSeenShorts(videos, seenIds, keepId) {
+ const seen = new Set(seenIds);
+ return videos.filter(video => video.videoId === keepId || !seen.has(video.videoId));
 }

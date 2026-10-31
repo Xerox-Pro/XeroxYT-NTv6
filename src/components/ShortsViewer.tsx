@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
 import { fetchJSON, formatNumberJP } from '../utils';
-import { isShortsLocation, MAX_SHORT_PAGES, mixShorts, createShortsSession, readSeenShorts, recordSeenShort, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
+import { excludeSeenShorts, isShortsLocation, MAX_SHORT_PAGES, mixShorts, createShortsSession, readSeenShorts, recordSeenShort, discoveryRequest, unseenRankingFirst } from '../lib/shortsFeed.mjs';
 import ShortsComments from './ShortsComments';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
@@ -117,13 +117,13 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
-  const ranked = unseenRankingFirst(ranking, seenOnEntry, seed.current?.videoId);
+  const ranked = unseenRankingFirst(excludeSeenShorts(ranking, seenOnEntry, seed.current?.videoId), seenOnEntry, seed.current?.videoId);
   const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     let cancelled = false;
     ((context.source === 'search' || channelMode) ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
-      if (!cancelled) { setRanking(rankCandidates(data.videos || [], { short: true, seed: session, seen: seenOnEntry })); setRankingUpdated(data.updatedAt || ''); }
+      if (!cancelled) { setRanking(rankCandidates(excludeSeenShorts(data.videos || [], readSeenShorts(), seed.current?.videoId), { short: true, seed: session, seen: seenOnEntry })); setRankingUpdated(data.updatedAt || ''); }
     }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
     return () => { cancelled = true; };
@@ -147,7 +147,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
     fetchJSON(discoveryRequest(withShortsInterests(query, page), page, session, excluded)).then(data => {
       if (cancelled) return;
-      const items: Video[] = rankCandidates((data.videos || []).filter((video: Video) => video.isShort), { short: true, seed: session, seen: readSeenShorts() });
+      const items: Video[] = rankCandidates(excludeSeenShorts((data.videos || []).filter((video: Video) => video.isShort), readSeenShorts(), seed.current?.videoId), { short: true, seed: session, seen: readSeenShorts() });
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);
       setHasMore(Boolean(data.hasMore));
     }).catch(reason => { if (!cancelled) setError(reason.message || 'ショートを読み込めませんでした。'); })
@@ -265,6 +265,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>
     </div>
-    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件／上限200件{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
+    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }
