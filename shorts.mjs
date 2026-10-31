@@ -59,6 +59,29 @@ export function collectShorts(feed) {
   return [...result.values()];
 }
 
+export function descriptionText(value) {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return '';
+  if (typeof value.text === 'string') return value.text;
+  if (typeof value.content === 'string') return value.content;
+  if (Array.isArray(value.runs)) return value.runs.map(run => run.text || '').join('');
+  return '';
+}
+export function shortDescription(info) {
+  const direct = [info.secondary_info?.description, info.basic_info?.short_description, info.basic_info?.description];
+  for (const item of direct) { const text = descriptionText(item); if (text.trim()) return text; }
+  const visited = new WeakSet(); let count = 0;
+  function find(node, depth = 0) {
+    if (!node || typeof node !== 'object' || depth > 12 || count++ > 3000 || visited.has(node)) return '';
+    visited.add(node);
+    if (/ExpandableVideoDescriptionBody|VideoDescriptionBody|DescriptionPreviewView/i.test(node.type || '')) {
+      for (const item of [node.description, node.attributed_description, node.content]) { const text = descriptionText(item); if (text.trim()) return text; }
+    }
+    for (const child of Object.values(node)) { const text = find(child, depth + 1); if (text) return text; }
+    return '';
+  }
+  return find(info.page);
+}
 export function shortDetails(info, videoId, originalAspect, fallbackTitle = '') {
   const basic = info.basic_info || {};
   const formats = [...(info.streaming_data?.adaptive_formats || []), ...(info.streaming_data?.formats || [])];
@@ -71,7 +94,7 @@ export function shortDetails(info, videoId, originalAspect, fallbackTitle = '') 
     author: owner?.author?.name || basic.author || originalAspect?.author || 'チャンネル',
     authorId: owner?.author?.id || basic.channel_id,
     authorAvatar: owner?.author?.thumbnails?.[0]?.url,
-    description: basic.short_description || '',
+    description: shortDescription(info),
     viewCount: basic.view_count || 0,
     likeCount: Number.isFinite(basic.like_count) ? basic.like_count : undefined,
     publishedText: info.primary_info?.published?.text || '',

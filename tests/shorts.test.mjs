@@ -96,3 +96,9 @@ test('at most five hashtags each fetch ten clips, deduplicate, and reject oversi
  assert.ok(queries.includes('#猫 #shorts'));assert.ok(queries.includes('#犬 #shorts'));
  assert.equal((await call('/api/shorts',{session:'invalid',interests:JSON.stringify(Array(6).fill('#猫'))})).code,400);
 });
+
+test('Shorts descriptions support secondary text, basic descriptions and structured body text',()=>{
+ assert.equal(shortDetails({secondary_info:{description:{text:'Full description'}},basic_info:{short_description:'preview'}},'abcdefghijk').video.description,'Full description');
+ assert.equal(shortDetails({basic_info:{description:'Basic description'}},'abcdefghijk').video.description,'Basic description');
+ assert.equal(shortDetails({page:[{type:'ExpandableVideoDescriptionBody',description:{runs:[{text:'line1'},{text:'\nline2'}]}}]},'abcdefghijk').video.description,'line1\nline2');
+});

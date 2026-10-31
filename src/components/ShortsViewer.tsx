@@ -29,7 +29,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected 
     let cancelled = false;
     setUrl(''); setError(''); detail.current = null;
     Promise.all([
-      fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}`),
+      fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}&details=2`),
       fetch(`/api/edu/${video.videoId}`).then(async response => {
         if (!response.ok) throw new Error('埋め込み動画を読み込めませんでした。');
         return response.text();
