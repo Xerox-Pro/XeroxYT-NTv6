@@ -194,7 +194,7 @@ export default function VideoPlayer({
 
   // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
   const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
-    let params = '?rel=0&autoplay=1';
+    let params = '?rel=0&autoplay=1&mute=1';
     try {
       // 毎回最新の edu key (video_config.json) を取得 (キャッシュ無効化)
       const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
@@ -230,6 +230,9 @@ export default function VideoPlayer({
         if (fallbackRes.ok) {
           const rawFallbackUrl = await fallbackRes.text();
           const parsedFallback = new URL(rawFallbackUrl, window.location.origin);
+          parsedFallback.searchParams.set('autoplay', '1');
+          parsedFallback.searchParams.set('mute', '1');
+          parsedFallback.searchParams.set('playsinline', '1');
           parsedFallback.searchParams.set('enablejsapi', '1');
           parsedFallback.searchParams.set('origin', window.location.origin);
           const fallbackUrl = parsedFallback.toString();
@@ -248,6 +251,9 @@ export default function VideoPlayer({
       url += url.includes('?') ? `&list=${playlist}` : `?list=${playlist}`;
     }
     const apiUrl = new URL(url);
+    apiUrl.searchParams.set('autoplay', '1');
+    apiUrl.searchParams.set('mute', '1');
+    apiUrl.searchParams.set('playsinline', '1');
     apiUrl.searchParams.set('enablejsapi', '1');
     apiUrl.searchParams.set('origin', window.location.origin);
     return apiUrl.toString();
@@ -404,7 +410,8 @@ export default function VideoPlayer({
   const durationRef = useRef<number>(0);
   const playerStateRef = useRef<number>(1); // 1: playing, 2: paused
   const volumeRef = useRef<number>(100);
-  const isMutedRef = useRef<boolean>(false);
+  const isMutedRef = useRef<boolean>(true);
+  const [isMuted, setIsMuted] = useState(true);
   const playbackRateRef = useRef<number>(1);
 
   // HUD オーバーレイ状態 (K, J, L などのキー操作フィードバック)
@@ -455,6 +462,7 @@ export default function VideoPlayer({
   // Player API scripts are loaded through the same-origin Vercel proxy.
   useEffect(() => {
     if (!iframeUrl || !iframeRef.current) return;
+    isMutedRef.current = true; setIsMuted(true);
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     playerTimeReceivedRef.current = false;
@@ -465,6 +473,9 @@ export default function VideoPlayer({
           onReady: () => {
             if (cancelled) return;
             apiPlayerRef.current = player;
+            if (isMutedRef.current) player.mute();
+            else player.unMute();
+            player.playVideo();
             poll = setInterval(() => {
               try {
                 const url = player.getVideoUrl?.();
@@ -514,6 +525,7 @@ export default function VideoPlayer({
           }
           if (typeof data.info.muted === 'boolean') {
             isMutedRef.current = data.info.muted;
+            setIsMuted(data.info.muted);
           }
           if (typeof data.info.playbackRate === 'number') {
             playbackRateRef.current = data.info.playbackRate;
@@ -639,6 +651,7 @@ export default function VideoPlayer({
         e.preventDefault();
         const newMuted = !isMutedRef.current;
         isMutedRef.current = newMuted;
+        setIsMuted(newMuted);
         postPlayerCommand(newMuted ? 'mute' : 'unMute');
         if (newMuted) {
           triggerHud(<VolumeX size={22} />, '消音 (ミュート)');
@@ -655,6 +668,7 @@ export default function VideoPlayer({
         volumeRef.current = newVol;
         if (isMutedRef.current) {
           isMutedRef.current = false;
+          setIsMuted(false);
           postPlayerCommand('unMute');
         }
         postPlayerCommand('setVolume', [newVol]);
@@ -1383,6 +1397,26 @@ export default function VideoPlayer({
                   <span>保存</span>
                 </motion.button>
               )}
+
+              <motion.button
+                type="button"
+                onClick={() => {
+                  const muted = !isMutedRef.current;
+                  isMutedRef.current = muted; setIsMuted(muted);
+                  postPlayerCommand(muted ? 'mute' : 'unMute');
+                  if (!muted && volumeRef.current === 0) {
+                    volumeRef.current = 100;
+                    postPlayerCommand('setVolume', [100]);
+                  }
+                }}
+                whileTap={{ scale: 0.92 }}
+                aria-label={isMuted ? 'ミュート解除' : 'ミュート'}
+                aria-pressed={isMuted}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors shadow-2xs"
+              >
+                {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                <span>{isMuted ? 'ミュート解除' : 'ミュート'}</span>
+              </motion.button>
 
               {/* キーボードショートカットヘルプ表示ボタン */}
               <motion.button
