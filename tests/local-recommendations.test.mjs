@@ -29,7 +29,7 @@ test('tracker counts playing progress but ignores pause, background, buffering a
  tracker.update(1,10,true,true,2000);tracker.update(9,10,true,true,3000);
  tracker.update(9,10,false,true,4000);tracker.update(9,10,true,false,5000);
  tracker.update(10,10,true,true,6000);
- assert.equal(tracker.stats().seconds,1);tracker.finish();tracker.finish();
+ assert.equal(tracker.stats().seconds,1);tracker.finish('skip');tracker.finish('skip');
  assert.equal(events.length,1);assert.ok(events[0][2]<0);
 });
 test('completion and replay give bounded positive signals, missing playback data gives none',()=>{
@@ -51,4 +51,16 @@ test('unliking and liking again restore the current preference rather than retai
  learnInteraction(guitar,'like');assert.ok(learnedTerms(true).includes('ギター'));
  learnInteraction(guitar,'save');learnInteraction(guitar,'unsave');
  assert.ok(learnedTerms(true).includes('ギター'));
+});
+
+test('quick swipe lowers interest automatically, while leaving, failed playback and brief completed clips do not',()=>{
+ storage();const events=[];
+ const swipe=createPlaybackTracker(guitar,(...args)=>events.push(args));
+ swipe.update(0,20,true,true,0);swipe.update(0.5,20,true,true,500);swipe.finish('skip');
+ assert.ok(events[0][2]<0);
+ const leave=createPlaybackTracker(guitar,(...args)=>events.push(args));
+ leave.update(0,20,true,true,0);leave.update(0.5,20,true,true,500);leave.finish('leave');
+ assert.equal(events[1][2],0);
+ const failed=createPlaybackTracker(guitar,(...args)=>events.push(args));failed.update(0,20,false,true,0);failed.finish('skip');assert.equal(events.length,2);
+ const tiny=createPlaybackTracker(guitar,(...args)=>events.push(args));tiny.update(0,1,true,true,0);tiny.update(1,1,true,true,1000);tiny.finish('skip');assert.ok(events[2][2]>0);
 });

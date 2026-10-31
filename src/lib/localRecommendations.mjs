@@ -81,11 +81,13 @@ export function createPlaybackTracker(video,commit=learnInteraction) {
    }
    last={time,playing,visible,now};
   },
-  finish() {
-   if(reported||seconds<0.5||storeKey()!==owner)return;reported=true;
+  finish(reason='leave') {
+   if(reported||seconds<0.25||storeKey()!==owner)return;reported=true;
    const ratio=duration?Math.min(1,seconds/duration):0;
    const positive=ratio>=0.85?1.4:ratio>=0.5?0.7:seconds>=30?0.5:0;
-   const skipped=seconds<2&&ratio<0.2?-0.6:0;
+   // A quick swipe is weak negative evidence, not a permanent topic block.
+   // Leaving the page or retrying an embed must never count as rejection.
+   const skipped=reason==='skip'&&seconds<3&&ratio<0.35?-0.8:0;
    commit(video,'watch',Math.min(2,positive+loops*0.2+skipped));
   },
   stats:()=>({seconds,loops,duration})

@@ -59,11 +59,26 @@ test('shorts can leave for home, search, history, channel and browser back durin
    for(const next of frames.slice(1))assert.equal(new URL(next.src).searchParams.get('autoplay'),'0','preloaded videos do not autoplay');
    assert.ok(document.querySelector('[aria-label="コメントを表示"]'));assert.ok(document.querySelector('[aria-label="概要欄を表示"]'));
    assert.ok(document.querySelector('[aria-label="高評価（この端末に保存）"]'));
+   assert.equal(document.querySelector('[aria-label="興味なし"]'),null,'quick swipes learn automatically without a rejection button');
    assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
    assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
    await act(async()=>document.querySelector('[aria-label="概要欄を表示"]').click());
    assert.ok(document.querySelector('.shorts-description').textContent.includes('概要テスト'));
    await act(async()=>document.querySelector('[aria-label="パネルを閉じる"]').click());
+   if(target==='/') {
+    Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});
+    const originalNow=Date.now;
+    try {
+     let now=1000;Date.now=()=>now;
+     const source=document.querySelector('iframe').contentWindow;
+     const deliver=time=>window.dispatchEvent(new dom.window.MessageEvent('message',{source,origin:'https://www.youtubeeducation.com',data:JSON.stringify({event:'infoDelivery',info:{currentTime:time,duration:20,playerState:1}})}));
+     deliver(0);now=1500;deliver(0.5);
+    } finally {Date.now=originalNow;}
+    const nextId=document.querySelectorAll('article[data-short-id]')[1].dataset.shortId;
+    await act(async()=>{for(const observer of observers){const next=observer.nodes.find(n=>n.dataset.shortId===nextId);if(next)observer.callback([{target:next,isIntersecting:true,intersectionRatio:1}]);}});
+    const model=JSON.parse(localStorage.getItem('xerox_recommender_v1_local'));
+    assert.ok(model.short['watch:abcdefghijk'].score<0,'swiping away records automatic low interest even when previous iframe unmounts');
+   }
    await act(async()=>document.querySelector(`[data-target="${target}"]`).click());
    // Simulate an IntersectionObserver notification queued before the exit animation.
    await act(async()=>{for(const observer of observers){const node=observer.nodes.at(-1);if(node)observer.callback([{target:node,isIntersecting:true,intersectionRatio:1}]);}});
