@@ -20,8 +20,8 @@ interface SidebarProps {
 
 const section1 = [
   { icon: Home, label: 'ホーム', activeValue: 'home', path: '/' },
-  { icon: Zap, label: 'ショート', activeValue: 'shorts', path: '/shorts' },
   { icon: PlaySquare, label: '登録チャンネル', activeValue: 'subscriptions', path: '/feed/subscriptions' },
+  { icon: Zap, label: 'ショート', activeValue: 'shorts', path: '/shorts' },
 ];
 
 const section2 = [
@@ -60,7 +60,7 @@ export default function Sidebar({
       onDebugAPI();
     }
 
-    if (window.innerWidth < 768 && onClose) {
+    if (window.innerWidth < 1280 && onClose) {
       onClose();
     }
   };

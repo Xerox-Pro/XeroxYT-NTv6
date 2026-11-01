@@ -219,11 +219,12 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   }, [ids]);
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (!isShortsLocation(route.current.pathname) || commentsId || /INPUT|TEXTAREA|SELECT|BUTTON/.test((event.target as HTMLElement)?.tagName)) return;
+      if (event.key === 'Escape' && (commentsId || descriptionId)) { setCommentsId(''); setDescriptionId(''); return; }
+      if (!isShortsLocation(route.current.pathname) || commentsId || descriptionId || /INPUT|TEXTAREA|SELECT|BUTTON/.test((event.target as HTMLElement)?.tagName)) return;
       if (['ArrowDown', 'PageDown', 'ArrowUp', 'PageUp'].includes(event.key)) { event.preventDefault(); move(['ArrowDown', 'PageDown'].includes(event.key) ? 1 : -1); }
     };
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
-  }, [move, commentsId]);
+  }, [move, commentsId, descriptionId]);
   return <section className={`shorts-viewer ${activeId && (commentsId === activeId || descriptionId === activeId) ? "shorts-has-panel" : ""}`} aria-label="ショート動画">
     <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え">
       {videos.map((video, index) => {
@@ -250,10 +251,10 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
             <button aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
           </div>
-          {active && (commentsId === video.videoId || descriptionId === video.videoId) && <aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>
+          {active && (commentsId === video.videoId || descriptionId === video.videoId) && <><button className="shorts-panel-backdrop" aria-label="背景を押してパネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }} /><aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>
             <header><strong>{commentsId ? 'コメント' : '概要欄'}</strong><button aria-label="パネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }}><X size={22} /></button></header>
             {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{formatNumberJP(info.viewCount || 0)}回視聴 {info.publishedText}</p><p className="whitespace-pre-wrap break-words">{info.description || '概要欄はありません。'}</p></div>}
-          </aside>}
+          </aside></>}
 
         </article>;
       })}
