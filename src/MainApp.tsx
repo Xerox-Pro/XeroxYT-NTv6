@@ -30,7 +30,7 @@ import DetectedSearchHeader from './components/DetectedSearchHeader';
 import SearchChannelCard from './components/SearchChannelCard';
 import { Video, ChannelSubscription, WatchHistoryItem, UserPlaylist, ShortVideo, UserInfo, SearchChannel } from './types';
 import { localAI } from './lib/intelligence';
-import { Loader2, AlertCircle, User } from 'lucide-react';
+import { Loader2, AlertCircle, User, Home, Zap, PlaySquare, Folder } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { fetchJSON, parseYouTubeUrl } from './utils';
 
@@ -1216,7 +1216,7 @@ export default function MainApp() {
               />
 
               {/* 動画リスト */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+              <div className="mobile-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
                 {videos.filter(video => !video.isShort).map((video, idx) => (
                   <div key={`${video.videoId}-${idx}`} className="relative group">
                     <VideoCard
@@ -1259,6 +1259,10 @@ export default function MainApp() {
       </AnimatePresence>
         </main>
       </div>
+
+      <nav className="mobile-bottom-nav" aria-label="メインメニュー">
+        {[{to:'/', label:'ホーム', Icon:Home, current:'home'}, {to:'/shorts', label:'ショート', Icon:Zap, current:'shorts'}, {to:'/feed/subscriptions', label:'登録チャンネル', Icon:PlaySquare, current:'subscriptions'}, {to:'/feed/library', label:'ライブラリ', Icon:Folder, current:'library'}].map(({to, label, Icon, current}) => <Link key={to} to={to} aria-current={view === current ? 'page' : undefined}><Icon size={23} strokeWidth={view === current ? 2.5 : 1.8}/><span>{label}</span></Link>)}
+      </nav>
 
       {/* プレイリスト保存モーダル */}
       {playlistModalVideo && (

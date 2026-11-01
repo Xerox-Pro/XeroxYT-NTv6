@@ -190,3 +190,25 @@ a, a:visited {
   .shorts-info-panel > header button { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
   .shorts-feed-source { display: none; }
 }
+
+.mobile-bottom-nav, .mobile-comments-preview, .mobile-comments-close, .mobile-comments-backdrop { display: none; }
+@media (max-width: 767px) {
+  .mobile-bottom-nav { position: fixed; z-index: 48; bottom: 0; left: 0; right: 0; display: flex; justify-content: space-around; background: rgba(255,255,255,.97); border-top: 1px solid #e5e5e5; padding: 7px 0 max(7px, env(safe-area-inset-bottom)); }
+  .mobile-bottom-nav a { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 3px; color: #222; font-size: 10px; }
+  .mobile-bottom-nav a[aria-current=page] { font-weight: 700; color: #000; }
+  main { padding-bottom: calc(65px + env(safe-area-inset-bottom)); }
+  .persistent-mini-player { width: min(48vw, 280px); bottom: calc(72px + env(safe-area-inset-bottom)); right: 8px; }
+  .persistent-mini-player > div:last-child { padding: 2px; gap: 0; }
+  .persistent-mini-player > div:last-child button { font-size: 10px; padding: 4px; }
+  .persistent-video-content { padding: 0 0 16px; gap: 12px; }
+  .persistent-video-content > :first-child > :first-child { border-radius: 0; border: 0; }
+  .persistent-video-content > :first-child > :nth-child(2) { padding: 0 14px; }
+  .persistent-video-content > :nth-child(2) { padding: 0 14px; }
+  .mobile-video-grid { gap: 24px; }
+  .mobile-comments-preview { display: flex; width: 100%; flex-direction: column; gap: 8px; text-align: left; margin-top: 16px; padding: 14px; border-radius: 14px; background: #f1f1f1; font-size: 13px; }
+  .mobile-comments-preview span { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .video-comments-section { display: none; }
+  .video-comments-section.mobile-comments-open { display: block; position: fixed; z-index: 62; left: 0; right: 0; bottom: 0; height: min(70dvh, 650px); overflow-y: auto; overscroll-behavior: contain; margin: 0; padding: 20px 16px max(20px, env(safe-area-inset-bottom)); border: 0; border-radius: 18px 18px 0 0; background: white; }
+  .mobile-comments-backdrop { display: block; position: fixed; z-index: 61; inset: 0; background: #0006; }
+  .mobile-comments-close { display: grid; place-items: center; float: right; width: 44px; height: 44px; font-size: 28px; line-height: 1; }
+}

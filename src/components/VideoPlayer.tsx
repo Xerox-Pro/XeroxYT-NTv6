@@ -335,6 +335,8 @@ export default function VideoPlayer({
 
   // Comments state with pagination & sorting
   const [comments, setComments] = useState<Comment[]>([]);
+  const [mobileCommentsOpen, setMobileCommentsOpen] = useState(false);
+  useEffect(() => { setMobileCommentsOpen(false); }, [videoId]);
   const [commentSort, setCommentSort] = useState<'top' | 'newest'>('top');
   const [commentPage, setCommentPage] = useState(1);
   const [hasMoreComments, setHasMoreComments] = useState(true);
@@ -1455,7 +1457,13 @@ export default function VideoPlayer({
           </div>
 
           {/* コメントセクション */}
-          <div className="mt-8 pt-6 border-t border-gray-200">
+          <button className="mobile-comments-preview" onClick={() => setMobileCommentsOpen(true)} aria-label="コメントを開く">
+            <strong>コメント {comments.length > 0 ? comments.length : ''}</strong>
+            <span>{loadingComments ? '読み込み中…' : comments[0]?.text || 'コメントを表示'}</span>
+          </button>
+          {mobileCommentsOpen && <button className="mobile-comments-backdrop" aria-label="コメントを閉じる" onClick={() => setMobileCommentsOpen(false)} />}
+          <div className={`video-comments-section mt-8 pt-6 border-t border-gray-200 ${mobileCommentsOpen ? 'mobile-comments-open' : ''}`}>
+            <button className="mobile-comments-close" onClick={() => setMobileCommentsOpen(false)} aria-label="コメントを閉じる">×</button>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
               <div className="flex items-center gap-2">
                 <MessageSquare size={22} className="text-gray-900" />
