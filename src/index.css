@@ -173,3 +173,20 @@ a, a:visited {
 .shorts-scroll { overflow-anchor: none; }
 .shorts-channel-status { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 4; font-size: 12px; color: #555; pointer-events: none; }
 .shorts-channel-status button { pointer-events: auto; background: white; border-radius: 16px; padding: 6px 12px; }
+
+/* Mobile Shorts: overlay the actions and present comments as a bottom sheet. */
+.shorts-panel-backdrop { display: none; }
+@media (max-width: 767px) {
+  .shorts-viewer { background: #080808; }
+  .shorts-slide { height: 100%; padding: 0; gap: 0; }
+  .shorts-player-row { position: relative; width: 100%; height: 100%; max-width: 100%; justify-content: center; gap: 0; }
+  .shorts-player-row .shorts-frame { width: 100%; height: 100%; max-width: 100%; aspect-ratio: auto; border-radius: 0; }
+  .shorts-side-actions { position: absolute; right: max(8px, env(safe-area-inset-right)); bottom: 72px; z-index: 3; gap: 14px; padding: 0; color: white; text-shadow: 0 1px 5px #000; }
+  .shorts-side-actions button > span { background: #0008; }
+  .shorts-side-actions button:hover > span { background: #000b; }
+  .shorts-overlay { right: 70px; bottom: 54px; }
+  .shorts-panel-backdrop { display: block; position: fixed; inset: 56px 0 0; background: #0005; z-index: 44; }
+  .shorts-info-panel { height: min(65dvh, 580px); padding-bottom: env(safe-area-inset-bottom); }
+  .shorts-info-panel > header button { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
+  .shorts-feed-source { display: none; }
+}
