@@ -60,7 +60,7 @@ export default function Sidebar({
       onDebugAPI();
     }
 
-    if (window.innerWidth < 768 && onClose) {
+    if (window.innerWidth < 1280 && onClose) {
       onClose();
     }
   };

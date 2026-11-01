@@ -91,7 +91,7 @@ export default function MainApp() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(
-    window.innerWidth >= 1280 || (window.innerWidth >= 768 && window.matchMedia('(orientation: landscape)').matches)
+    window.innerWidth >= 1280
   );
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768 && !window.matchMedia('(orientation: landscape)').matches);
 
