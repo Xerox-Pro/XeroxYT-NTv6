@@ -19,9 +19,12 @@ import ShortsViewer from './components/ShortsViewer';
 import VideoSkeleton from './components/VideoSkeleton';
 import TopProgressBar from './components/TopProgressBar';
 import VideoPlayer from './components/VideoPlayer';
+import FloatingPlayerFrame from './components/FloatingPlayerFrame';
 import ChannelPage from './components/ChannelPage';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
+import MyPage from './components/MyPage';
+import { useDeviceProfile } from './lib/deviceProfile';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import LicensePage from './components/LicensePage';
@@ -42,6 +45,7 @@ declare global {
 
 export default function MainApp() {
   const navigate = useNavigate();
+  const deviceProfile = useDeviceProfile();
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -118,6 +122,12 @@ export default function MainApp() {
       setCurrentVideoId(null);
       setCurrentPlaylistId(null);
       setView('shorts');
+    } else if (path === '/search') {
+      setView('search');
+      setSearchQuery('');
+      setVideos([]);
+      setSearchChannels([]);
+      setError('');
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -159,19 +169,19 @@ export default function MainApp() {
 
   useEffect(() => {
     if (view === 'search' && searchQuery) {
-      document.title = `${searchQuery} - XeroxYT-NTv6`;
+      document.title = `${searchQuery} - XeroxYT-NTv7`;
     } else if (view === 'shorts') {
-      document.title = 'ショート - XeroxYT-NTv6';
+      document.title = 'ショート - XeroxYT-NTv7';
     } else if (view === 'home') {
-      document.title = 'XeroxYT-NTv6';
+      document.title = 'XeroxYT-NTv7';
     } else if (view === 'subscriptions') {
-      document.title = '登録チャンネル - XeroxYT-NTv6';
+      document.title = '登録チャンネル - XeroxYT-NTv7';
     } else if (view === 'library') {
-      document.title = 'ライブラリ - XeroxYT-NTv6';
+      document.title = 'ライブラリ - XeroxYT-NTv7';
     } else if (view === 'history') {
-      document.title = '履歴 - XeroxYT-NTv6';
+      document.title = '履歴 - XeroxYT-NTv7';
     } else if (view === 'license') {
-      document.title = 'ライセンス & 製作者クレジット - XeroxYT-NTv6';
+      document.title = 'ライセンス & 製作者クレジット - XeroxYT-NTv7';
     }
   }, [view, searchQuery]);
 
@@ -835,6 +845,7 @@ export default function MainApp() {
   // 無限スクロール検知
   const handleScroll = useCallback(() => {
     if (view !== 'home' && view !== 'search') return;
+    if (view === 'search' && !searchQuery.trim()) return;
     if (loading || loadingMore || !hasMore || isFetchingMore.current) return;
 
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
@@ -999,7 +1010,7 @@ export default function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+    <div className={`${view === 'shorts' ? 'is-shorts-page ' : ''}min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
@@ -1032,10 +1043,9 @@ export default function MainApp() {
         >
           {/* Keep the same player mounted when navigating, preserving iframe playback. */}
           {currentVideoId && (
-            <section
-              aria-label={view === 'video' ? '動画プレイヤー' : 'ミニプレイヤー'}
-              className={view === 'video' ? 'w-full' : 'persistent-mini-player'}
-            >
+            <FloatingPlayerFrame mini={view !== 'video'}
+              onRestore={() => navigate(`/watch?v=${encodeURIComponent(currentVideoId)}${currentPlaylistId ? `&list=${encodeURIComponent(currentPlaylistId)}` : ''}`)}
+              onClose={() => { setCurrentVideoId(null); setCurrentPlaylistId(null); }}>
               <VideoPlayer
                 key={currentVideoId}
                 videoId={currentVideoId}
@@ -1051,26 +1061,7 @@ export default function MainApp() {
                 onCacheVideo={(v) => updateCache([v])}
                 watchHistory={watchHistory}
               />
-              {view !== 'video' && (
-                <div className="flex items-center justify-between gap-2 bg-white p-2">
-                  <button
-                    type="button"
-                    className="rounded-lg px-3 py-2 text-sm font-bold hover:bg-gray-100 focus-visible:outline-2"
-                    onClick={() => navigate(`/watch?v=${encodeURIComponent(currentVideoId)}${currentPlaylistId ? `&list=${encodeURIComponent(currentPlaylistId)}` : ''}`)}
-                  >
-                    動画ページに戻る
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="ミニプレイヤーを閉じて再生を終了"
-                    className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2"
-                    onClick={() => { setCurrentVideoId(null); setCurrentPlaylistId(null); }}
-                  >
-                    閉じる
-                  </button>
-                </div>
-              )}
-            </section>
+            </FloatingPlayerFrame>
           )}
           <AnimatePresence mode="wait">
             <motion.div
@@ -1123,6 +1114,22 @@ export default function MainApp() {
               onOpenAddToPlaylist={(v) => setPlaylistModalVideo(v)}
             />
           ) : view === 'library' ? (
+            <MyPage
+              playlists={playlists}
+              history={[...watchHistory, ...shortHistory].sort((a,b)=>b.timestamp-a.timestamp)}
+              onCreatePlaylist={handleCreatePlaylist}
+              onDeletePlaylist={handleDeletePlaylist}
+              onRemoveVideoFromPlaylist={handleRemoveVideoFromPlaylist}
+              onReorderPlaylistVideo={handleReorderPlaylistVideo}
+              onStartPlaylistPlay={handleStartPlaylistPlay}
+              onVideoSelect={(id) => handleVideoSelect(id)}
+              onNavigateToHistory={() => navigate('/feed/history')}
+              onImportYouTubePlaylist={handleImportYouTubePlaylist}
+              onUpdatePlaylistInfo={handleUpdatePlaylistInfo}
+              onAddVideosToPlaylist={handleAddVideosToPlaylist}
+              youtubePlaylists={youtubePlaylists}
+              watchLaterVideos={watchLaterVideos}
+            >
             <LibraryPage
               playlists={playlists}
               history={watchHistory}
@@ -1139,6 +1146,7 @@ export default function MainApp() {
               youtubePlaylists={youtubePlaylists}
               watchLaterVideos={watchLaterVideos}
             />
+            </MyPage>
           ) : view === 'history' ? (
             loadingHistory ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 bg-white">
@@ -1180,7 +1188,7 @@ export default function MainApp() {
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
             <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
-              {view === 'search' && (
+              {view === 'search' && searchQuery && (
                 <>
                   <DetectedSearchHeader
                     searchQuery={searchQuery}
@@ -1241,7 +1249,7 @@ export default function MainApp() {
               {/* 検索結果が動画もチャンネルもない場合 */}
               {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (
                 <div className="py-20 text-center text-sm text-gray-500">
-                  検索結果が見つかりませんでした。別のキーワードをお試しください。
+                  {searchQuery ? '検索結果が見つかりませんでした。別のキーワードをお試しください。' : '上の検索ボックスにキーワードを入力してください。'}
                 </div>
               )}
 
@@ -1261,7 +1269,7 @@ export default function MainApp() {
       </div>
 
       <nav className="mobile-bottom-nav" aria-label="メインメニュー">
-        {[{to:'/', label:'ホーム', Icon:Home, current:'home'}, {to:'/shorts', label:'ショート', Icon:Zap, current:'shorts'}, {to:'/feed/subscriptions', label:'登録チャンネル', Icon:PlaySquare, current:'subscriptions'}, {to:'/feed/library', label:'ライブラリ', Icon:Folder, current:'library'}].map(({to, label, Icon, current}) => <Link key={to} to={to} aria-current={view === current ? 'page' : undefined}><Icon size={23} strokeWidth={view === current ? 2.5 : 1.8}/><span>{label}</span></Link>)}
+        {[{to:'/', label:'ホーム', Icon:Home, current:'home'}, {to:'/shorts', label:'ショート', Icon:Zap, current:'shorts'}, {to:'/feed/subscriptions', label:'登録チャンネル', Icon:PlaySquare, current:'subscriptions'}, {to:'/feed/library', label:'マイページ', Icon:User, current:'library'}].map(({to, label, Icon, current}) => <Link key={to} to={to} aria-current={view === current ? 'page' : undefined}><>{current === 'library' && deviceProfile.avatar ? <img src={deviceProfile.avatar} alt="" className="mobile-profile-avatar"/> : <Icon size={23} strokeWidth={view === current ? 2.5 : 1.8}/>}</><span>{label}</span></Link>)}
       </nav>
 
       {/* プレイリスト保存モーダル */}

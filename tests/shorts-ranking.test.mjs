@@ -25,7 +25,7 @@ test('ranking refreshes on each visit; only concurrent requests share in-flight 
  let calls=0;
  const load=createRankingLoader(async(url,options)=>{
   calls++; assert.equal(new URL(url).origin,'https://shorts-ranking.com');assert.equal(new URL(url).pathname,'/latest.json');
-  assert.equal(options.cache,'no-store');assert.equal(options.redirect,'error');
+  assert.equal(options.cache,'no-store');assert.equal(options.redirect,'manual');
   await new Promise(resolve=>setTimeout(resolve,5));
   return new Response(JSON.stringify({items:[{video_id:'abcdefghijk',views:calls}]}));
  });
@@ -34,6 +34,7 @@ test('ranking refreshes on each visit; only concurrent requests share in-flight 
 });
 test('ranking rejects upstream errors, malformed data and oversized responses',async()=>{
  await assert.rejects(createRankingLoader(async()=>new Response('',{status:503}))());
+ await assert.rejects(createRankingLoader(async()=>new Response('',{status:302,headers:{location:'https://untrusted.example/'}}))());
  await assert.rejects(createRankingLoader(async()=>new Response('{}'))());
  await assert.rejects(createRankingLoader(async()=>new Response('{}',{headers:{'content-length':'9000000'}}))());
 });

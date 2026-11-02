@@ -21,7 +21,7 @@ export function createRankingLoader(fetchUpstream = fetch) {
   return async () => {
     if (pending) return pending;
     pending = (async () => {
-      const response = await fetchUpstream(`${RANKING_URL}?t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(10000), redirect: 'error', headers: { accept: 'application/json' } });
+      const response = await fetchUpstream(`${RANKING_URL}?t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(10000), redirect: 'manual', headers: { accept: 'application/json' } });
       if (!response.ok) throw new Error(`ランキング取得失敗（${response.status}）`);
       if (Number(response.headers.get('content-length')) > 2 * 1024 * 1024) throw new Error('ランキングのデータが大きすぎます。');
       const reader = response.body.getReader();

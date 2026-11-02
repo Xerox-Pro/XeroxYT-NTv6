@@ -1,3 +1,4 @@
+import { apiFetch } from './lib/apiTransport.mjs';
 import { get, set } from 'idb-keyval';
 import { DailyUsageLimits } from './types';
 
@@ -202,8 +203,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
       /^\/api\/channel\/[^/]+\/search(?:\?|$)/.test(url) ||
       url.includes('/sync/') || 
       url.includes('/auth/') || 
-      url.includes('/stream') || 
-      url.includes('/download-proxy');
+      url.includes('/stream');
 
     const isVideoReq = (url.startsWith('/api/video/') && !url.includes('/comments') && !url.includes('/related')) || url.startsWith('/stream') || url.startsWith('/edu');
     const isSearchReq = url.startsWith('/api/search');
@@ -248,7 +248,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     }
     reqOptions.headers = finalHeaders;
 
-    const res = await fetch(url, reqOptions);
+    const res = await apiFetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
 
     if (isApiCall) {

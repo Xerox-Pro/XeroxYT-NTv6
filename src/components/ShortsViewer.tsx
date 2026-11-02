@@ -3,7 +3,7 @@ import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X } from 'lucide-react';
+import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ArrowLeft, Search, Share2, MoreVertical } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
@@ -226,6 +226,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     window.addEventListener('keydown', key); return () => window.removeEventListener('keydown', key);
   }, [move, commentsId, descriptionId]);
   return <section className={`shorts-viewer ${activeId && (commentsId === activeId || descriptionId === activeId) ? "shorts-has-panel" : ""}`} aria-label="ショート動画">
+    <header className="shorts-mobile-header"><button aria-label="ショートを閉じる" onClick={()=>navigate('/')}><ArrowLeft size={27}/></button><div><button aria-label="検索" onClick={()=>navigate('/search')}><Search size={26}/></button><button aria-label="概要欄" onClick={()=>{setCommentsId('');setDescriptionId(activeId||'');}}><MoreVertical size={25}/></button></div></header>
     <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え">
       {videos.map((video, index) => {
         const info = metadata[video.videoId!] || video;
@@ -238,7 +239,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
               : info.authorAvatar ? <img src={info.authorAvatar} alt="" className="w-9 h-9 rounded-full object-cover" loading="lazy" /> : <span className="shorts-channel-placeholder">{info.author.slice(0, 1)}</span>}
             <span>{info.author}</span>
           </button>
-          <h1 className="shorts-overlay-title">{info.title}</h1>
+          <button className="shorts-title-button" onClick={()=>{setCommentsId('');setDescriptionId(video.videoId!);}}><h1 className="shorts-overlay-title">{info.title}</h1></button>
           <p className="shorts-overlay-stats">{info.viewCount > 0 ? `${formatNumberJP(info.viewCount)}回視聴` : ''}{info.likeCount == null ? '' : ` · 高評価 ${formatNumberJP(info.likeCount)}`}</p>
         </div>;
         return <article className="shorts-slide" key={video.videoId} data-short-id={video.videoId} aria-label={info.title}>
@@ -248,7 +249,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           <div className="shorts-side-actions">
             <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
-            <button aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
+            <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
+            <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
           </div>
           {active && (commentsId === video.videoId || descriptionId === video.videoId) && <><button className="shorts-panel-backdrop" aria-label="背景を押してパネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }} /><aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>

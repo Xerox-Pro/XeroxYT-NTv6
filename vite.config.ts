@@ -1,10 +1,12 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import path from 'path';
-import {defineConfig} from 'vite';
+import {defineConfig, loadEnv} from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
-export default defineConfig(() => {
+export default defineConfig(({mode}) => {
+  const localEnv = {...loadEnv(mode, process.cwd(), ''),...process.env};
+  const apiBase = localEnv.API_BASE_URL || localEnv.API_BASE_URL_1;
   return {
     plugins: [
       react(), 
@@ -23,8 +25,8 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'XeroxYT-NTv6',
-          short_name: 'XeroxYT',
+          name: 'XeroxYT-NTv7',
+          short_name: 'XeroxYT-NTv7',
           description: 'A refined, modern video sharing platform frontend.',
           theme_color: '#ffffff',
           background_color: '#ffffff',
@@ -101,6 +103,7 @@ export default defineConfig(() => {
       },
     },
     server: {
+      proxy: apiBase ? Object.fromEntries(['/api','/stream','/360','/edu','/scratch-edu'].map(prefix=>[prefix,{target:apiBase,changeOrigin:true,configure:(proxy)=>{proxy.on('proxyReq',(outgoing,request)=>{if(localEnv.API_SHARED_SECRET)outgoing.setHeader('Authorization','Bearer '+localEnv.API_SHARED_SECRET);if(!request.headers.origin)outgoing.setHeader('Origin','http://localhost:5173');});}}])) : undefined,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

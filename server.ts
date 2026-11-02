@@ -1,7 +1,6 @@
 import express from "express";
 import { registerShortsRoutes, normalizeShort } from "./shorts.mjs";
 import { registerRankingRoute } from "./shorts-ranking.mjs";
-import { handleDownloadMedia } from "./download-media.mjs";
 import path from "path";
 import crypto from "crypto";
 import { Innertube, UniversalCache } from "youtubei.js";
@@ -919,98 +918,6 @@ async function startServer() {
       timestamp: new Date().toISOString(),
       node_version: process.version,
     });
-  });
-
-  // Download Stream Info API via RapidAPI (fallback/alternative)
-  app.get("/api/download-info/:id", async (req, res) => {
-    const videoId = req.params.id;
-    const cacheKey = `dl-info:${videoId}`;
-    const cached = getFromMemoryCache(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(cached);
-    }
-
-    const RAPID_API_HOST = 'ytstream-download-youtube-videos.p.rapidapi.com';
-    const keys = [
-      process.env.RAPIDAPI_KEY_1 || '69e2995a79mshcb657184ba6731cp16f684jsn32054a070ba5',
-      process.env.RAPIDAPI_KEY_2 || 'ece95806fdmshe322f47bce30060p1c3411jsn41a3d4820039',
-      process.env.RAPIDAPI_KEY_3 || '41c9265bc6msha0fa7dfc1a63eabp18bf7cjsne6ef10b79b38'
-    ];
-    const selectedKey = keys[Math.floor(Math.random() * keys.length)];
-
-    const url = `https://${RAPID_API_HOST}/dl?id=${videoId}`;
-    const options = {
-      method: 'GET',
-      headers: {
-        'x-rapidapi-key': selectedKey,
-        'x-rapidapi-host': RAPID_API_HOST,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    try {
-      const response = await fetch(url, options);
-      const data = await response.json();
-
-      if (data.status !== "OK") {
-        return res.status(400).json({ error: "Failed to fetch video data" });
-      }
-
-      setToMemoryCache(cacheKey, data, 30 * 60 * 1000);
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      res.json(data);
-    } catch (error) {
-      console.error("RapidAPI Error:", error);
-      res.status(500).json({ error: "Internal Server Error" });
-    }
-  });
-
-  // GetLate Live Downloader Proxy (プロキシ経由で取得して別タブで直接再生・ダウンロード)
-  app.get(["/api/download-proxy", "/api/download-proxy/:videoId"], async (req, res) => {
-    const videoId = (req.params.videoId || req.query.videoId || req.query.id) as string;
-    const formatId = (req.query.formatId as string) || "2";
-
-    if (!videoId) {
-      return res.status(400).send("videoId is required");
-    }
-
-    try {
-      const targetUrl = `https://getlate.dev/api/tools/youtube-live-downloader?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D${encodeURIComponent(videoId)}&formatId=${encodeURIComponent(formatId)}`;
-
-      const response = await fetch(targetUrl, {
-        method: "GET",
-        redirect: "manual",
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          "Accept": "*/*"
-        }
-      });
-
-      const location = response.headers.get("location");
-      if (location) {
-        return res.redirect(location);
-      }
-
-      // リダイレクト追従で取得
-      const followRes = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-          "Accept": "*/*"
-        }
-      });
-
-      if (followRes.url && followRes.url !== targetUrl) {
-        return res.redirect(followRes.url);
-      }
-
-      const text = await followRes.text();
-      res.setHeader("Content-Type", "text/plain; charset=utf-8");
-      return res.status(followRes.status).send(text);
-    } catch (err: any) {
-      console.error("Download proxy error:", err);
-      res.status(500).send("Failed to proxy download request: " + (err.message || String(err)));
-    }
   });
 
   // Debug API: Raw Search
@@ -2952,94 +2859,6 @@ async function startServer() {
     res.setHeader("Cache-Control", "public, s-maxage=3600, stale-while-revalidate=86400");
     res.send(playerUrl);
   });
-
-  // Route YouTube metadata and media requests through the authenticated Cloudflare Worker.
-  async function youtubeProxyFetch(input: RequestInfo | URL, init: RequestInit | undefined, cookie: string): Promise<Response> {
-    const original = new Request(input, init);
-    const payload = {
-      url: original.url,
-      method: original.method,
-      headers: Object.fromEntries(original.headers.entries()),
-      ...(original.method === 'POST' ? { body: await original.text() } : {}),
-    };
-    return fetch('https://xeroxyt-stream-proxy.2026-97th.workers.dev/fetch', {
-      method: 'POST', headers: { 'Content-Type': 'application/json', cookie },
-      body: JSON.stringify(payload), signal: AbortSignal.timeout(40000),
-    });
-  }
-
-  // Resolve separate MP4 video and AAC audio streams. Each candidate must contain a real URL.
-  app.get('/api/download-formats/:id', async (req, res) => {
-    const videoId = req.params.id;
-    if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) return res.status(400).json({ error: '動画IDが不正です。' });
-    try {
-      const youtube = await Innertube.create({ cache: new UniversalCache(false), location: 'JP', lang: 'ja', retrieve_player: true, generate_session_locally: true, fetch: (input, init) => youtubeProxyFetch(input, init, req.headers.cookie || '') });
-      let accessRestricted = false;
-      for (const client of ['IOS', 'ANDROID_VR'] as const) {
-        try {
-          const info = await youtube.getBasicInfo(videoId, { client });
-          if (info.playability_status?.status === 'LOGIN_REQUIRED') accessRestricted = true;
-          const formats = info.streaming_data?.adaptive_formats || [];
-          const videos = formats.filter(f => f.has_video && !f.has_audio && !!f.height && f.height <= 1080 && f.mime_type.includes('video/mp4') && f.mime_type.includes('avc1') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate);
-          const audios = formats.filter(f => f.has_audio && !f.has_video && f.mime_type.includes('audio/mp4') && !f.drm_families?.length && !!f.content_length && !!(f.url || f.signature_cipher || f.cipher)).sort((a,b) => Number(!!b.audio_track?.audio_is_default || !!b.is_original) - Number(!!a.audio_track?.audio_is_default || !!a.is_original) || b.bitrate - a.bitrate);
-          if (!videos.length || !audios.length) continue;
-          const video = videos[0], audio = audios[0];
-          const [videoUrl, audioUrl] = await Promise.all([video.decipher(youtube.session.player), audio.decipher(youtube.session.player)]);
-          if (![videoUrl, audioUrl].every(isAllowedMediaUrl)) continue;
-          res.setHeader('Cache-Control', 'private, no-store');
-          return res.json({ title: info.basic_info.title || videoId, video: { url: videoUrl, size: video.content_length, itag: video.itag, mime: video.mime_type, height: video.height }, audio: { url: audioUrl, size: audio.content_length, itag: audio.itag, mime: audio.mime_type } });
-        } catch (err) { console.warn('Download format lookup failed for client', client); }
-      }
-      return accessRestricted
-        ? res.status(503).json({ error: 'YouTube側がプロキシからの取得を制限しています。時間をおいて再試行してください。' })
-        : res.status(422).json({ error: 'この動画で利用できる映像または音声が見つかりませんでした。' });
-    } catch { return res.status(502).json({ error: '動画情報の取得に失敗しました。' }); }
-  });
-
-  function isAllowedMediaUrl(value: string): boolean {
-    try { const u = new URL(value); return u.protocol === 'https:' && !u.username && !u.password && !u.port && /(^|\.)googlevideo\.com$/i.test(u.hostname); } catch { return false; }
-  }
-  // Small range requests keep each response within the serverless payload limit.
-  app.get('/api/download-media', (req, res) => handleDownloadMedia(req, res, youtubeProxyFetch));
-
-  // 動画ダウンロードプロキシ API
-  app.get("/api/download-link", async (req, res) => {
-    const videoId = req.query.videoId as string;
-    if (!videoId) {
-      return res.status(400).json({ error: "videoId is required" });
-    }
-    const cacheKey = `dl-link:${videoId}`;
-    const cached = getFromMemoryCache<{ url: string }>(cacheKey);
-    if (cached) {
-      res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-      return res.json(cached);
-    }
-
-    try {
-      const resp = await axios.get(
-        `https://min-plum.vercel.app/360/${encodeURIComponent(videoId)}`,
-        {
-          timeout: 10000,
-          responseType: "text",
-        },
-      );
-      const downloadUrl = (
-        typeof resp.data === "string" ? resp.data : String(resp.data)
-      ).trim();
-      if (downloadUrl.startsWith("http")) {
-        setToMemoryCache(cacheKey, { url: downloadUrl }, 30 * 60 * 1000);
-        res.setHeader("Cache-Control", "public, s-maxage=1800, stale-while-revalidate=86400");
-        return res.json({ url: downloadUrl });
-      }
-      throw new Error("Invalid download URL response");
-    } catch (err: any) {
-      console.error("Download proxy error:", err?.message || err);
-      res
-        .status(500)
-        .json({ error: "ダウンロードリンクの取得に失敗しました。" });
-    }
-  });
-
 
   // Stateless continuation polling works on serverless deployments.
   // Proxy only YouTube's player API scripts; arbitrary hosts and paths are not accepted.
