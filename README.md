@@ -4,8 +4,8 @@
 
 このリポジトリだけをデプロイしても、検索・動画情報・ログイン・履歴保存は動作しません。先に別リポジトリのAPIをCloudflareへデプロイして、そのURLを環境変数に設定してください。
 
-- フロントエンド: https://github.com/Xerox-Pro/XeroxYT-NTv6
-- 必須のAPI: https://github.com/Xerox-Pro/XeroxYT-NTv6-APIv1
+- フロントエンド: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6
+- 必須のAPI: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6-APIv1
 
 ## できること
 
@@ -20,7 +20,7 @@
 
 ## デプロイ方法（Cloudflare API → Vercel）
 
-1. [XeroxYT-NTv6-APIv1](https://github.com/Xerox-Pro/XeroxYT-NTv6-APIv1) のREADMEに従って、Cloudflare D1とWorkerを準備します。
+1. [XeroxYT-NTv6-APIv1](https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6-APIv1) のREADMEに従って、Cloudflare D1とWorkerを準備します。
 2. APIの `/health` が応答することを確認し、WorkerのURLを控えます。
 3. このリポジトリをVercelへインポートします。FrameworkはVite、Build Commandは `npm run build`、Output Directoryは `dist` です。
 4. Vercelの **Settings → Environment Variables** に次の変数を設定します。Previewで試す場合はPreview、公開時はProductionにも設定してください。
@@ -86,3 +86,5 @@ APIの `ALLOWED_ORIGINS` にフロントURLを登録し、**フロントのVerce
 API側は標準で `REQUIRE_PROXY_SECRET=true`。許可外のOrigin、Originなし、共有鍵がないリクエストを拒否します。ゲートウェイが許可Originと共有鍵をサーバー間通信に付けます。Originだけでは偽装可能なので、共有鍵の確認も併用します。
 
 秘密鍵必須時はブラウザーからの直接取得は403となり、自動モードはサーバー経由に切り替わります。API側で明示的にREQUIRE_PROXY_SECRET=falseにした場合だけ直接取得を試せますが、Originだけでは他サーバーを完全には制限できません。
+
+実際のデプロイURL・許可Origin・共有キーはホスティング側の環境変数で設定してください。このリポジトリのURLはすべて例示用です。個人の接続先をコミットしないでください。
