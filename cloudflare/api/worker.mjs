@@ -21,6 +21,7 @@ const handler = httpServerHandler({port:3000});
 export default {
  async fetch(request, bindings, ctx) {
   const path = new URL(request.url).pathname;
+  if (/^\/api\/download(?:-|\/|$)/.test(path)) return Response.json({error:'ダウンロード機能は削除されました。',code:'DOWNLOAD_REMOVED'},{status:410});
   if (path.startsWith('/api/account/')) return bindings.ACCOUNT.fetch(request);
   if (path === '/health') return Response.json({ok:true, runtime:'cloudflare-workers', implementation:'full-express-api'});
   // Client and OAuth objects are created inside each request, never reused across accounts/requests.

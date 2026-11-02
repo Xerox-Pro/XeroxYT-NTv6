@@ -10,7 +10,7 @@ Status: candidate only; production traffic has NOT been switched. The current Wo
 
 The Worker uses the documented Cloudflare Node HTTP adapter. youtubei.js uses its cf-worker platform entry point with preserved class names and request-local clients. Account and media calls use service bindings to the existing `xeroxyt-account` and `xeroxyt-stream-proxy` Workers. No existing user database was replaced. OAuth device-flow state is stored in D1 instead of process memory.
 
-Download format lookup skips player JavaScript parsing and uses only actual upstream format URLs. Cipher-only formats are not advertised as downloadable; unsupported/restricted videos return explicit errors. Real media access can still be rejected by the source even when metadata lookup succeeds.
+Video downloading has been removed at the user’s request: the player download button, browser FFmpeg code/dependencies, download API handlers and media tests are deleted. The candidate explicitly returns HTTP 410 / DOWNLOAD_REMOVED for former download endpoints. Streaming playback remains available.
 
 ## Build and deployment
 
@@ -22,13 +22,13 @@ npx wrangler deploy --config cloudflare/api/wrangler.jsonc --dry-run
 npm run deploy:cloudflare-api
 ```
 
-Configure secret bindings with Wrangler or the dashboard: `RAPIDAPI_KEY_1`, `RAPIDAPI_KEY_2`, `RAPIDAPI_KEY_3`, and optional `GEMINI_API_KEY`. The existing RapidAPI values were transferred as secret bindings, not committed into the generated Worker. The linked Vercel project returned no configured environment variables; no Gemini key was available. AI Studio returns 503 / GEMINI_NOT_CONFIGURED until configured. RapidAPI returned a non-OK payload during the live test; this is unresolved.
+Configure optional `GEMINI_API_KEY` with Wrangler or the dashboard for AI Studio. No key was available in the linked Vercel environment; the endpoint returns 503 / GEMINI_NOT_CONFIGURED until configured. RapidAPI is no longer used.
 
 After resolving reliability and completing acceptance testing, `vercel-routing.json` is a proposed replacement for root `vercel.json`: the frontend remains on Vercel while API/stream requests proxy to Workers on the same browser origin. Do not change frontend fetch URLs directly to workers.dev: host-scoped session cookies would not follow.
 
 ## Verification (2026-11-02, JST)
 
-- Automated suite: 50/50 tests passed after the ranking compatibility change. `npm run lint` passed.
+- Automated suite: 45/45 tests (download-specific tests removed) passed after the ranking compatibility change. `npm run lint` passed.
 - Wrangler build and dry-run upload succeeded.
 - Created an isolated test account through the existing registration endpoint; authenticated calls used its session.
 - Successful live responses: health, limits, account history, search, channel search, suggestions, trending, recommendations, category recommendations, full video metadata, comments, related videos, channel metadata, channel search, channel videos page 2, channel Shorts, Shorts discovery/details, education key, stream URL, separate video/audio formats, OAuth device-code initiation.
@@ -40,7 +40,11 @@ After resolving reliability and completing acceptance testing, `vercel-routing.j
 
 Video and audio each returned HTTP 206 for a real 0–1023 byte media request. Full-file download and browser-side FFmpeg merging were not tested.
 
-Production cutover is blocked on CPU reliability, external RapidAPI availability, missing Gemini configuration if AI Studio is required, and signed-in Google feature acceptance tests. Keep the existing production API until those are resolved.
+Production cutover is blocked on CPU reliability, missing Gemini configuration if AI Studio is required, and signed-in Google feature acceptance tests. Keep the existing production API until those are resolved.
 
 Limits: https://developers.cloudflare.com/workers/platform/limits/
 Express adapter: https://developers.cloudflare.com/workers/tutorials/deploy-an-express-app/
+
+## Test URLs
+
+Public health: `/health`. All `/api/` data endpoints require a site session cookie on the candidate hostname. Production Vercel cookies do not apply to workers.dev. Use `POST /api/account/login` with JSON username/password and an allowed Origin to obtain a candidate-host session before testing. Do not disable authentication for smoke tests.

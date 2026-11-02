@@ -8,7 +8,7 @@ import { localAI } from '../lib/intelligence';
 import { 
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2, 
   ChevronDown, ChevronUp, MessageSquare, Send, Plus, 
-  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, Download, RotateCw, X, Bell,
+  ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, RotateCw, X, Bell,
   Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
   AlertTriangle
 } from 'lucide-react';
@@ -309,25 +309,6 @@ export default function VideoPlayer({
       document.title = `${activeVideo.title} - XeroxYT-NTv6`;
     }
   }, [activeVideo.title, isMini]);
-
-  const [downloadStatus, setDownloadStatus] = useState('');
-  const [downloading, setDownloading] = useState(false);
-  const handleDownload = async () => {
-    if (!videoId || downloading) return;
-    setDownloading(true);
-    try {
-      const { downloadVideo } = await import('../lib/downloadVideo');
-      await downloadVideo(videoId, setDownloadStatus);
-    } catch (error) {
-      setDownloadStatus(error instanceof Error ? error.message : 'ダウンロードに失敗しました。');
-    } finally { setDownloading(false); }
-  };
-
-  useEffect(() => {
-    if (!downloadStatus || downloading) return;
-    const timeout = setTimeout(() => setDownloadStatus(''), 10000);
-    return () => clearTimeout(timeout);
-  }, [downloadStatus, downloading]);
 
   // Watch duration tracker
   const watchSecondsRef = useRef<number>(0);
@@ -1359,18 +1340,6 @@ export default function VideoPlayer({
                 <Share2 size={15} />
                 <span>共有</span>
               </motion.button>
-
-              <motion.button 
-                onClick={handleDownload}
-                whileTap={{ scale: 0.92 }}
-                disabled={downloading}
-                title={downloadStatus || "動画をダウンロード"}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full text-xs font-semibold border border-gray-200 transition-colors disabled:opacity-50 shadow-2xs"
-              >
-                <Download size={15} />
-                <span>{downloading ? "処理中…" : "ダウンロード"}</span>
-              </motion.button>
-              {downloadStatus && <span role="status" className="text-xs text-gray-600">{downloadStatus}</span>}
 
               <motion.button 
                 onClick={handleReloadPlayer}

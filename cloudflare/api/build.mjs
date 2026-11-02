@@ -6,10 +6,7 @@ source = source.replace(/^import .*?;\n/gm, value => { imports.push(value); retu
 source = source.slice(source.indexOf('const genAI'));
 source = source.replace('const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });', 'const genAI = env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: env.GEMINI_API_KEY }) : null;');
 source = source.replaceAll('process.env.', 'env.');
-source = source.replaceAll('retrieve_player: true', 'retrieve_player: false');
-source = source.replace('video.decipher(youtube.session.player), audio.decipher(youtube.session.player)', 'Promise.resolve(video.url), Promise.resolve(audio.url)');
 source = source.replaceAll('new UniversalCache(false)', '{ get: async () => undefined, set: async () => {}, remove: async () => {} }');
-source = source.replace(/env\.RAPIDAPI_KEY_([123]) \|\| '[^']*'/g, 'env.RAPIDAPI_KEY_$1').replace(/const keys = \[([\s\S]*?)\];/, 'const keys = [$1].filter(Boolean);');
 source = source.replace(/  setInterval\(\(\) => \{[\s\S]*?\}, (?:10|5) \* 60 \* 1000\)(?:\.unref\?\.\(\))?;/g, '');
 const staticStart = source.indexOf('  if (env.NODE_ENV !== "production")');
 const staticEnd = source.indexOf('  // --- AI Studio API ---', staticStart);
@@ -20,7 +17,6 @@ source = source.replace('const dailyQuotaMap = new Map<string, ClientDailyRecord
 source = source.replace('const authFlows = new Map<string, { flow: any; expires: number }>();', 'const authFlows = flowStore;');
 source = source.replaceAll('authFlows.get(', 'await authFlows.get(').replaceAll('authFlows.set(', 'await authFlows.set(').replaceAll('authFlows.delete(', 'await authFlows.delete(');
 source = source.replace("const session = await fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/session',", "const session = await env.ACCOUNT.fetch('https://xeroxyt-account.2026-97th.workers.dev/api/account/session',");
-source = source.replace("return fetch('https://xeroxyt-stream-proxy.2026-97th.workers.dev/fetch',", "return env.STREAM.fetch('https://xeroxyt-stream-proxy.2026-97th.workers.dev/fetch',");
 source = source.replace('const response = await genAI.models.generateContent({', "if (!genAI) return res.status(503).json({ code: 'GEMINI_NOT_CONFIGURED', error: 'GEMINI_API_KEY is not configured.' });\n        const response = await genAI.models.generateContent({");
 // Fail closed if a future server refactor leaves startup or bundled credentials behind.
 if (/app\.listen\(|setInterval\(|export default|RAPIDAPI_KEY_[123] \|\|/.test(source)) throw new Error('Workers adaptation incomplete; inspect server.ts changes.');
