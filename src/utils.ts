@@ -1,3 +1,4 @@
+import { apiFetch } from './lib/apiTransport.mjs';
 import { get, set } from 'idb-keyval';
 import { DailyUsageLimits } from './types';
 
@@ -247,7 +248,7 @@ export async function fetchJSON(url: string, options?: RequestInit) {
     }
     reqOptions.headers = finalHeaders;
 
-    const res = await fetch(url, reqOptions);
+    const res = await apiFetch(url, reqOptions);
     const contentType = res.headers.get('content-type');
 
     if (isApiCall) {

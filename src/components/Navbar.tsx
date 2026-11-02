@@ -1,6 +1,7 @@
+import { useDeviceProfile } from '../lib/deviceProfile';
 import RecommendationDebug from './RecommendationDebug';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { Menu, Search, Mic, Video, Bell, LogIn, LogOut, User, Settings, Sparkles, History, X, Play, Zap, CheckCircle2, ArrowRight, ScrollText } from 'lucide-react';
 import Avatar from './Avatar';
@@ -25,6 +26,9 @@ export default function Navbar({
   const [recommendationDebugOpen, setRecommendationDebugOpen] = useState(false);
   const navigate = useNavigate();
   const account = useSiteAccount();
+  const profile = useDeviceProfile();
+  const location = useLocation();
+  const [mobileSearch,setMobileSearch]=useState(false);
   const [query, setQuery] = useState(initialSearchQuery);
   const [detectedNotice, setDetectedNotice] = useState<{
     label: string;
@@ -67,6 +71,7 @@ export default function Navbar({
   const inputRef = useRef<HTMLInputElement>(null);
 
 
+  useEffect(()=>{if(location.pathname === '/search'){setMobileSearch(true);requestAnimationFrame(()=>inputRef.current?.focus());}},[location.pathname]);
   // 入力値からのURL自動検知
   const detectedLink = useMemo(() => {
     return parseYouTubeUrl(query);
@@ -371,7 +376,7 @@ export default function Navbar({
   }, []);
 
   return (
-    <header className="w-full min-h-[3.5rem] bg-white text-gray-900 flex flex-wrap items-center justify-between px-4 py-2 border-b border-gray-200 shadow-xs relative z-50">
+    <header className={`app-navbar ${mobileSearch ? 'mobile-search-open' : ''}`}>
       {/* リンク検知通知バナー (トースト: クリーンなミニマルスタイル) */}
       <AnimatePresence>
         {detectedNotice && (
@@ -397,11 +402,11 @@ export default function Navbar({
       </AnimatePresence>
 
       {/* 左側: ハンバーガーメニュー + YouTubeロゴ */}
-      <div className="flex items-center gap-4 shrink-0">
+      <div className="navbar-brand flex items-center gap-4 shrink-0">
         <motion.button 
           onClick={toggleSidebar} 
           whileTap={{ scale: 0.88 }}
-          className="p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors duration-200 text-gray-800"
+          className="navbar-menu p-2 rounded-full hover:bg-gray-100 active:bg-gray-200 transition-colors duration-200 text-gray-800"
           title="メニュー"
         >
           <Menu size={22} strokeWidth={2} />
@@ -418,12 +423,13 @@ export default function Navbar({
             className="h-6 sm:h-7 w-auto object-contain transition-transform duration-200 group-hover:scale-105"
             referrerPolicy="no-referrer"
           />
-          <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT-NTv6</span>
+          <span className="text-[17px] sm:text-[19px] font-bold tracking-tight text-gray-900 font-sans">XeroxYT</span>
         </Link>
       </div>
       
       {/* 中央: 検索バー + マイク */}
-      <div className="flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
+      <div className="navbar-search flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
+<button className="mobile-search-back" aria-label="検索を閉じる" onClick={()=>setMobileSearch(false)}><ArrowRight className="rotate-180" size={23}/></button>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
           <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
             <div className="flex-1 flex items-center pl-4 pr-1">
@@ -677,24 +683,17 @@ export default function Navbar({
       </div>
 
       {/* 右側 */}
-      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <PWAInstallButton />
+      <div className="navbar-actions flex items-center gap-2 sm:gap-3 shrink-0">
+        <button className="mobile-search-toggle" aria-label="検索を開く" onClick={()=>{setMobileSearch(true);requestAnimationFrame(()=>inputRef.current?.focus());}}><Search size={24}/></button>
+        <span className="navbar-install"><PWAInstallButton /></span>
         <Link
           to="/aistudio"
-          className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
+          className="navbar-xray px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
           title="Xrayを開く"
         >
           Xray
         </Link>
-        {account && <details className="relative">
-          <summary className="list-none cursor-pointer flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200 w-9 h-9 text-gray-700" aria-label={`アカウント: ${account.username}`} title={account.username}><User size={19} /></summary>
-          <div className="absolute right-0 top-full mt-2 w-48 rounded-xl border border-gray-200 bg-white shadow-lg p-2 z-[110]">
-            <div className="px-3 py-2 text-sm font-semibold text-gray-800 truncate">{account.username}</div>
-            <button type="button" onClick={() => setRecommendationDebugOpen(true)} className="w-full px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-100 text-gray-700">デバッグ</button>
-            {recommendationDebugOpen && <RecommendationDebug onClose={() => setRecommendationDebugOpen(false)} />}
-            <button type="button" onClick={() => void account.logout()} className="w-full px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-100 text-gray-700">ログアウト</button>
-          </div>
-        </details>}
+        {account && <button className="navbar-account" aria-label="マイページを開く" title={profile.name} onClick={()=>navigate('/feed/library')}>{profile.avatar ? <img src={profile.avatar} alt=""/> : <User size={22}/>}</button>}
       </div>
     </header>
   );

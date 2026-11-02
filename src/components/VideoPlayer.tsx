@@ -1,3 +1,4 @@
+import VideoDescriptionSheet from './VideoDescriptionSheet';
 import { createPlaybackTracker, learnInteraction } from '../lib/localRecommendations.mjs';
 import { prioritizeUnshown } from '../lib/recommendationImpressions.mjs';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
@@ -137,6 +138,7 @@ export default function VideoPlayer({
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
+  useEffect(()=>setIsDescExpanded(false),[videoId]);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>(() => initialVideo && 'isLive' in initialVideo && initialVideo.isLive ? 'liveChat' : 'related');
   const [iframeUrl, setIframeUrl] = useState<string>('');
   const [refreshingIframe, setRefreshingIframe] = useState(false);
@@ -1403,27 +1405,11 @@ export default function VideoPlayer({
             </div>
           </div>
 
-          {/* 概要欄 */}
-          <div className="mt-4 p-3.5 bg-gray-50 hover:bg-gray-100/80 rounded-xl transition-colors text-sm border border-gray-200">
-            <div className="flex items-center gap-3 font-semibold text-gray-800 text-xs mb-2">
-              <span>{formatNumberJP(activeVideo.viewCount)} 回視聴</span>
-              <span>{activeVideo.publishedText}</span>
-              {isLive && <span className="text-red-600 font-bold">● リアルタイム配信</span>}
-            </div>
-            <div className="text-gray-700 whitespace-pre-wrap font-normal leading-relaxed text-xs sm:text-sm break-all">
-              <div className={`${isDescExpanded ? '' : 'line-clamp-3'}`}>
-                {renderTextWithMentionsAndLinks(activeVideo.description || '')}
-              </div>
-            </div>
-            {activeVideo.description && activeVideo.description.length > 120 && (
-              <button
-                onClick={() => setIsDescExpanded(!isDescExpanded)}
-                className="mt-2 text-xs font-bold text-gray-900 hover:underline block"
-              >
-                {isDescExpanded ? '一部を表示' : 'もっと見る'}
-              </button>
-            )}
-          </div>
+          <button type="button" className="video-description-preview" aria-label="概要欄を開く" onClick={()=>setIsDescExpanded(true)}>
+            <span className="description-preview-stats">{formatNumberJP(activeVideo.viewCount)} 回視聴 · {activeVideo.publishedText}{isLive ? ' · ライブ' : ''}</span>
+            <span className="description-preview-text">{activeVideo.description || 'この動画の詳細を見る'}</span><strong>…もっと見る</strong>
+          </button>
+          {isDescExpanded && <VideoDescriptionSheet video={activeVideo} onClose={()=>setIsDescExpanded(false)} onSelectChannel={onSelectChannel} renderBody={renderTextWithMentionsAndLinks}/>}
 
           {/* コメントセクション */}
           <button className="mobile-comments-preview" onClick={() => setMobileCommentsOpen(true)} aria-label="コメントを開く">

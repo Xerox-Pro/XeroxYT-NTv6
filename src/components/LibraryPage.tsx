@@ -9,6 +9,7 @@ import {
 import { formatDuration, fetchJSON } from '../utils';
 
 interface LibraryPageProps {
+  initialPlaylistId?: string;
   playlists: UserPlaylist[];
   history: WatchHistoryItem[];
   onCreatePlaylist: (title: string, description?: string) => string;
@@ -27,6 +28,7 @@ interface LibraryPageProps {
 
 export default function LibraryPage({
   playlists,
+  initialPlaylistId,
   history,
   onCreatePlaylist,
   onDeletePlaylist,
@@ -42,7 +44,7 @@ export default function LibraryPage({
   watchLaterVideos = []
 }: LibraryPageProps) {
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(
-    playlists.length > 0 ? playlists[0].id : null
+    initialPlaylistId || (playlists.length > 0 ? playlists[0].id : null)
   );
 
   // モーダル・入力状態

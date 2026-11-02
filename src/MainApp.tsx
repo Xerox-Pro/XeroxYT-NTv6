@@ -22,6 +22,8 @@ import VideoPlayer from './components/VideoPlayer';
 import ChannelPage from './components/ChannelPage';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
+import MyPage from './components/MyPage';
+import { useDeviceProfile } from './lib/deviceProfile';
 import HistoryPage from './components/HistoryPage';
 import DebugAPI from './components/DebugAPI';
 import LicensePage from './components/LicensePage';
@@ -42,6 +44,7 @@ declare global {
 
 export default function MainApp() {
   const navigate = useNavigate();
+  const deviceProfile = useDeviceProfile();
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
@@ -999,7 +1002,7 @@ export default function MainApp() {
   };
 
   return (
-    <div className="min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800">
+    <div className={`${view === 'shorts' ? 'is-shorts-page ' : ''}min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
@@ -1123,6 +1126,22 @@ export default function MainApp() {
               onOpenAddToPlaylist={(v) => setPlaylistModalVideo(v)}
             />
           ) : view === 'library' ? (
+            <MyPage
+              playlists={playlists}
+              history={[...watchHistory, ...shortHistory].sort((a,b)=>b.timestamp-a.timestamp)}
+              onCreatePlaylist={handleCreatePlaylist}
+              onDeletePlaylist={handleDeletePlaylist}
+              onRemoveVideoFromPlaylist={handleRemoveVideoFromPlaylist}
+              onReorderPlaylistVideo={handleReorderPlaylistVideo}
+              onStartPlaylistPlay={handleStartPlaylistPlay}
+              onVideoSelect={(id) => handleVideoSelect(id)}
+              onNavigateToHistory={() => navigate('/feed/history')}
+              onImportYouTubePlaylist={handleImportYouTubePlaylist}
+              onUpdatePlaylistInfo={handleUpdatePlaylistInfo}
+              onAddVideosToPlaylist={handleAddVideosToPlaylist}
+              youtubePlaylists={youtubePlaylists}
+              watchLaterVideos={watchLaterVideos}
+            >
             <LibraryPage
               playlists={playlists}
               history={watchHistory}
@@ -1139,6 +1158,7 @@ export default function MainApp() {
               youtubePlaylists={youtubePlaylists}
               watchLaterVideos={watchLaterVideos}
             />
+            </MyPage>
           ) : view === 'history' ? (
             loadingHistory ? (
               <div className="flex-1 flex flex-col items-center justify-center py-20 bg-white">
@@ -1261,7 +1281,7 @@ export default function MainApp() {
       </div>
 
       <nav className="mobile-bottom-nav" aria-label="メインメニュー">
-        {[{to:'/', label:'ホーム', Icon:Home, current:'home'}, {to:'/shorts', label:'ショート', Icon:Zap, current:'shorts'}, {to:'/feed/subscriptions', label:'登録チャンネル', Icon:PlaySquare, current:'subscriptions'}, {to:'/feed/library', label:'ライブラリ', Icon:Folder, current:'library'}].map(({to, label, Icon, current}) => <Link key={to} to={to} aria-current={view === current ? 'page' : undefined}><Icon size={23} strokeWidth={view === current ? 2.5 : 1.8}/><span>{label}</span></Link>)}
+        {[{to:'/', label:'ホーム', Icon:Home, current:'home'}, {to:'/shorts', label:'ショート', Icon:Zap, current:'shorts'}, {to:'/feed/subscriptions', label:'登録チャンネル', Icon:PlaySquare, current:'subscriptions'}, {to:'/feed/library', label:'マイページ', Icon:User, current:'library'}].map(({to, label, Icon, current}) => <Link key={to} to={to} aria-current={view === current ? 'page' : undefined}><>{current === 'library' && deviceProfile.avatar ? <img src={deviceProfile.avatar} alt="" className="mobile-profile-avatar"/> : <Icon size={23} strokeWidth={view === current ? 2.5 : 1.8}/>}</><span>{label}</span></Link>)}
       </nav>
 
       {/* プレイリスト保存モーダル */}
