@@ -47,7 +47,7 @@ export default function LicensePage({ onBack }: LicensePageProps) {
             システム情報
           </h1>
           <p className="text-[#4a5568] text-sm sm:text-base leading-[1.7] tracking-[0.01em]">
-            XeroxYT-NTv6 プレイヤー環境設定および連携エンドポイント情報。
+            XeroxYT-NTv7 プレイヤー環境設定および連携エンドポイント情報。
           </p>
         </header>
 
@@ -108,7 +108,7 @@ export default function LicensePage({ onBack }: LicensePageProps) {
 
         {/* フッター */}
         <footer className="text-center text-xs text-gray-400 py-4 border-t border-gray-100">
-          <p>XeroxYT-NTv6</p>
+          <p>XeroxYT-NTv7</p>
         </footer>
       </div>
     </div>

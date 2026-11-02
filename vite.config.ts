@@ -25,8 +25,8 @@ export default defineConfig(({mode}) => {
         ],
         manifest: {
           id: '/',
-          name: 'XeroxYT-NTv6',
-          short_name: 'XeroxYT',
+          name: 'XeroxYT-NTv7',
+          short_name: 'XeroxYT-NTv7',
           description: 'A refined, modern video sharing platform frontend.',
           theme_color: '#ffffff',
           background_color: '#ffffff',

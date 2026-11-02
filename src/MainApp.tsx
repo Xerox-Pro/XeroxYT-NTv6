@@ -121,6 +121,12 @@ export default function MainApp() {
       setCurrentVideoId(null);
       setCurrentPlaylistId(null);
       setView('shorts');
+    } else if (path === '/search') {
+      setView('search');
+      setSearchQuery('');
+      setVideos([]);
+      setSearchChannels([]);
+      setError('');
     } else if (path === '/results') {
       const q = searchParams.get('search_query');
       if (q) {
@@ -162,19 +168,19 @@ export default function MainApp() {
 
   useEffect(() => {
     if (view === 'search' && searchQuery) {
-      document.title = `${searchQuery} - XeroxYT-NTv6`;
+      document.title = `${searchQuery} - XeroxYT-NTv7`;
     } else if (view === 'shorts') {
-      document.title = 'ショート - XeroxYT-NTv6';
+      document.title = 'ショート - XeroxYT-NTv7';
     } else if (view === 'home') {
-      document.title = 'XeroxYT-NTv6';
+      document.title = 'XeroxYT-NTv7';
     } else if (view === 'subscriptions') {
-      document.title = '登録チャンネル - XeroxYT-NTv6';
+      document.title = '登録チャンネル - XeroxYT-NTv7';
     } else if (view === 'library') {
-      document.title = 'ライブラリ - XeroxYT-NTv6';
+      document.title = 'ライブラリ - XeroxYT-NTv7';
     } else if (view === 'history') {
-      document.title = '履歴 - XeroxYT-NTv6';
+      document.title = '履歴 - XeroxYT-NTv7';
     } else if (view === 'license') {
-      document.title = 'ライセンス & 製作者クレジット - XeroxYT-NTv6';
+      document.title = 'ライセンス & 製作者クレジット - XeroxYT-NTv7';
     }
   }, [view, searchQuery]);
 
@@ -1261,7 +1267,7 @@ export default function MainApp() {
               {/* 検索結果が動画もチャンネルもない場合 */}
               {view === 'search' && !loading && videos.length === 0 && searchChannels.length === 0 && (
                 <div className="py-20 text-center text-sm text-gray-500">
-                  検索結果が見つかりませんでした。別のキーワードをお試しください。
+                  {searchQuery ? '検索結果が見つかりませんでした。別のキーワードをお試しください。' : '上の検索ボックスにキーワードを入力してください。'}
                 </div>
               )}
 
