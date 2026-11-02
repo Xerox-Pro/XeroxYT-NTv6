@@ -19,6 +19,7 @@ import ShortsViewer from './components/ShortsViewer';
 import VideoSkeleton from './components/VideoSkeleton';
 import TopProgressBar from './components/TopProgressBar';
 import VideoPlayer from './components/VideoPlayer';
+import FloatingPlayerFrame from './components/FloatingPlayerFrame';
 import ChannelPage from './components/ChannelPage';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
@@ -1042,10 +1043,9 @@ export default function MainApp() {
         >
           {/* Keep the same player mounted when navigating, preserving iframe playback. */}
           {currentVideoId && (
-            <section
-              aria-label={view === 'video' ? '動画プレイヤー' : 'ミニプレイヤー'}
-              className={view === 'video' ? 'w-full' : 'persistent-mini-player'}
-            >
+            <FloatingPlayerFrame mini={view !== 'video'}
+              onRestore={() => navigate(`/watch?v=${encodeURIComponent(currentVideoId)}${currentPlaylistId ? `&list=${encodeURIComponent(currentPlaylistId)}` : ''}`)}
+              onClose={() => { setCurrentVideoId(null); setCurrentPlaylistId(null); }}>
               <VideoPlayer
                 key={currentVideoId}
                 videoId={currentVideoId}
@@ -1061,26 +1061,7 @@ export default function MainApp() {
                 onCacheVideo={(v) => updateCache([v])}
                 watchHistory={watchHistory}
               />
-              {view !== 'video' && (
-                <div className="flex items-center justify-between gap-2 bg-white p-2">
-                  <button
-                    type="button"
-                    className="rounded-lg px-3 py-2 text-sm font-bold hover:bg-gray-100 focus-visible:outline-2"
-                    onClick={() => navigate(`/watch?v=${encodeURIComponent(currentVideoId)}${currentPlaylistId ? `&list=${encodeURIComponent(currentPlaylistId)}` : ''}`)}
-                  >
-                    動画ページに戻る
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="ミニプレイヤーを閉じて再生を終了"
-                    className="rounded-lg px-3 py-2 text-sm hover:bg-gray-100 focus-visible:outline-2"
-                    onClick={() => { setCurrentVideoId(null); setCurrentPlaylistId(null); }}
-                  >
-                    閉じる
-                  </button>
-                </div>
-              )}
-            </section>
+            </FloatingPlayerFrame>
           )}
           <AnimatePresence mode="wait">
             <motion.div
