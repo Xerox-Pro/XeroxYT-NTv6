@@ -10,7 +10,6 @@ import { loadWatchHistories, splitWatchHistory } from './lib/watchHistory.mjs';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Routes, Route, useNavigate, useLocation, useSearchParams, Link } from 'react-router-dom';
 import Navbar from './components/Navbar';
-const AIStudio = React.lazy(() => import('./components/AIStudio'));
 import Sidebar from './components/Sidebar';
 import CategoryBar from './components/CategoryBar';
 import VideoCard from './components/VideoCard';
@@ -50,7 +49,7 @@ export default function MainApp() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
 
-  const [view, setView] = useState<'home' | 'search' | 'video' | 'shorts' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license' | 'aistudio'>('home');
+  const [view, setView] = useState<'home' | 'search' | 'video' | 'shorts' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
@@ -158,7 +157,7 @@ export default function MainApp() {
     } else if (path === '/debug/api') {
       setView('debug');
     } else if (path === '/aistudio') {
-      setView('aistudio');
+      navigate('/', { replace: true });
     } else if (path === '/license') {
       setView('license');
     }
@@ -1096,8 +1095,7 @@ export default function MainApp() {
               onRecord={(video) => { updateCache([video]); handleRecordShortHistory({ ...video, videoId: video.videoId! }); }}
               onSelectChannel={handleSelectChannel}
             />
-          ) : view === 'aistudio' ? (
-            <React.Suspense fallback={<div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>}><AIStudio /></React.Suspense>
+
           ) : view === 'channel' && selectedChannelId ? (
             <ChannelPage
               channelId={selectedChannelId}

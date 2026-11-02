@@ -83,7 +83,6 @@ export default function MyPage(props: Props) {
           <LogOut size={16} />
           アカウントを切り替える
         </button>
-        <button onClick={() => navigate("/aistudio")}>Xray</button>
       </div>
       {!library ? (
         <>

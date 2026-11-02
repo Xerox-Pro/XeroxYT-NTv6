@@ -1,5 +1,4 @@
 import { useDeviceProfile } from '../lib/deviceProfile';
-import RecommendationDebug from './RecommendationDebug';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
@@ -23,7 +22,6 @@ export default function Navbar({
   toggleSidebar, 
   initialSearchQuery
 }: NavbarProps) {
-  const [recommendationDebugOpen, setRecommendationDebugOpen] = useState(false);
   const navigate = useNavigate();
   const account = useSiteAccount();
   const profile = useDeviceProfile();
@@ -686,13 +684,7 @@ export default function Navbar({
       <div className="navbar-actions flex items-center gap-2 sm:gap-3 shrink-0">
         <button className="mobile-search-toggle" aria-label="検索を開く" onClick={()=>{setMobileSearch(true);requestAnimationFrame(()=>inputRef.current?.focus());}}><Search size={24}/></button>
         <span className="navbar-install"><PWAInstallButton /></span>
-        <Link
-          to="/aistudio"
-          className="navbar-xray px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-full transition-colors text-sm font-medium shadow-xs"
-          title="Xrayを開く"
-        >
-          Xray
-        </Link>
+
         {account && <button className="navbar-account" aria-label="マイページを開く" title={profile.name} onClick={()=>navigate('/feed/library')}>{profile.avatar ? <img src={profile.avatar} alt=""/> : <User size={22}/>}</button>}
       </div>
     </header>
