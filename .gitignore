@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Generated Workers API build
+cloudflare/api/generated.ts
+cloudflare/api/bundle.mjs
+cloudflare/api/worker-configuration.d.ts
