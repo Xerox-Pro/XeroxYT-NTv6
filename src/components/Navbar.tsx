@@ -69,7 +69,7 @@ export default function Navbar({
   const inputRef = useRef<HTMLInputElement>(null);
 
 
-  useEffect(()=>{if(location.pathname === '/search'){setMobileSearch(true);requestAnimationFrame(()=>inputRef.current?.focus());}},[location.pathname]);
+  useEffect(()=>{const searching=['/search','/results'].includes(location.pathname);setMobileSearch(searching);if(location.pathname==='/search')requestAnimationFrame(()=>inputRef.current?.focus());},[location.pathname]);
   // 入力値からのURL自動検知
   const detectedLink = useMemo(() => {
     return parseYouTubeUrl(query);
@@ -427,13 +427,15 @@ export default function Navbar({
       
       {/* 中央: 検索バー + マイク */}
       <div className="navbar-search flex-1 max-w-[680px] mx-4 sm:mx-8 flex items-center justify-center gap-2 relative" ref={searchContainerRef}>
-<button className="mobile-search-back" aria-label="検索を閉じる" onClick={()=>setMobileSearch(false)}><ArrowRight className="rotate-180" size={23}/></button>
+<button className="mobile-search-back" aria-label="検索を閉じる" onClick={()=>{setIsSearchFocused(false);setMobileSearch(false);if(['/search','/results'].includes(location.pathname)){if(window.history.state?.idx>0)navigate(-1);else navigate('/');}}}><ArrowRight className="rotate-180" size={23}/></button>
         <form onSubmit={handleSubmit} className="w-full flex items-center">
-          <div className="flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
+          <div className="search-input-shell flex w-full bg-white rounded-full border border-gray-300 focus-within:border-gray-500 focus-within:shadow-inner shadow-xs transition-all duration-150">
             <div className="flex-1 flex items-center pl-4 pr-1">
               <input
                 ref={inputRef}
-                type="text"
+                type="search"
+                enterKeyHint="search"
+                aria-label="検索"
                 value={query}
                 onChange={(e) => {
                   setQuery(e.target.value);
@@ -467,7 +469,7 @@ export default function Navbar({
             <motion.button 
               type="submit" 
               whileTap={{ scale: 0.94 }}
-              className="px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
+              className="search-submit px-6 border-l border-gray-300 bg-gray-50 hover:bg-gray-100 active:bg-gray-200 text-gray-700 flex items-center justify-center transition-colors shrink-0 rounded-r-full"
               title={detectedLink ? (detectedLink.type === 'channel' ? 'チャンネルを開く' : '動画を再生') : '検索'}
             >
               <Search size={19} strokeWidth={2} />
@@ -477,7 +479,7 @@ export default function Navbar({
 
         {/* 検索ドロップダウン (ホワイトテーマに調和した自然な動画プレビュー + 履歴 & 候補) */}
         {isSearchFocused && (detectedLink || displayItems.length > 0) && (
-          <div className="absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-200 py-2 z-[100] max-h-[440px] overflow-y-auto">
+          <div className="search-suggestions absolute top-full left-0 right-0 mt-1.5 bg-white rounded-2xl shadow-xl border border-gray-200 py-2 z-[100] max-h-[440px] overflow-y-auto">
             {/* 動画ID検知時: ホワイトテーマに合わせた自然な動画カード */}
             {detectedLink && (detectedLink.type === 'video' || detectedLink.type === 'short') && (
               <div 
@@ -658,7 +660,7 @@ export default function Navbar({
           type="button"
           whileTap={{ scale: 0.9 }}
           whileHover={{ scale: 1.05 }}
-          className="p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0"
+          className="search-microphone p-2.5 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 transition-colors hidden sm:flex items-center justify-center shadow-xs shrink-0"
           title="音声で検索"
           onClick={() => {
             if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {

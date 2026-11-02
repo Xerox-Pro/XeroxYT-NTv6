@@ -51,6 +51,11 @@ export default function MainApp() {
 
   const [view, setView] = useState<'home' | 'search' | 'video' | 'shorts' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
   const [searchQuery, setSearchQuery] = useState('');
+  const [mobileSearchFilter,setMobileSearchFilter] = useState('すべて');
+  const [phoneLayout,setPhoneLayout] = useState(()=>window.innerWidth<=640);
+  useEffect(()=>{const resize=()=>setPhoneLayout(window.innerWidth<=640);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);},[]);
+  useEffect(()=>setMobileSearchFilter('すべて'),[location.search]);
+
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
   const [homeShorts,setHomeShorts] = useState<{category:string;videos:Video[]}>({category:'',videos:[]});
@@ -1011,8 +1016,10 @@ export default function MainApp() {
     setCurrentPlaylistQueue(queue);setPlaylistQueueIndex(index);updateCache(queue);navigate(`/watch?v=${encodeURIComponent(queue[index].videoId)}`);
   };
 
+  const resultVideos = videos.filter(video => {if(video.isShort)return false;if(view!=='search'||!phoneLayout)return true;if(mobileSearchFilter==='ショート')return false;const watched=watchHistory.some(item=>item.videoId===video.videoId);return mobileSearchFilter==='未視聴'?!watched:mobileSearchFilter==='視聴済み'?watched:true;});
+
   return (
-    <div className={`${view === 'shorts' ? 'is-shorts-page ' : ''}min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
+    <div className={`${view === 'search' ? 'is-search-page ' : ''}${view === 'shorts' ? 'is-shorts-page ' : ''}min-h-screen bg-white text-gray-900 flex flex-col font-sans antialiased selection:bg-red-100 selection:text-red-800`}>
       <TopProgressBar isLoading={loading || loadingMore} />
       {/* ナビゲーションバー: 常に上部に固定しつつ、コンテンツと被らないようにする */}
       <div className="w-full shrink-0 sticky top-0 z-50 bg-white">
@@ -1078,6 +1085,7 @@ export default function MainApp() {
               transition={{ duration: 0.2, ease: "easeOut" }}
               className="w-full"
             >
+              {view==='search'&&searchQuery&&<div className="mobile-search-filters no-scrollbar" aria-label="検索結果の絞り込み">{['すべて','ショート','未視聴','視聴済み','動画'].map(filter=><button type="button" key={filter} aria-pressed={mobileSearchFilter===filter} onClick={()=>setMobileSearchFilter(filter)}>{filter}</button>)}</div>}
               {/* カテゴリーバー（ホーム ＆ 検索画面のみ） */}
               {view === 'home' && (
                 <CategoryBar
@@ -1182,7 +1190,7 @@ export default function MainApp() {
 
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
-            <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
+            <div data-search-filter={phoneLayout?mobileSearchFilter:'すべて'} className={`results-content ${view==='search'?'search-results-content':''} p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen`}>
               {view === 'search' && searchQuery && (
                 <>
                   <DetectedSearchHeader
@@ -1192,7 +1200,7 @@ export default function MainApp() {
                   />
 
                   {/* 検索ヘッダー */}
-                  <div className="mb-6 border-b border-gray-200 pb-3">
+                  <div className="search-results-heading mb-6 border-b border-gray-200 pb-3">
                     <h2 className="text-lg font-bold text-gray-900 tracking-tight">
                       "{searchQuery}" の検索結果
                     </h2>
@@ -1202,7 +1210,7 @@ export default function MainApp() {
 
               {/* チャンネル結果（YouTube同様に動画と同じ一覧の先頭に統合表示） */}
               {view === 'search' && searchChannels.length > 0 && (
-                <div className="flex flex-col divide-y divide-gray-100 border-b border-gray-200 pb-6 mb-8">
+                <div className="search-channel-results flex flex-col divide-y divide-gray-100 border-b border-gray-200 pb-6 mb-8">
                   {searchChannels.slice(0, 3).map((channel) => (
                     <SearchChannelCard
                       key={channel.id}
@@ -1219,9 +1227,10 @@ export default function MainApp() {
                 onSelect={handleShortSelect}
               />
 
+              {view==='search'&&phoneLayout&&mobileSearchFilter!=='ショート'&&resultVideos.length===0&&<p className="mobile-search-empty">この条件に一致する動画はありません。</p>}
               {/* 動画リスト */}
               <div className="mobile-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
-                {videos.filter(video => !video.isShort).map((video, idx) => (
+                {resultVideos.map((video, idx) => (
                   <React.Fragment key={`${video.videoId}-${idx}`}><div className="relative group">
                     <VideoCard
                       video={video}
@@ -1237,7 +1246,7 @@ export default function MainApp() {
                       className="absolute top-2 right-2 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-xs font-bold shadow-md"
                       title="再生リストに保存"
                     >
-                      + 保存
+                      <span className="result-save-label">+ 保存</span><Folder className="result-save-icon" size={18}/>
                     </button>
                   </div>
                   {view==='home' && (idx+1)%12===0 && homeShorts.category===selectedCategory && homeShorts.videos.length>Math.floor((idx+1)/12)*8 && <div className="col-span-full"><ShortsShelf context={{source:'home',q:selectedCategory==='すべて'?undefined:selectedCategory}} providedVideos={homeShorts.videos} offset={Math.floor((idx+1)/12)*8} onSelect={handleShortSelect}/></div>}
