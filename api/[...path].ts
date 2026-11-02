@@ -1,3 +1,4 @@
+import {apiSelector} from "../server/lib/apiAvailability.mjs";
 import { apiPool, canRetry } from "../server/lib/apiPool.mjs";
 export const config = { runtime: "edge" };
 const forwarded = [
@@ -56,11 +57,14 @@ export default async function handler(request: Request) {
   }
   if (!headers.has('Origin')) headers.set('Origin', url.origin);
   if (process.env.API_SHARED_SECRET) headers.set('Authorization','Bearer '+process.env.API_SHARED_SECRET);
+  const deadline = Date.now() + 24000;
+  const configuredPool = pool;
+  pool = await apiSelector.plan(pool, headers);
+  if (!pool.length) return Response.json({error:'利用できるAPIがありません。しばらくしてから再試行してください。',code:'API_UNAVAILABLE'}, {status:503,headers:{'Cache-Control':'no-store'}});
   const readonly = ["GET", "HEAD"].includes(request.method);
   const body = readonly ? undefined : await request.arrayBuffer();
   if (body && body.byteLength > 1024 * 1024)
     return Response.json({ error: "Request too large" }, { status: 413 });
-  const deadline = Date.now() + 24000;
   for (let i = 0; i < pool.length; i++) {
     if (Date.now() >= deadline) break;
     try {
@@ -74,6 +78,8 @@ export default async function handler(request: Request) {
           AbortSignal.timeout(Math.min(12000, deadline - Date.now())),
         ]),
       });
+      if ([408,429,500,502,503,504].includes(response.status)) apiSelector.report(pool[i],headers,false);
+      else if (response.ok) apiSelector.report(pool[i],headers,true);
       if (
         canRetry(request.method, path, response.status) &&
         i < pool.length - 1
@@ -93,12 +99,13 @@ export default async function handler(request: Request) {
       outgoing.delete("content-length");
       outgoing.set("Cache-Control", "private, no-store");
       outgoing.set("X-XeroxYT-Transport", "proxy");
-      outgoing.set("X-XeroxYT-API-Index", String(i + 1));
+      outgoing.set("X-XeroxYT-API-Index", String(configuredPool.indexOf(pool[i]) + 1));
       return new Response(response.body, {
         status: response.status,
         headers: outgoing,
       });
     } catch (error) {
+      apiSelector.report(pool[i],headers,false);
       if (request.signal.aborted) throw error;
       if (!readonly || /^\/api\/(account|auth)(\/|$)/.test(path)) break;
     }

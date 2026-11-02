@@ -1,11 +1,11 @@
-# XeroxYT-NTv6
+# XeroxYT-NTv7
 
 **YouTubeの動画・Shortsを検索して視聴するWebクライアントのフロントエンド**です。React・TypeScript・Vite製で、スマホ・iPad・PCに対応します。YouTube公式サイトのリポジトリではありません。
 
 このリポジトリだけをデプロイしても、検索・動画情報・ログイン・履歴保存は動作しません。先に別リポジトリのAPIをCloudflareへデプロイして、そのURLを環境変数に設定してください。
 
-- フロントエンド: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6
-- 必須のAPI: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6-APIv1
+- フロントエンド: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv7
+- 必須のAPI: https://github.com/YOUR_ACCOUNT/XeroxYT-NTv7-APIv1
 
 ## できること
 
@@ -20,7 +20,7 @@
 
 ## デプロイ方法（Cloudflare API → Vercel）
 
-1. [XeroxYT-NTv6-APIv1](https://github.com/YOUR_ACCOUNT/XeroxYT-NTv6-APIv1) のREADMEに従って、Cloudflare D1とWorkerを準備します。
+1. [XeroxYT-NTv7-APIv1](https://github.com/YOUR_ACCOUNT/XeroxYT-NTv7-APIv1) のREADMEに従って、Cloudflare D1とWorkerを準備します。
 2. APIの `/health` が応答することを確認し、WorkerのURLを控えます。
 3. このリポジトリをVercelへインポートします。FrameworkはVite、Build Commandは `npm run build`、Output Directoryは `dist` です。
 4. Vercelの **Settings → Environment Variables** に次の変数を設定します。Previewで試す場合はPreview、公開時はProductionにも設定してください。
@@ -71,7 +71,7 @@ API_BASE_URL_2=https://your-node-api.vercel.app
 API_BASE_URL_3=https://your-api.onrender.com
 ```
 
-`/api/[...path]` の軽量なゲートウェイが環境変数を読み、読み取りAPIが通信エラーや5xxなどで失敗した場合に次のAPIを試します。追加後は再デプロイしてください。ログインや履歴保存などの更新処理は、重複登録や二重書き込みを防ぐため先頭APIに固定し、自動再送しません。各APIは同じ認証データを参照するよう設定してください。
+`/api/[...path]` の軽量なゲートウェイが環境変数を読み、読み取りAPIが通信エラーや5xxなどで失敗した場合に次のAPIを試します。追加後は再デプロイしてください。ログインや履歴保存などの更新処理は、正常なAPIを送信前に選択し、重複登録や二重書き込みを防ぐため送信後の自動再送をしません。各APIは同じ認証データを参照するよう設定してください。
 
 マイページの「APIの接続方法」で **自動 / 直接接続 / サーバー経由** を選べます。自動では直接取得が失敗するとサーバー経由へ切り替え、10分間記憶します。手動の直接接続では自動切り替えしません。
 
@@ -88,3 +88,5 @@ API側は標準で `REQUIRE_PROXY_SECRET=true`。許可外のOrigin、Originな�
 秘密鍵必須時はブラウザーからの直接取得は403となり、自動モードはサーバー経由に切り替わります。API側で明示的にREQUIRE_PROXY_SECRET=falseにした場合だけ直接取得を試せますが、Originだけでは他サーバーを完全には制限できません。
 
 実際のデプロイURL・許可Origin・共有キーはホスティング側の環境変数で設定してください。このリポジトリのURLはすべて例示用です。個人の接続先をコミットしないでください。
+
+複数APIはサーバーが `/health` を確認して応答するAPIを自動選択します。正常判定は30秒、失敗判定は10秒を目安に再確認します。同時確認は最大4件です。すべてのAPIで同じ認証元またはD1を設定してください。ログイン・保存は送信前に接続先を選び、送信後の自動再送は行いません。
