@@ -1,3 +1,4 @@
+import VideoThumbnail from "./VideoThumbnail";
 import { recordImpression } from '../lib/recommendationImpressions.mjs';
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
@@ -11,9 +12,10 @@ interface VideoCardProps {
   onClick: () => void;
   onSelectChannel?: (channelIdOrName: string) => void;
   hideChannelInfo?: boolean;
+  preferMaxResolution?: boolean;
 }
 
-const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, hideChannelInfo }) => {
+const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, hideChannelInfo, preferMaxResolution }) => {
   const isPlaylist = video.type === 'playlist' || video.type === 'mix' || !!video.playlistId;
   const initialThumb = video.videoThumbnails?.[0]?.url || (video.videoId ? `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg` : '');
   const [imgSrc, setImgSrc] = useState(initialThumb);
@@ -62,13 +64,8 @@ const VideoCard: React.FC<VideoCardProps> = ({ video, onClick, onSelectChannel, 
         className="relative aspect-video rounded-xl overflow-hidden bg-gray-100 border border-gray-200/80 shadow-2xs group-hover:shadow-md transition-shadow duration-300"
       >
         {imgSrc ? (
-          <img
-            src={imgSrc}
-            referrerPolicy="no-referrer"
-            onError={handleImgError}
-            alt={video.title}
-            className="object-cover w-full h-full transition-transform duration-300 ease-out group-hover:scale-105"
-          />
+          <VideoThumbnail preferMaxResolution={preferMaxResolution} videoId={video.videoId} fallback={imgSrc} alt={video.title} className="transition-transform duration-300 ease-out group-hover:scale-105"/>
+
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-gray-200">
             <PlayCircle className="w-12 h-12 text-gray-400" />

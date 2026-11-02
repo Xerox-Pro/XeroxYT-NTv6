@@ -1,3 +1,4 @@
+import {fetchSubscriptionPage} from '../lib/subscriptionFeed.mjs';
 import VideoThumbnail from './VideoThumbnail';
 import VideoSkeleton from './VideoSkeleton';
 import CompactError from './CompactError';
@@ -34,11 +35,7 @@ export default function SubscriptionsFeed({
   const [error,setError] = useState('');
   const isFetchingMore = useRef(false);
 
-  const getTargetChannelTitle = useCallback(() => {
-    if (selectedChannelId === 'all') return 'all';
-    const sub = subscriptions.find(s => s.id === selectedChannelId);
-    return sub ? sub.title : selectedChannelId;
-  }, [selectedChannelId, subscriptions]);
+  const requestVersion = useRef(0);
 
   const fetchFeed = useCallback(async (pageNum: number = 1, append: boolean = false) => {
     if (append) {
@@ -47,12 +44,12 @@ export default function SubscriptionsFeed({
       setLoading(true);
     }
 
+    const version = append ? requestVersion.current : ++requestVersion.current;
     setError('');
     try {
-      const channelTitles = subscriptions.map(s => s.title).join(',');
-      const selectedTitle = getTargetChannelTitle();
-      const url = `/api/subscriptions/feed?channels=${encodeURIComponent(channelTitles)}&selectedChannel=${encodeURIComponent(selectedTitle)}&page=${pageNum}`;
-      const data: Video[] = await fetchJSON(url);
+      const result = await fetchSubscriptionPage(subscriptions, selectedChannelId, pageNum, fetchJSON);
+      if (version !== requestVersion.current) return;
+      const data: Video[] = result.videos;
 
       if (append) {
         setFeedVideos(prev => {
@@ -64,17 +61,19 @@ export default function SubscriptionsFeed({
         setFeedVideos(data || []);
       }
 
-      setHasMore((data || []).length > 0);
+      setHasMore(result.hasMore);
     } catch (err) {
+      if (version !== requestVersion.current) return;
       console.error('Failed to fetch subscriptions feed:', err);
       setError(err instanceof Error ? err.message : '読み込めませんでした。');
       if (!append) setFeedVideos([]);
     } finally {
+      if (version !== requestVersion.current) return;
       setLoading(false);
       setLoadingMore(false);
       isFetchingMore.current = false;
     }
-  }, [subscriptions, getTargetChannelTitle]);
+  }, [subscriptions, selectedChannelId]);
 
   // Selected channel / subscriptions change -> reload page 1
   useEffect(() => {
@@ -82,6 +81,7 @@ export default function SubscriptionsFeed({
     setPage(1);
     setHasMore(true);
     fetchFeed(1, false);
+    return () => { requestVersion.current++; };
   }, [selectedChannelId, subscriptions, fetchFeed]);
 
   // Load next page

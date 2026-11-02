@@ -1225,6 +1225,7 @@ export default function MainApp() {
                   <React.Fragment key={`${video.videoId}-${idx}`}><div className="relative group">
                     <VideoCard
                       video={video}
+                      preferMaxResolution={view === 'home'}
                       onClick={() => handleVideoSelect(video.videoId, video)}
                       onSelectChannel={handleSelectChannel}
                     />
