@@ -1,3 +1,4 @@
+import {fetchApiResponse} from "../server/lib/apiRequest.mjs";
 import {apiSelector} from "../server/lib/apiAvailability.mjs";
 import { apiPool, canRetry } from "../server/lib/apiPool.mjs";
 export const config = { runtime: "edge" };
@@ -68,16 +69,13 @@ export default async function handler(request: Request) {
   for (let i = 0; i < pool.length; i++) {
     if (Date.now() >= deadline) break;
     try {
-      const response = await fetch(pool[i] + path + query, {
+      const response = await fetchApiResponse(pool[i] + path + query, {
         method: request.method,
         headers,
         body,
         redirect: "manual",
-        signal: AbortSignal.any([
-          request.signal,
-          AbortSignal.timeout(Math.min(12000, deadline - Date.now())),
-        ]),
-      });
+        signal: request.signal,
+      }, Math.min(i === pool.length - 1 ? 22000 : 12000, deadline - Date.now()));
       if ([408,429,500,502,503,504].includes(response.status)) apiSelector.report(pool[i],headers,false);
       else if (response.ok) apiSelector.report(pool[i],headers,true);
       if (
