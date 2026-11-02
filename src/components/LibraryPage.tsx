@@ -1,5 +1,5 @@
 import VideoThumbnail from "./VideoThumbnail";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { UserPlaylist, Video, WatchHistoryItem } from '../types';
 import { localAI } from '../lib/intelligence';
 import { 
@@ -11,13 +11,14 @@ import { formatDuration, fetchJSON } from '../utils';
 
 interface LibraryPageProps {
   initialPlaylistId?: string;
+  initialCreate?: boolean;
   playlists: UserPlaylist[];
   history: WatchHistoryItem[];
   onCreatePlaylist: (title: string, description?: string) => string;
   onDeletePlaylist: (id: string) => void;
   onRemoveVideoFromPlaylist: (playlistId: string, videoId: string) => void;
   onReorderPlaylistVideo: (playlistId: string, fromIndex: number, toIndex: number) => void;
-  onStartPlaylistPlay: (playlist: UserPlaylist, shuffle?: boolean) => void;
+  onStartPlaylistPlay: (playlist: UserPlaylist, shuffle?: boolean, startVideoId?: string) => void;
   onVideoSelect: (videoId: string, videoObj?: Video) => void;
   onNavigateToHistory: () => void;
   onImportYouTubePlaylist?: (importedPlaylist: UserPlaylist) => void;
@@ -30,6 +31,7 @@ interface LibraryPageProps {
 export default function LibraryPage({
   playlists,
   initialPlaylistId,
+  initialCreate=false,
   history,
   onCreatePlaylist,
   onDeletePlaylist,
@@ -48,8 +50,9 @@ export default function LibraryPage({
     initialPlaylistId || (playlists.length > 0 ? playlists[0].id : null)
   );
 
+  useEffect(() => {if(initialPlaylistId)setSelectedPlaylistId(initialPlaylistId);},[initialPlaylistId]);
   // モーダル・入力状態
-  const [isCreating, setIsCreating] = useState(false);
+  const [isCreating, setIsCreating] = useState(initialCreate);
   const [isImporting, setIsImporting] = useState(false);
   const [importUrl, setImportUrl] = useState('');
   const [importLoading, setImportLoading] = useState(false);
@@ -178,7 +181,7 @@ export default function LibraryPage({
     : [];
 
   return (
-    <div className="flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 bg-white min-h-screen text-gray-900">
+    <div className="playlist-library flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 bg-white min-h-screen text-gray-900">
       {/* 1. ライブラリヘッダー */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8 pb-6 border-b border-gray-100">
         <div>
@@ -552,7 +555,7 @@ export default function LibraryPage({
                           className="flex items-center justify-between p-3 bg-white rounded-xl border border-gray-200/80 hover:border-gray-300 transition-all group shadow-2xs"
                         >
                           <div
-                            onClick={() => onVideoSelect(video.videoId!, video)}
+                            onClick={() => onStartPlaylistPlay(selectedPlaylist, false, video.videoId!)}
                             className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
                           >
                             <span className="text-xs font-bold text-gray-400 w-6 text-center shrink-0">{idx + 1}</span>

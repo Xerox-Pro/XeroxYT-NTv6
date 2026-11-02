@@ -53,6 +53,7 @@ export default function MainApp() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchChannels, setSearchChannels] = useState<SearchChannel[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('すべて');
+  const [homeShorts,setHomeShorts] = useState<{category:string;videos:Video[]}>({category:'',videos:[]});
   const [videos, setVideos] = useState<Video[]>([]);
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(null);
   const [currentPlaylistId, setCurrentPlaylistId] = useState<string | null>(null);
@@ -894,6 +895,7 @@ export default function MainApp() {
   };
 
   const handleVideoSelect = (videoId: string, videoObj?: Video) => {
+    setCurrentPlaylistQueue([]);setPlaylistQueueIndex(-1);
     const selectedVideo = videoObj || videoCache[videoId] as Video | undefined;
     if (selectedVideo?.isShort) {
       handleShortSelect(selectedVideo, { source: currentVideoId ? 'related' : 'home', ...(currentVideoId ? { videoId: currentVideoId } : {}) });
@@ -921,7 +923,7 @@ export default function MainApp() {
   // プレイリスト操作関数群
   const handleCreatePlaylist = (title: string, description?: string): string => {
     const newPl: UserPlaylist = {
-      id: `pl-${Date.now()}`,
+      id: `pl-${crypto.randomUUID()}`,
       title,
       description,
       createdAt: Date.now(),
@@ -997,16 +999,16 @@ export default function MainApp() {
     setPlaylists(prev => prev.map(p => p.id === playlistId ? { ...p, videos: cleanVideos, updatedAt: Date.now() } : p));
   };
 
-  const handleStartPlaylistPlay = (playlist: UserPlaylist, shuffle: boolean = false) => {
-    let playList = [...playlist.videos];
-    if (shuffle) {
-      playList = playList.sort(() => Math.random() - 0.5);
-    }
-    if (playList.length > 0) {
-      setCurrentPlaylistQueue(playList);
-      setPlaylistQueueIndex(0);
-      handleVideoSelect(playList[0].videoId, playList[0]);
-    }
+  const handleQueueSelect = (index:number) => {
+    const video=currentPlaylistQueue[index];if(!video?.videoId)return;
+    setPlaylistQueueIndex(index);updateCache([video]);navigate(`/watch?v=${encodeURIComponent(video.videoId)}`);
+  };
+  const handleStartPlaylistPlay = (playlist: UserPlaylist, shuffle=false, startVideoId?:string) => {
+    const queue=[...playlist.videos].filter(video=>video.videoId);
+    if(shuffle)for(let i=queue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[queue[i],queue[j]]=[queue[j],queue[i]];}
+    if(!queue.length)return;
+    const index=Math.max(0,startVideoId?queue.findIndex(video=>video.videoId===startVideoId):0);
+    setCurrentPlaylistQueue(queue);setPlaylistQueueIndex(index);updateCache(queue);navigate(`/watch?v=${encodeURIComponent(queue[index].videoId)}`);
   };
 
   return (
@@ -1050,6 +1052,10 @@ export default function MainApp() {
                 key={currentVideoId}
                 videoId={currentVideoId}
                 isMini={view !== 'video'}
+                playlistQueue={currentPlaylistQueue}
+                playlistQueueIndex={playlistQueueIndex}
+                onQueueSelect={handleQueueSelect}
+                onPlaybackEnded={() => handleQueueSelect(playlistQueueIndex+1)}
                 playlistId={currentPlaylistId || undefined}
                 initialVideo={videoCache[currentVideoId] || undefined}
                 onVideoSelect={(id, v) => handleVideoSelect(id, v)}
@@ -1208,6 +1214,7 @@ export default function MainApp() {
               )}
 
               <ShortsShelf
+                onVideosLoaded={view==='home' ? data=>setHomeShorts({category:selectedCategory,videos:data}) : undefined}
                 context={view === 'search' ? { source: 'search', q: searchQuery } : { source: 'home', q: selectedCategory === 'すべて' ? undefined : selectedCategory }}
                 onSelect={handleShortSelect}
               />
@@ -1215,7 +1222,7 @@ export default function MainApp() {
               {/* 動画リスト */}
               <div className="mobile-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
                 {videos.filter(video => !video.isShort).map((video, idx) => (
-                  <div key={`${video.videoId}-${idx}`} className="relative group">
+                  <React.Fragment key={`${video.videoId}-${idx}`}><div className="relative group">
                     <VideoCard
                       video={video}
                       onClick={() => handleVideoSelect(video.videoId, video)}
@@ -1232,6 +1239,9 @@ export default function MainApp() {
                       + 保存
                     </button>
                   </div>
+                  {view==='home' && (idx+1)%12===0 && homeShorts.category===selectedCategory && homeShorts.videos.length>Math.floor((idx+1)/12)*8 && <div className="col-span-full"><ShortsShelf context={{source:'home',q:selectedCategory==='すべて'?undefined:selectedCategory}} providedVideos={homeShorts.videos} offset={Math.floor((idx+1)/12)*8} onSelect={handleShortSelect}/></div>}
+                  </React.Fragment>
+
                 ))}
               </div>
 

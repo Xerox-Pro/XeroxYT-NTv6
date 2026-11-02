@@ -1,3 +1,4 @@
+import {shuffleShelfCandidates} from '../lib/shortsShelfOrder.mjs';
 import VideoThumbnail from "./VideoThumbnail";
 import ShortsSkeleton from './ShortsSkeleton';
 import CompactError from './CompactError';
@@ -19,9 +20,10 @@ export function shortsQuery(context: ShortsContext) {
   if (context.videoId) params.set('videoId', context.videoId);
   return params;
 }
-export default function ShortsShelf({ context, onSelect }: {
-  context: ShortsContext; onSelect: (video: Video, context: ShortsContext) => void;
+export default function ShortsShelf({ context, onSelect, providedVideos, onVideosLoaded, offset=0 }: {
+  context: ShortsContext; onSelect: (video: Video, context: ShortsContext) => void; providedVideos?: Video[]; onVideosLoaded?: (videos:Video[])=>void; offset?:number;
 }) {
+  const report = useRef(onVideosLoaded); report.current = onVideosLoaded;
   const shelf = useRef<HTMLDivElement>(null);
   const [session] = useState(createShortsSession);
   const [videos, setVideos] = useState<Video[]>([]);
@@ -30,6 +32,7 @@ export default function ShortsShelf({ context, onSelect }: {
   const [attempt, setAttempt] = useState(0);
   const query = shortsQuery(context).toString();
   useEffect(() => {
+    if(providedVideos !== undefined){setVideos(providedVideos.slice(offset,offset+8));setLoading(false);setError('');return;}
     let cancelled = false;
     setLoading(true); setVideos([]); setError('');
     const seen = readSeenShorts();
@@ -39,11 +42,11 @@ export default function ShortsShelf({ context, onSelect }: {
       const candidates = excludeSeenShorts((native.value.videos || []).filter((v: Video) => v.isShort), currentSeen);
       const regular = context.source === 'search' ? candidates : rankCandidates(candidates, { short: true, seed: session, seen });
       const ranking = ranked.status === 'fulfilled' ? rankCandidates(excludeSeenShorts(ranked.value.videos || [], currentSeen), { short: true, seed: session, seen }) : [];
-      if (!cancelled) setVideos(ranking.length ? mixShorts(regular, ranking) : regular);
+      if (!cancelled) { let all=ranking.length ? mixShorts(regular, ranking) : regular;if(context.source==='home'){let previous='';const key='xerox_short_shelf_order_'+query;try{previous=sessionStorage.getItem(key)||'';}catch{}all=shuffleShelfCandidates(all,previous);try{sessionStorage.setItem(key,all[0]?.videoId||'');}catch{}}setVideos(all.slice(offset,offset+8));report.current?.(all); }
     }).catch(err => { if (!cancelled) setError(err.message || 'ショートを取得できませんでした'); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [query, session, attempt]);
+  }, [query, session, attempt, providedVideos, offset]);
   useEffect(() => {
     if (!shelf.current) return;
     const observer = new IntersectionObserver(entries => {

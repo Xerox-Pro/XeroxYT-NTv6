@@ -1,3 +1,6 @@
+import VideoThumbnail from './VideoThumbnail';
+import VideoSkeleton from './VideoSkeleton';
+import CompactError from './CompactError';
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { ChannelSubscription, Video } from '../types';
 import VideoCard from './VideoCard';
@@ -26,6 +29,9 @@ export default function SubscriptionsFeed({
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const [selectedChannelId, setSelectedChannelId] = useState<string>('all');
+  const [typeFilter,setTypeFilter] = useState('すべて');
+  const [manage,setManage] = useState(false);
+  const [error,setError] = useState('');
   const isFetchingMore = useRef(false);
 
   const getTargetChannelTitle = useCallback(() => {
@@ -41,6 +47,7 @@ export default function SubscriptionsFeed({
       setLoading(true);
     }
 
+    setError('');
     try {
       const channelTitles = subscriptions.map(s => s.title).join(',');
       const selectedTitle = getTargetChannelTitle();
@@ -60,6 +67,7 @@ export default function SubscriptionsFeed({
       setHasMore((data || []).length > 0);
     } catch (err) {
       console.error('Failed to fetch subscriptions feed:', err);
+      setError(err instanceof Error ? err.message : '読み込めませんでした。');
       if (!append) setFeedVideos([]);
     } finally {
       setLoading(false);
@@ -115,65 +123,34 @@ export default function SubscriptionsFeed({
     );
   }
 
+  const shortVideos=feedVideos.filter(v=>v.isShort || String(v.type)==='short');
+  const visibleVideos=feedVideos.filter(v=>{const short=v.isShort || String(v.type)==='short';if(typeFilter==='ショート')return short;if(typeFilter==='ライブ')return v.isLive;if(typeFilter==='今日'){const text=v.publishedText||'';return /今日|秒前|分前|時間前|second|minute|hour|today/i.test(text)||new Date(text).toDateString()===new Date().toDateString();}return !short;});
   return (
-    <div className="flex-1 max-w-[1800px] w-full mx-auto p-4 md:p-8 bg-white min-h-screen select-none">
-      {/* 登録チャンネル ヘッダー ＆ チャンネルチップフィルター */}
-      <div className="mb-8 border-b border-gray-100 pb-6">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-xl sm:text-2xl font-extrabold text-gray-900 tracking-tight flex items-center gap-2">
-            <BellRing size={22} className="text-red-600" />
-            <span>登録チャンネルの最新動画</span>
-          </h1>
-          <span className="text-xs font-semibold text-gray-500">{subscriptions.length} チャンネル登録中</span>
+    <div className="subscription-feed flex-1 max-w-[1800px] w-full mx-auto p-4 md:p-8 bg-white min-h-screen select-none">
+      <div className="subscription-header">
+        <div className="subscription-channels">
+          <div className="subscription-channel-scroll no-scrollbar">
+            {subscriptions.map(sub=><button type="button" key={sub.id} className={`subscription-avatar ${selectedChannelId===sub.id?'selected':''}`} onClick={()=>setSelectedChannelId(sub.id)} aria-pressed={selectedChannelId===sub.id}><Avatar src={sub.avatar} name={sub.title} channelId={sub.id} className="w-16 h-16 text-xl"/><span>{sub.title}</span></button>)}
+          </div>
+          <button type="button" className="subscription-all" onClick={()=>{setSelectedChannelId('all');setManage(true);}}>すべて</button>
         </div>
-
-        {/* 横スクロール可能な登録チャンネルリスト */}
-        <div className="flex items-center gap-3 overflow-x-auto no-scrollbar py-2">
-          <button
-            onClick={() => setSelectedChannelId('all')}
-            className={`px-4 py-2 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 ${
-              selectedChannelId === 'all'
-                ? 'bg-black text-white shadow-2xs'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            すべての登録チャンネル
-          </button>
-
-          {subscriptions.map((sub) => {
-            const isSelected = selectedChannelId === sub.id;
-            return (
-              <button
-                key={sub.id}
-                onClick={() => setSelectedChannelId(sub.id)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 border ${
-                  isSelected
-                    ? 'bg-black text-white border-black shadow-2xs'
-                    : 'bg-white text-gray-800 border-gray-200 hover:bg-gray-50'
-                }`}
-              >
-                <Avatar src={sub.avatar} name={sub.title} className="w-6 h-6 text-[10px]" />
-                <span>{sub.title}</span>
-              </button>
-            );
-          })}
-        </div>
+        {selectedChannelId!=='all'&&<button type="button" className="subscription-reset" onClick={()=>setSelectedChannelId('all')}>すべてのチャンネルに戻る</button>}
+        <div className="subscription-filter-scroll no-scrollbar" aria-label="登録チャンネルの表示フィルター">{['すべて','今日','動画','ショート','ライブ'].map(type=><button type="button" key={type} aria-pressed={typeFilter===type} onClick={()=>setTypeFilter(type)}>{type}</button>)}</div>
       </div>
+      {manage&&<div className="subscription-manage-backdrop" onClick={()=>setManage(false)}><section role="dialog" aria-modal="true" aria-label="登録チャンネルの一覧" onClick={e=>e.stopPropagation()}><header><strong>登録チャンネル</strong><button type="button" onClick={()=>setManage(false)}>閉じる</button></header>{subscriptions.map(sub=><div key={sub.id}><button type="button" onClick={()=>{setManage(false);onSelectChannel(sub.id);}}><Avatar src={sub.avatar} name={sub.title} channelId={sub.id} className="w-10 h-10 text-sm"/><span>{sub.title}</span></button><button type="button" onClick={()=>onToggleSubscribe(sub)}>登録解除</button></div>)}</section></div>}
 
       {/* 最新動画グリッド */}
       {loading ? (
-        <div className="flex flex-col items-center justify-center py-24 gap-3">
-          <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
-          <span className="text-sm font-medium text-gray-600">最新動画をロード中...</span>
-        </div>
-      ) : feedVideos.length === 0 ? (
+        <VideoSkeleton gridClassName="subscription-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-8"/>
+      ) : error ? (<CompactError error={error} onRetry={()=>fetchFeed(1,false)}/>) : visibleVideos.length === 0 && !(typeFilter==='すべて'&&shortVideos.length) ? (
         <div className="text-center py-20 text-gray-500">
-          <p className="text-sm font-medium">指定したチャンネルの最新動画が見つかりませんでした。</p>
+          <p className="text-sm font-medium">この条件で表示できる動画がありません。</p>{hasMore&&<button type="button" className="mt-4 text-blue-600" onClick={loadMore}>続きを確認</button>}
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8">
-            {feedVideos.map((video, idx) => (
+          {typeFilter==='すべて'&&shortVideos.length>0&&<section className="subscription-shorts"><h2>ショート</h2><div className="shorts-shelf-scroll">{shortVideos.map(video=><button type="button" key={video.videoId} className="shorts-cover" onClick={()=>onVideoSelect(video.videoId,video)}><div className="aspect-[9/16] rounded-xl overflow-hidden relative"><VideoThumbnail videoId={video.videoId} fallback={video.videoThumbnails?.[0]?.url} sizes="220px"/><span>{video.title}</span></div></button>)}</div></section>}
+          <div className="subscription-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-x-5 gap-y-8">
+            {visibleVideos.map((video, idx) => (
               <div key={`${video.videoId}-${idx}`} className="relative group">
                 <VideoCard
                   video={video}

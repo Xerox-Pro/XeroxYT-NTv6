@@ -1,3 +1,4 @@
+import RichText from './RichText';
 import {useAudioPreference,readMuted} from '../lib/audioPreference';
 import CompactError from './CompactError';
 import { createPlaybackTracker, learnInteraction, rankCandidates } from '../lib/localRecommendations.mjs';
@@ -279,7 +280,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           </div>
           {active && (commentsId === video.videoId || descriptionId === video.videoId) && <><button className="shorts-panel-backdrop" aria-label="背景を押してパネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }} /><aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>
             <header><strong>{commentsId ? 'コメント' : '概要欄'}</strong><button aria-label="パネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }}><X size={22} /></button></header>
-            {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{formatNumberJP(info.viewCount || 0)}回視聴 {info.publishedText}</p><p className="whitespace-pre-wrap break-words">{info.description || '概要欄はありません。'}</p></div>}
+            {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{formatNumberJP(info.viewCount || 0)}回視聴 {info.publishedText}</p><p className="whitespace-pre-wrap break-words"><RichText text={info.description || '概要欄はありません。'} onSelectChannel={onSelectChannel} onSelectVideo={id=>navigate('/watch?v='+id)}/></p></div>}
           </aside></>}
 
         </article>;

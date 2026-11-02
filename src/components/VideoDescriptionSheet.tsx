@@ -1,3 +1,4 @@
+import RichText from './RichText';
 import { useEffect, useRef, type ReactNode } from "react";
 import { X, ThumbsUp, CalendarDays, Eye } from "lucide-react";
 import Avatar from "./Avatar";
@@ -37,13 +38,12 @@ export default function VideoDescriptionSheet({
       <div className="description-sheet-inner">
         <div className="sheet-drag-handle" />
         <header className="sheet-heading">
-          <h2>概要</h2>
+          <h2>{video.title}</h2>
           <button aria-label="概要欄を閉じる" onClick={onClose}>
             <X size={24} />
           </button>
         </header>
         <div className="description-sheet-scroll">
-          <h3>{video.title}</h3>
           <button
             className="description-channel"
             onClick={() => {
@@ -78,19 +78,8 @@ export default function VideoDescriptionSheet({
             </div>
           </div>
           <div className="description-full-text">
-            {renderBody
-              ? renderBody(video.description || "概要欄はありません。")
-              : (video.description || "概要欄はありません。")
-                  .split(/(https?:\/\/[^\s]+)/g)
-                  .map((part, i) =>
-                    /^https?:\/\//.test(part) ? (
-                      <a key={i} href={part} target="_blank" rel="noreferrer">
-                        {part}
-                      </a>
-                    ) : (
-                      part
-                    ),
-                  )}
+            {renderBody ? renderBody(video.description || '概要欄はありません。') : <RichText text={video.description || '概要欄はありません。'} onSelectChannel={onSelectChannel}/>}
+
           </div>
           <button
             className="description-channel description-channel-large"

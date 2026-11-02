@@ -31,6 +31,7 @@ export default function MyPage(props: Props) {
   const profile = useDeviceProfile(),
     account = useSiteAccount(),
     navigate = useNavigate();
+  const [createList,setCreateList] = useState(false);
   const [debugOpen,setDebugOpen] = useState(false);
   const [activeList, setActiveList] = useState<string | undefined>();
   const [editing, setEditing] = useState(false),
@@ -135,7 +136,7 @@ export default function MyPage(props: Props) {
           <section className="my-section">
             <div className="my-section-heading">
               <h2>再生リスト</h2>
-              <button onClick={() => setLibrary(true)}>
+              <button onClick={() => {setCreateList(false);setLibrary(true);}}>
                 すべて表示
                 <ChevronRight size={16} />
               </button>
@@ -146,7 +147,7 @@ export default function MyPage(props: Props) {
                   className="my-video-card my-playlist-card"
                   key={pl.id}
                   onClick={() => {
-                    setActiveList(pl.id);
+                    setCreateList(false);setActiveList(pl.id);
                     setLibrary(true);
                   }}
                 >
@@ -167,7 +168,7 @@ export default function MyPage(props: Props) {
               ))}
               <button
                 className="my-create-playlist"
-                onClick={() => setLibrary(true)}
+                onClick={() => {setCreateList(true);setActiveList(undefined);setLibrary(true);}}
               >
                 <Plus size={25} />
                 <strong>再生リストを作成・管理</strong>
@@ -181,9 +182,10 @@ export default function MyPage(props: Props) {
             <ArrowLeft size={18} />
             マイページに戻る
           </button>
-          {isValidElement<{ initialPlaylistId?: string }>(props.children)
+          {isValidElement<{ initialPlaylistId?: string; initialCreate?: boolean }>(props.children)
             ? cloneElement(props.children, {
                 initialPlaylistId: activeList,
+                initialCreate: createList,
                 key: activeList,
               })
             : props.children}

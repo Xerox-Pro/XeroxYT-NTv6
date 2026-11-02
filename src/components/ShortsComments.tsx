@@ -1,3 +1,5 @@
+import RichText from './RichText';
+import CompactError from './CompactError';
 import { useEffect, useRef, useState } from 'react';
 import { Loader2, ThumbsUp, X } from 'lucide-react';
 import { Comment } from '../types';
@@ -61,13 +63,13 @@ export default function ShortsComments({ videoId, onClose, onSelectChannel, inli
         <button onClick={() => { onClose?.(); onSelectChannel(comment.authorId || comment.author); }} aria-label={`${comment.author}のチャンネル`}>
           <Avatar src={comment.authorAvatar} name={comment.author} className="w-8 h-8 text-xs" />
         </button>
-        <div className="min-w-0 flex-1"><p className="text-xs"><strong>{comment.author}</strong><span className="text-gray-500 ml-2">{comment.publishedTime}</span></p>
-          <p className="text-sm whitespace-pre-wrap break-words mt-1">{comment.text}</p>
+        <div className="min-w-0 flex-1"><p className="text-xs"><button type="button" className="font-semibold hover:underline" onClick={()=>{onClose?.();onSelectChannel(comment.authorId || comment.author);}}>{comment.author}</button><span className="text-gray-500 ml-2">{comment.publishedTime}</span></p>
+          <p className="text-sm whitespace-pre-wrap break-words mt-1"><RichText text={comment.text} onSelectChannel={onSelectChannel}/></p>
           <p className="flex items-center gap-2 mt-2 text-xs text-gray-500"><ThumbsUp size={13} />{comment.likeCount}</p>
         </div>
       </article>)}
       {!loading && !error && !comments.length && <p className="text-sm text-gray-500">表示できるコメントがありません。コメントが無効の場合もあります。</p>}
-      {error && <div role="status" className="text-sm text-red-600">{error}<button className="block mt-2 underline" onClick={() => setAttempt(a => a + 1)}>再試行</button></div>}
+      {error && <CompactError error={error} onRetry={() => setAttempt(a => a + 1)}/>}
       {loading ? <p role="status" className="flex justify-center gap-2 text-sm text-gray-500"><Loader2 size={18} className="animate-spin" />読み込み中…</p>
         : hasMore && <button onClick={() => setPage(p => p + 1)} className="w-full py-3 rounded-full bg-gray-100 text-sm font-semibold">次のコメントを表示</button>}
     </div>

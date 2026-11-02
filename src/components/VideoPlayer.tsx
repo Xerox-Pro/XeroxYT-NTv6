@@ -1,3 +1,4 @@
+import RichText from './RichText';
 import {useAudioPreference,readMuted} from '../lib/audioPreference';
 import VideoDescriptionSheet from './VideoDescriptionSheet';
 import { createPlaybackTracker, learnInteraction } from '../lib/localRecommendations.mjs';
@@ -59,7 +60,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, onSelectChannel }) =
         </div>
 
         <p className={`text-gray-800 text-sm font-normal leading-relaxed whitespace-pre-wrap break-words ${!isExpanded && isLong ? 'line-clamp-3' : ''}`}>
-          {comment.text}
+          <RichText text={comment.text} onSelectChannel={onSelectChannel}/>
         </p>
 
         {isLong && (
@@ -113,6 +114,7 @@ interface VideoPlayerProps {
   onOpenAddToPlaylist?: (video: Video) => void;
   onCacheVideo?: (video: Video) => void;
   watchHistory?: WatchHistoryItem[];
+  playlistQueue?: Video[]; playlistQueueIndex?: number; onQueueSelect?: (index:number)=>void; onPlaybackEnded?: ()=>void;
 }
 
 export default function VideoPlayer({
@@ -127,8 +129,12 @@ export default function VideoPlayer({
   onRecordHistory,
   onOpenAddToPlaylist,
   onCacheVideo,
+  playlistQueue=[],playlistQueueIndex=-1,onQueueSelect,onPlaybackEnded,
   watchHistory = []
 }: VideoPlayerProps) {
+  const endedCallback=useRef(onPlaybackEnded);endedCallback.current=onPlaybackEnded;
+  const endedHandled=useRef(false);
+  useEffect(()=>{endedHandled.current=false;},[requestedVideoId]);
   // The embedded playlist can move to another video without replacing its iframe.
   const [videoId, setVideoId] = useState(requestedVideoId);
   const currentVideoIdRef = useRef(requestedVideoId);
@@ -139,6 +145,8 @@ export default function VideoPlayer({
   const [error, setError] = useState('');
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
+  const [mobileDescription,setMobileDescription] = useState(() => window.innerWidth <= 640);
+  useEffect(() => { const resize=()=>setMobileDescription(window.innerWidth <= 640);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize); },[]);
   useEffect(()=>setIsDescExpanded(false),[videoId]);
   const [sidebarTab, setSidebarTab] = useState<'related' | 'liveChat'>(() => initialVideo && 'isLive' in initialVideo && initialVideo.isLive ? 'liveChat' : 'related');
   const [iframeUrl, setIframeUrl] = useState<string>('');
@@ -465,6 +473,7 @@ export default function VideoPlayer({
       if (cancelled || !iframeRef.current) return;
       const player = new YT.Player(iframeRef.current, {
         events: {
+          onStateChange: (event:any) => { if(cancelled)return;playerStateRef.current=event.data;setIsPlaying(event.data===1);if(event.data===0&&!endedHandled.current){endedHandled.current=true;endedCallback.current?.();} },
           onReady: () => {
             if (cancelled) return;
             apiPlayerRef.current = player;
@@ -512,6 +521,7 @@ export default function VideoPlayer({
             durationRef.current = data.info.duration;
           }
           if (typeof data.info.playerState === 'number') {
+            if(data.info.playerState===0&&!endedHandled.current){endedHandled.current=true;endedCallback.current?.();}
             playerStateRef.current = data.info.playerState;
             setIsPlaying(data.info.playerState === 1);
           }
@@ -1095,32 +1105,7 @@ export default function VideoPlayer({
       type: 'video'
     }));
 
-  const renderTextWithMentionsAndLinks = (text: string) => {
-    if (!text) return '動画の概要説明はありません。';
-    const regex = /(https?:\/\/[^\s]+|@[a-zA-Z0-9_\-\.]+)/g;
-    const parts = text.split(regex);
-    return parts.map((part, i) => {
-      if (/^https?:\/\//.test(part)) {
-        return (
-          <a key={i} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
-            {part}
-          </a>
-        );
-      }
-      if (/^@/.test(part)) {
-        return (
-          <button
-            key={i}
-            onClick={(e) => { e.stopPropagation(); onSelectChannel(part); }}
-            className="text-blue-600 hover:underline cursor-pointer"
-          >
-            {part}
-          </button>
-        );
-      }
-      return <span key={i}>{part}</span>;
-    });
-  };
+  const renderTextWithMentionsAndLinks = (text: string) => <RichText text={text || '動画の概要説明はありません。'} onSelectChannel={id=>{setIsDescExpanded(false);onSelectChannel(id);}} onSelectVideo={id=>{setIsDescExpanded(false);onVideoSelect(id);}} onTimestamp={seconds=>postPlayerCommand('seekTo',[seconds,true])}/>;
 
   const renderTitleWithMentions = (text: string) => {
     if (!text) return null;
@@ -1255,6 +1240,7 @@ export default function VideoPlayer({
           <h1 className="text-lg lg:text-xl font-bold text-gray-900 mb-3 leading-snug break-all">
             <button type="button" className="watch-title-button" aria-label="動画タイトルから概要欄を開く" onClick={() => setIsDescExpanded(true)}>{activeVideo.title}</button>
           </h1>
+          <button type="button" className="mobile-title-details" aria-label="動画の概要を開く" onClick={()=>setIsDescExpanded(true)}>{formatNumberJP(activeVideo.viewCount)} 回視聴 · {activeVideo.publishedText}<strong>…もっと見る</strong></button>
 
           <div className="watch-details-row flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-gray-200">
             {/* チャンネル情報 */}
@@ -1423,11 +1409,15 @@ export default function VideoPlayer({
             </div>
           </div>
 
-          <button type="button" className="video-description-preview" aria-label="概要欄を開く" onClick={()=>setIsDescExpanded(true)}>
+          {(!isDescExpanded || mobileDescription) && <button type="button" className="video-description-preview desktop-description-preview" aria-expanded={isDescExpanded} aria-label="概要欄を開く" onClick={()=>setIsDescExpanded(true)}>
             <span className="description-preview-stats">{formatNumberJP(activeVideo.viewCount)} 回視聴 · {activeVideo.publishedText}{isLive ? ' · ライブ' : ''}</span>
             <span className="description-preview-text">{activeVideo.description || 'この動画の詳細を見る'}</span><strong>…もっと見る</strong>
-          </button>
-          {isDescExpanded && <VideoDescriptionSheet video={activeVideo} onClose={()=>setIsDescExpanded(false)} onSelectChannel={onSelectChannel} renderBody={renderTextWithMentionsAndLinks}/>}
+          </button>}
+          {isDescExpanded && mobileDescription && <VideoDescriptionSheet video={activeVideo} onClose={()=>setIsDescExpanded(false)} onSelectChannel={onSelectChannel} renderBody={renderTextWithMentionsAndLinks}/>}
+
+          {isDescExpanded && !mobileDescription && <section className="video-description-inline" aria-label="動画の概要"><strong>{formatNumberJP(activeVideo.viewCount)} 回視聴 · {activeVideo.publishedText}</strong><div className="whitespace-pre-wrap break-words mt-3">{renderTextWithMentionsAndLinks(activeVideo.description || '')}</div><button type="button" className="description-channel-inline" onClick={handleAuthorClick}>{activeVideo.author} · チャンネルを表示</button><button type="button" className="description-collapse" onClick={()=>setIsDescExpanded(false)}>一部を表示</button></section>}
+
+          {playlistQueue.length>0&&playlistQueueIndex>=0&&<section className="watch-playlist-queue" aria-label="再生リストの連続再生"><div><strong>再生リスト</strong><span>{playlistQueueIndex+1} / {playlistQueue.length}</span><button type="button" disabled={playlistQueueIndex===0} onClick={()=>onQueueSelect?.(playlistQueueIndex-1)}>前へ</button><button type="button" disabled={playlistQueueIndex>=playlistQueue.length-1} onClick={()=>onQueueSelect?.(playlistQueueIndex+1)}>次へ</button></div><details><summary>再生順を表示</summary>{playlistQueue.map((video,index)=><button type="button" key={`${video.videoId}-${index}`} aria-current={index===playlistQueueIndex?'true':undefined} onClick={()=>onQueueSelect?.(index)}>{index+1}. {video.title}</button>)}</details></section>}
 
           {/* コメントセクション */}
           <button className="mobile-comments-preview" onClick={() => setMobileCommentsOpen(true)} aria-label="コメントを開く">
