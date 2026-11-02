@@ -844,6 +844,7 @@ export default function MainApp() {
   // 無限スクロール検知
   const handleScroll = useCallback(() => {
     if (view !== 'home' && view !== 'search') return;
+    if (view === 'search' && !searchQuery.trim()) return;
     if (loading || loadingMore || !hasMore || isFetchingMore.current) return;
 
     const scrollTop = window.scrollY || document.documentElement.scrollTop;
@@ -1206,7 +1207,7 @@ export default function MainApp() {
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
             <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
-              {view === 'search' && (
+              {view === 'search' && searchQuery && (
                 <>
                   <DetectedSearchHeader
                     searchQuery={searchQuery}
