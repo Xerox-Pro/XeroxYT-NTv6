@@ -1,42 +1,36 @@
 {
-  "version": 2,
-  "builds": [
+  "framework": "vite",
+  "buildCommand": "npx vite build",
+  "outputDirectory": "dist",
+  "rewrites": [
     {
-      "src": "server.ts",
-      "use": "@vercel/node"
+      "source": "/api/:path*",
+      "destination": "https://xeroxyt-v6-api.2026-97th.workers.dev/api/:path*"
     },
     {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/account/(.*)",
-      "dest": "https://xeroxyt-account.2026-97th.workers.dev/api/account/$1"
+      "source": "/stream/:path*",
+      "destination": "https://xeroxyt-v6-api.2026-97th.workers.dev/stream/:path*"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "/server.ts"
+      "source": "/360/:path*",
+      "destination": "https://xeroxyt-v6-api.2026-97th.workers.dev/360/:path*"
     },
     {
-      "src": "/(stream|360|edu|scratch-edu)/(.*)",
-      "dest": "/server.ts"
+      "source": "/edu/:path*",
+      "destination": "https://xeroxyt-v6-api.2026-97th.workers.dev/edu/:path*"
     },
     {
-      "handle": "filesystem"
+      "source": "/scratch-edu/:path*",
+      "destination": "https://xeroxyt-v6-api.2026-97th.workers.dev/scratch-edu/:path*"
     },
     {
-      "src": "/(.*)",
-      "dest": "/index.html"
+      "source": "/:path*",
+      "destination": "/index.html"
     }
   ],
   "headers": [
     {
-      "source": "/assets/(.*)",
+      "source": "/assets/:path*",
       "headers": [
         {
           "key": "Cache-Control",
@@ -45,20 +39,11 @@
       ]
     },
     {
-      "source": "/(favicon.*|apple-touch-icon.*|pwa-.*|manifest.webmanifest|robots.txt)",
+      "source": "/(sw.js|registerSW.js|index.html|manifest.webmanifest)",
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=86400, stale-while-revalidate=604800"
-        }
-      ]
-    },
-    {
-      "source": "/(.*)\\.(ico|png|jpg|jpeg|svg|webp|woff|woff2|ttf|eot)",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=2592000, stale-while-revalidate=604800"
+          "value": "no-cache, no-store, must-revalidate"
         }
       ]
     }
