@@ -1,3 +1,4 @@
+import CompactError from './CompactError';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
@@ -32,6 +33,7 @@ export default function ChannelPage({
   const [channelData, setChannelData] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retryAttempt, setRetryAttempt] = useState(0);
   
   const pathParts = location.pathname.split('/');
   const activeTab: TabType = (pathParts[3] as TabType) || 'home';
@@ -162,7 +164,7 @@ export default function ChannelPage({
     };
 
     fetchChannel();
-  }, [channelId]);
+  }, [channelId, retryAttempt]);
 
   // 並び替えの切り替え (最新順、人気順、古い順)
   const handleSortChange = async (sort: 'latest' | 'popular' | 'oldest') => {
@@ -254,10 +256,8 @@ export default function ChannelPage({
 
   if (loading) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] gap-3 bg-white text-gray-900">
-        <Loader2 className="w-10 h-10 text-red-600 animate-spin" />
-        <span className="text-sm font-medium text-gray-600">チャンネル情報を読み込み中...</span>
-      </div>
+      <CompactError error={error || '指定されたチャンネルの読み込みに失敗しました。'} message="チャンネルを読み込めませんでした。" onRetry={() => setRetryAttempt(n => n + 1)}/>
+
     );
   }
 

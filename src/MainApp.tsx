@@ -20,6 +20,7 @@ import VideoSkeleton from './components/VideoSkeleton';
 import TopProgressBar from './components/TopProgressBar';
 import VideoPlayer from './components/VideoPlayer';
 import FloatingPlayerFrame from './components/FloatingPlayerFrame';
+import CompactError from './components/CompactError';
 import ChannelPage from './components/ChannelPage';
 import SubscriptionsFeed from './components/SubscriptionsFeed';
 import LibraryPage from './components/LibraryPage';
@@ -1173,18 +1174,8 @@ export default function MainApp() {
           ) : loading ? (
             <VideoSkeleton count={12} />
           ) : error && videos.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[calc(100vh-8rem)] text-gray-700 gap-3 bg-white p-6 text-center">
-              <AlertCircle className="w-10 h-10 text-red-500" />
-              <p className="text-sm font-medium max-w-md">{error}</p>
-              <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
-                <button
-                  onClick={() => view === 'search' ? fetchSearch(searchQuery) : selectedCategory === 'すべて' ? fetchRecommendations(1) : fetchHomeCategory(selectedCategory, 1)}
-                  className="px-4 py-2 bg-black text-white text-xs font-bold rounded-lg hover:bg-gray-800 transition-colors"
-                >
-                  再読み込み
-                </button>
-              </div>
-            </div>
+            <CompactError error={error} onRetry={() => view === 'search' ? fetchSearch(searchQuery) : selectedCategory === 'すべて' ? fetchRecommendations(1) : fetchHomeCategory(selectedCategory, 1)}/>
+
           ) : (
             /* ホーム ＆ 検索結果 グリッド ＆ 無限スクロール */
             <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">

@@ -1,3 +1,4 @@
+import CompactError from './CompactError';
 import { createPlaybackTracker, learnInteraction, rankCandidates } from '../lib/localRecommendations.mjs';
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
@@ -70,7 +71,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected 
     {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(activeRef.current ? 'playVideo' : 'pauseVideo'); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
-    {error && <div className="shorts-embed-error" role="status"><p>{error}</p><button onClick={() => setAttempt(value => value + 1)} className="underline mt-3">再試行</button></div>}
+    {error && <div className="shorts-embed-error"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/></div>}
   </div>;
 }
 
@@ -262,7 +263,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       })}
       <div className={channelMode && videos.length ? "shorts-channel-status" : "shorts-feed-end"}>
         {(loading || !rankingReady) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
-        {error && <p role="status">{error}<button className="underline ml-2" onClick={() => setAttempt(value => value + 1)}>再試行</button></p>}
+        {error && <CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/>}
         {!loading && rankingReady && !error && (!channelMode || !videos.length) && <p>{videos.length ? 'ここまでのショートを表示しました。' : '表示できる縦長ショートがありません。'}</p>}
         {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>

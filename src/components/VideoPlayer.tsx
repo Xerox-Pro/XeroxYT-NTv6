@@ -442,6 +442,14 @@ export default function VideoPlayer({
     }
   }, []);
 
+  useEffect(() => {
+    if (!isMini) return;
+    window.dispatchEvent(new CustomEvent('xerox-mini-play-state', { detail: isPlaying }));
+    const toggle = () => { postPlayerCommand(isPlaying ? 'pauseVideo' : 'playVideo'); setIsPlaying(!isPlaying); };
+    window.addEventListener('xerox-mini-toggle-play', toggle);
+    return () => window.removeEventListener('xerox-mini-toggle-play', toggle);
+  }, [isMini, isPlaying, postPlayerCommand]);
+
   // Player API scripts are loaded through the same-origin Vercel proxy.
   useEffect(() => {
     if (!iframeUrl || !iframeRef.current) return;
