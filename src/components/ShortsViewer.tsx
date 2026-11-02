@@ -51,17 +51,19 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     let cancelled = false;
     const controller = new AbortController();
     setUrl(''); setError(''); detail.current = null;
-    Promise.all([
-      fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}&details=2`, { signal: controller.signal }),
-      getShortEmbedUrl(video.videoId, controller.signal),
-    ]).then(([metadata, rawUrl]) => {
-      if (cancelled) return;
+    detail.current = video;
+    // Metadata is optional: it must never block the device-built player.
+    fetchJSON(`/api/shorts/${video.videoId}?title=${encodeURIComponent(video.title.slice(0, 160))}&details=2`, {signal:controller.signal}).then(metadata=>{
+      if(!cancelled&&metadata){detail.current=metadata;callbacks.current.onMetadata(metadata);}
+    }).catch(()=>{});
+    getShortEmbedUrl(video.videoId,controller.signal).then(rawUrl=>{
+      if(cancelled)return;
       const parsed = new URL(rawUrl);
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
       parsed.searchParams.set('enablejsapi', '1');
       parsed.searchParams.set('origin', window.location.origin);
       for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: readMuted() ? '1' : '0', rel: '0', cc_load_policy: captionsRef.current ? '1' : '0' })) parsed.searchParams.set(key, value);
-      detail.current = metadata; callbacks.current.onMetadata(metadata); setUrl(parsed.toString());
+      setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
     return () => { cancelled = true; controller.abort(); };
   }, [video.videoId, video.title, attempt]);

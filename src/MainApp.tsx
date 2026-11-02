@@ -1,3 +1,6 @@
+import {queueIndex,shuffledQueue} from './lib/playlistPlayback.mjs';
+import {loadHomeSnapshot,saveHomeSnapshot} from './lib/homeSnapshot.mjs';
+import {useSiteAccount} from './components/AccountGate';
 import { learnSearch, learnInteraction, learnedTerms } from './lib/localRecommendations.mjs';
 import { prioritizeUnshown } from './lib/recommendationImpressions.mjs';
 import { saveShortsInterest, saveVideoHashtags } from './lib/shortsInterests.mjs';
@@ -50,6 +53,8 @@ export default function MainApp() {
   const [searchParams] = useSearchParams();
 
   const [view, setView] = useState<'home' | 'search' | 'video' | 'shorts' | 'channel' | 'subscriptions' | 'library' | 'history' | 'debug' | 'license'>('home');
+  const siteAccount = useSiteAccount();
+  const homeSnapshotScope = siteAccount?.username || 'guest';
   const [searchQuery, setSearchQuery] = useState('');
   const [mobileSearchFilter,setMobileSearchFilter] = useState('すべて');
   const [phoneLayout,setPhoneLayout] = useState(()=>window.innerWidth<=640);
@@ -235,6 +240,12 @@ export default function MainApp() {
   // 連続再生キュー
   const [currentPlaylistQueue, setCurrentPlaylistQueue] = useState<Video[]>([]);
   const [playlistQueueIndex, setPlaylistQueueIndex] = useState<number>(-1);
+  const [queueTitle,setQueueTitle]=useState('再生リスト');
+  const [originalQueue,setOriginalQueue]=useState<Video[]>([]);
+  const [queueShuffle,setQueueShuffle]=useState(false);
+  const [queueRepeat,setQueueRepeat]=useState<'off'|'all'|'one'>('off');
+  const [queuePanelOpen,setQueuePanelOpen]=useState(()=>window.innerWidth>640);
+
 
   // Subscriptions state saved in LocalStorage
   const [subscriptions, setSubscriptions] = useState<ChannelSubscription[]>(() => {
@@ -737,8 +748,10 @@ export default function MainApp() {
           uniqueMap.set(v.videoId, v);
         }
       });
-      const finalData = prioritizeUnshown(Array.from(uniqueMap.values()));
+      let finalData = prioritizeUnshown(Array.from(uniqueMap.values()));
+      if(!append&&!finalData.length)finalData=loadHomeSnapshot('すべて',homeSnapshotScope);
 
+      saveHomeSnapshot('すべて',finalData,homeSnapshotScope,append);
       if (append) {
         setVideos(prev => {
           const existingIds = new Set(prev.map(v => v.videoId));
@@ -752,7 +765,8 @@ export default function MainApp() {
     } catch (err: any) {
       if (currentReqId !== recommendationRequestIdRef.current) return;
       console.error(err);
-      if (!append) setError(err.message || 'エラーが発生しました');
+      setHasMore(false);
+      if (!append) {const saved=loadHomeSnapshot('すべて',homeSnapshotScope);if(saved.length){setVideos(saved);updateCache(saved);setError('');setHasMore(false);}else setError(err.message || 'エラーが発生しました');}
     } finally {
       if (currentReqId === recommendationRequestIdRef.current) {
         setLoading(false);
@@ -772,8 +786,10 @@ export default function MainApp() {
       const params = new URLSearchParams({ name: category, page: String(pageNum) });
       const data = await fetchJSON(`/api/home/category?${params}`);
       if (requestId !== recommendationRequestIdRef.current) return;
-      const result: Video[] = prioritizeUnshown(Array.isArray(data.videos) ? data.videos : []);
+      let result: Video[] = prioritizeUnshown(Array.isArray(data.videos) ? data.videos : []);
+      if(!append&&!result.length)result=loadHomeSnapshot(category,homeSnapshotScope);
       updateCache(result);
+      saveHomeSnapshot(category,result,homeSnapshotScope,append);
       if (append) {
         setVideos(previous => {
           const seen = new Set(previous.map(video => video.videoId));
@@ -783,7 +799,7 @@ export default function MainApp() {
       setHasMore(!!data.hasMore);
     } catch (error: any) {
       if (requestId === recommendationRequestIdRef.current) {
-        if (!append) setError(error.message || 'カテゴリのおすすめを取得できませんでした。');
+        if (!append) {const saved=loadHomeSnapshot(category,homeSnapshotScope);if(saved.length){setVideos(saved);updateCache(saved);setError('');}else setError(error.message || 'カテゴリのおすすめを取得できませんでした。');}
         setHasMore(false);
       }
     } finally {
@@ -1008,11 +1024,18 @@ export default function MainApp() {
     const video=currentPlaylistQueue[index];if(!video?.videoId)return;
     setPlaylistQueueIndex(index);updateCache([video]);navigate(`/watch?v=${encodeURIComponent(video.videoId)}`);
   };
+  const handleQueueShuffle = () => {
+    const current=currentPlaylistQueue[playlistQueueIndex]?.videoId;
+    const next=queueShuffle?[...originalQueue]:shuffledQueue(currentPlaylistQueue,current);
+    setCurrentPlaylistQueue(next);setPlaylistQueueIndex(Math.max(0,next.findIndex(video=>video.videoId===current)));setQueueShuffle(!queueShuffle);
+  };
+  const handlePlaylistEnded = () => {const next=queueIndex(playlistQueueIndex,currentPlaylistQueue.length,1,queueRepeat);if(next>=0)handleQueueSelect(next);};
   const handleStartPlaylistPlay = (playlist: UserPlaylist, shuffle=false, startVideoId?:string) => {
-    const queue=[...playlist.videos].filter(video=>video.videoId);
-    if(shuffle)for(let i=queue.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[queue[i],queue[j]]=[queue[j],queue[i]];}
+    const original=playlist.videos.filter(video=>video.videoId);
+    const queue=shuffle?shuffledQueue(original,startVideoId):[...original];
     if(!queue.length)return;
     const index=Math.max(0,startVideoId?queue.findIndex(video=>video.videoId===startVideoId):0);
+    setOriginalQueue(original);setQueueShuffle(shuffle);setQueueRepeat('off');setQueueTitle(playlist.title);setQueuePanelOpen(window.innerWidth>640);
     setCurrentPlaylistQueue(queue);setPlaylistQueueIndex(index);updateCache(queue);navigate(`/watch?v=${encodeURIComponent(queue[index].videoId)}`);
   };
 
@@ -1062,7 +1085,10 @@ export default function MainApp() {
                 playlistQueue={currentPlaylistQueue}
                 playlistQueueIndex={playlistQueueIndex}
                 onQueueSelect={handleQueueSelect}
-                onPlaybackEnded={() => handleQueueSelect(playlistQueueIndex+1)}
+                onPlaybackEnded={handlePlaylistEnded}
+                playlistTitle={queueTitle} playlistShuffle={queueShuffle} playlistRepeat={queueRepeat}
+                playlistPanelOpen={queuePanelOpen} onPlaylistPanelToggle={()=>setQueuePanelOpen(value=>!value)}
+                onPlaylistShuffle={handleQueueShuffle} onPlaylistRepeat={()=>setQueueRepeat(value=>value==='off'?'all':value==='all'?'one':'off')}
                 playlistId={currentPlaylistId || undefined}
                 initialVideo={videoCache[currentVideoId] || undefined}
                 onVideoSelect={(id, v) => handleVideoSelect(id, v)}

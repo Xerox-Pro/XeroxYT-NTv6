@@ -1,3 +1,5 @@
+import PlaylistQueuePanel from './PlaylistQueuePanel';
+import {getDeviceEmbedUrl} from '../lib/deviceEmbed.mjs';
 import RichText from './RichText';
 import {useAudioPreference,readMuted} from '../lib/audioPreference';
 import VideoDescriptionSheet from './VideoDescriptionSheet';
@@ -12,7 +14,7 @@ import {
   ThumbsUp, ThumbsDown, Share2, AlertCircle, Loader2,
   ChevronDown, ChevronUp, MessageSquare, Send, Plus,
   ListMusic, Radio, Users, DollarSign, Sparkles, History, Smile, RotateCw, X, Bell,
-  Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
+  Captions, Play, Pause, RotateCcw, Volume2, VolumeX, Maximize2, Minimize2, Gauge, SkipForward, FastForward, Keyboard,
   AlertTriangle
 } from 'lucide-react';
 import Avatar from './Avatar';
@@ -114,6 +116,7 @@ interface VideoPlayerProps {
   onOpenAddToPlaylist?: (video: Video) => void;
   onCacheVideo?: (video: Video) => void;
   watchHistory?: WatchHistoryItem[];
+  playlistTitle?:string;playlistShuffle?:boolean;playlistRepeat?:'off'|'all'|'one';playlistPanelOpen?:boolean;onPlaylistPanelToggle?:()=>void;onPlaylistShuffle?:()=>void;onPlaylistRepeat?:()=>void;
   playlistQueue?: Video[]; playlistQueueIndex?: number; onQueueSelect?: (index:number)=>void; onPlaybackEnded?: ()=>void;
 }
 
@@ -130,10 +133,12 @@ export default function VideoPlayer({
   onOpenAddToPlaylist,
   onCacheVideo,
   playlistQueue=[],playlistQueueIndex=-1,onQueueSelect,onPlaybackEnded,
+  playlistTitle='再生リスト',playlistShuffle=false,playlistRepeat='off',playlistPanelOpen=false,onPlaylistPanelToggle,onPlaylistShuffle,onPlaylistRepeat,
   watchHistory = []
 }: VideoPlayerProps) {
   const endedCallback=useRef(onPlaybackEnded);endedCallback.current=onPlaybackEnded;
   const endedHandled=useRef(false);
+  const repeatModeRef=useRef(playlistRepeat);repeatModeRef.current=!playlistQueue.length?'off':playlistRepeat==='all'&&playlistQueue.length===1?'one':playlistRepeat;
   useEffect(()=>{endedHandled.current=false;},[requestedVideoId]);
   // The embedded playlist can move to another video without replacing its iframe.
   const [videoId, setVideoId] = useState(requestedVideoId);
@@ -143,6 +148,8 @@ export default function VideoPlayer({
   const [isFallback, setIsFallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [captionsEnabled,setCaptionsEnabled] = useState(false);
+  const captionsEnabledRef=useRef(false);captionsEnabledRef.current=captionsEnabled;
   const [isRelatedOpen, setIsRelatedOpen] = useState(true);
   const [isDescExpanded, setIsDescExpanded] = useState(false);
   const [mobileDescription,setMobileDescription] = useState(() => window.innerWidth <= 640);
@@ -208,65 +215,12 @@ export default function VideoPlayer({
 
   // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
   const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
-    let params = `?rel=0&autoplay=1&mute=${readMuted() ? '1' : '0'}`;
-    try {
-      // 毎回最新の edu key (video_config.json) を取得 (キャッシュ無効化)
-      const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
-        cache: 'no-store'
-      });
-      if (res.ok) {
-        const text = await res.text();
-        let clean = text.replace(/&amp;/g, '&').trim();
-        if (clean.startsWith('{')) {
-          try {
-            const config = JSON.parse(clean);
-            if (config && typeof config.params === 'string') {
-              clean = config.params.replace(/&amp;/g, '&').trim();
-            }
-          } catch {}
-        }
-        const qIdx = clean.indexOf('?');
-        if (qIdx !== -1) {
-          clean = clean.substring(qIdx);
-        } else if (clean && !clean.startsWith('&')) {
-          clean = '?' + clean;
-        }
-        if (clean) {
-          params = clean;
-        }
-      } else {
-        throw new Error(`HTTP ${res.status}`);
-      }
-    } catch (err) {
-      console.warn('Direct edu key fetch failed, using backend fallback:', err);
-      try {
-        const fallbackRes = await fetch(`/api/edu/${id}`);
-        if (fallbackRes.ok) {
-          const rawFallbackUrl = await fallbackRes.text();
-          const parsedFallback = new URL(rawFallbackUrl, window.location.origin);
-          parsedFallback.searchParams.set('autoplay', '1');
-          parsedFallback.searchParams.set('mute', '1');
-          parsedFallback.searchParams.set('playsinline', '1');
-          parsedFallback.searchParams.set('enablejsapi', '1');
-          parsedFallback.searchParams.set('origin', window.location.origin);
-          const fallbackUrl = parsedFallback.toString();
-          if (playlist) {
-            return `${fallbackUrl}&list=${playlist}`;
-          }
-          return fallbackUrl;
-        }
-      } catch (fallbackErr) {
-        console.error('Fallback fetch failed:', fallbackErr);
-      }
-    }
-
-    let url = `https://www.youtubeeducation.com/embed/${id}${params}`;
-    if (playlist) {
-      url += url.includes('?') ? `&list=${playlist}` : `?list=${playlist}`;
-    }
+    const url = await getDeviceEmbedUrl(id);
     const apiUrl = new URL(url);
+    apiUrl.searchParams.set('cc_load_policy','0');
     apiUrl.searchParams.set('autoplay', '1');
-    apiUrl.searchParams.set('mute', '1');
+    apiUrl.searchParams.set('mute', readMuted() ? '1' : '0');
+    if(playlist)apiUrl.searchParams.set('list',playlist);
     apiUrl.searchParams.set('playsinline', '1');
     apiUrl.searchParams.set('enablejsapi', '1');
     apiUrl.searchParams.set('origin', window.location.origin);
@@ -452,6 +406,7 @@ export default function VideoPlayer({
     }
   }, []);
 
+  const handlePlaybackEnd=useCallback(()=>{if(endedHandled.current)return;endedHandled.current=true;if(repeatModeRef.current==='one'){postPlayerCommand('seekTo',[0,true]);postPlayerCommand('playVideo');}else endedCallback.current?.();},[postPlayerCommand]);
   useEffect(() => {
     if (!isMini) return;
     window.dispatchEvent(new CustomEvent('xerox-mini-play-state', { detail: isPlaying }));
@@ -460,9 +415,16 @@ export default function VideoPlayer({
     return () => window.removeEventListener('xerox-mini-toggle-play', toggle);
   }, [isMini, isPlaying, postPlayerCommand]);
 
+  useEffect(()=>{
+    if(!iframeUrl)return;
+    const sync=()=>{if(captionsEnabled){postPlayerCommand('loadModule',['captions']);postPlayerCommand('setOption',['captions','reload',true]);}else{postPlayerCommand('setOption',['captions','track',{}]);postPlayerCommand('unloadModule',['captions']);}};
+    sync();const timers=[400,1200,2400].map(delay=>window.setTimeout(sync,delay));return()=>timers.forEach(clearTimeout);
+  },[captionsEnabled,iframeUrl,postPlayerCommand]);
+  useEffect(()=>setCaptionsEnabled(false),[requestedVideoId]);
+
   useEffect(() => { isMutedRef.current = isMuted; postPlayerCommand(isMuted ? 'mute' : 'unMute'); }, [isMuted,postPlayerCommand]);
 
-  // Player API scripts are loaded through the same-origin Vercel proxy.
+  // Load the public player API directly on this device.
   useEffect(() => {
     if (!iframeUrl || !iframeRef.current) return;
     isMutedRef.current = readMuted();
@@ -473,10 +435,11 @@ export default function VideoPlayer({
       if (cancelled || !iframeRef.current) return;
       const player = new YT.Player(iframeRef.current, {
         events: {
-          onStateChange: (event:any) => { if(cancelled)return;playerStateRef.current=event.data;setIsPlaying(event.data===1);if(event.data===0&&!endedHandled.current){endedHandled.current=true;endedCallback.current?.();} },
+          onStateChange: (event:any) => { if(cancelled)return;playerStateRef.current=event.data;setIsPlaying(event.data===1);if(event.data===1)endedHandled.current=false;if(event.data===0)handlePlaybackEnd(); },
           onReady: () => {
             if (cancelled) return;
             apiPlayerRef.current = player;
+            if(captionsEnabledRef.current){postPlayerCommand('loadModule',['captions']);postPlayerCommand('setOption',['captions','reload',true]);}else{postPlayerCommand('setOption',['captions','track',{}]);postPlayerCommand('unloadModule',['captions']);}
             if (isMutedRef.current) player.mute();
             else player.unMute();
             player.playVideo();
@@ -521,7 +484,7 @@ export default function VideoPlayer({
             durationRef.current = data.info.duration;
           }
           if (typeof data.info.playerState === 'number') {
-            if(data.info.playerState===0&&!endedHandled.current){endedHandled.current=true;endedCallback.current?.();}
+            if(data.info.playerState===1)endedHandled.current=false;if(data.info.playerState===0)handlePlaybackEnd();
             playerStateRef.current = data.info.playerState;
             setIsPlaying(data.info.playerState === 1);
           }
@@ -562,6 +525,7 @@ export default function VideoPlayer({
 
   // iframe 読み込み完了時に listening 要求を送信
   const handleIframeLoad = () => {
+    if(captionsEnabledRef.current){postPlayerCommand('loadModule',['captions']);postPlayerCommand('setOption',['captions','reload',true]);}else{postPlayerCommand('setOption',['captions','track',{}]);postPlayerCommand('unloadModule',['captions']);}
     try {
       if (iframeRef.current && iframeRef.current.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
@@ -1301,6 +1265,7 @@ export default function VideoPlayer({
 
             {/* アクションボタン */}
             <div className="watch-actions flex items-center gap-2 overflow-x-auto no-scrollbar">
+              <button type="button" aria-label={captionsEnabled?'字幕をオフにする':'字幕をオンにする'} aria-pressed={captionsEnabled} title={captionsEnabled?'字幕オン':'字幕オフ'} onClick={()=>setCaptionsEnabled(value=>!value)} className={`shrink-0 grid place-items-center rounded-full border p-2 ${captionsEnabled?'bg-gray-900 text-white border-gray-900':'bg-gray-100 text-gray-800 border-gray-200'}`}><Captions size={18}/></button>
               <div className="flex items-center bg-gray-100 rounded-full p-0.5 border border-gray-200 shadow-2xs">
                 <motion.button
                   onClick={handleLike}
@@ -1417,7 +1382,7 @@ export default function VideoPlayer({
 
           {isDescExpanded && !mobileDescription && <section className="video-description-inline" aria-label="動画の概要"><strong>{formatNumberJP(activeVideo.viewCount)} 回視聴 · {activeVideo.publishedText}</strong><div className="whitespace-pre-wrap break-words mt-3">{renderTextWithMentionsAndLinks(activeVideo.description || '')}</div><button type="button" className="description-channel-inline" onClick={handleAuthorClick}>{activeVideo.author} · チャンネルを表示</button><button type="button" className="description-collapse" onClick={()=>setIsDescExpanded(false)}>一部を表示</button></section>}
 
-          {playlistQueue.length>0&&playlistQueueIndex>=0&&<section className="watch-playlist-queue" aria-label="再生リストの連続再生"><div><strong>再生リスト</strong><span>{playlistQueueIndex+1} / {playlistQueue.length}</span><button type="button" disabled={playlistQueueIndex===0} onClick={()=>onQueueSelect?.(playlistQueueIndex-1)}>前へ</button><button type="button" disabled={playlistQueueIndex>=playlistQueue.length-1} onClick={()=>onQueueSelect?.(playlistQueueIndex+1)}>次へ</button></div><details><summary>再生順を表示</summary>{playlistQueue.map((video,index)=><button type="button" key={`${video.videoId}-${index}`} aria-current={index===playlistQueueIndex?'true':undefined} onClick={()=>onQueueSelect?.(index)}>{index+1}. {video.title}</button>)}</details></section>}
+
 
           {/* コメントセクション */}
           <button className="mobile-comments-preview" onClick={() => setMobileCommentsOpen(true)} aria-label="コメントを開く">
@@ -1525,6 +1490,8 @@ export default function VideoPlayer({
 
       {/* 関連動画 & ライブチャット サイドバー */}
       <div className="w-full md:w-[320px] lg:w-[380px] xl:w-[400px] shrink-0 flex flex-col gap-3">
+        {!isMini&&playlistQueue.length>0&&<PlaylistQueuePanel videos={playlistQueue} index={playlistQueueIndex} title={playlistTitle} open={playlistPanelOpen} shuffle={playlistShuffle} repeat={playlistRepeat} onToggle={()=>onPlaylistPanelToggle?.()} onSelect={index=>onQueueSelect?.(index)} onShuffle={()=>onPlaylistShuffle?.()} onRepeat={()=>onPlaylistRepeat?.()}/>}
+
         {hasChat && (
           <LiveChat videoId={videoId} getCurrentTime={() => currentTimeRef.current} isTimeAvailable={() => playerTimeReceivedRef.current} onSeek={(seconds) => { currentTimeRef.current = seconds; postPlayerCommand('seekTo', [seconds, true]); }} />
         )}

@@ -1,0 +1,2 @@
+export function queueIndex(index,length,direction,repeat='off'){const next=index+direction;if(next>=0&&next<length)return next;return repeat==='all'&&length?(next+length)%length:-1;}
+export function shuffledQueue(videos,currentId,random=Math.random){const current=videos.find(v=>v.videoId===currentId);const rest=videos.filter(v=>v!==current);for(let i=rest.length-1;i>0;i--){const j=Math.floor(random()*(i+1));[rest[i],rest[j]]=[rest[j],rest[i]];}return current?[current,...rest]:rest;}

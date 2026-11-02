@@ -22,14 +22,15 @@ test('shorts can leave for home, search, history, channel and browser back durin
  const video=(id,source)=>({videoId:id,title:`clip ${id}`,author:'channel',authorAvatar:'https://yt3.ggpht.com/avatar.jpg',isShort:true,shortSource:source,viewCount:20,lengthSeconds:20,publishedText:'',videoThumbnails:[{url:'https://i.ytimg.com/frame.jpg'}]});
  const regular=[video('abcdefghijk','youtube'),video('lmnopqrstuv','youtube')];
  const ranking=[video('12345678901','ranking'),video('23456789012','ranking')];
+ let metadataUnavailable=false;
  globalThis.fetch=async url=>{
   const address=String(url);
   if(address.startsWith('https://shorts-ranking.com/latest.json?'))return new Response(JSON.stringify({items:ranking.map(v=>({video_id:v.videoId,title:v.title,channel_title:v.author,views:v.viewCount})),updated_at:'today'}));
   if(address.startsWith('/api/channel/'))return new Response(JSON.stringify({videos:[ranking[0],...regular],hasMore:false}));
   if(address.startsWith('/api/shorts?'))return new Response(JSON.stringify({videos:regular,hasMore:false}));
-  if(address.startsWith('/api/edu/'))return new Response(`https://www.youtubeeducation.com/embed/${address.split('/').pop()}?controls=0`);
+  if(address.startsWith('https://raw.githubusercontent.com/'))return Response.json({params:'?key=test&controls=0'});
   if(address.includes('/comments'))return new Response(JSON.stringify({comments:[],hasMore:false}));
-  if(address.startsWith('/api/shorts/')){const id=address.split('/').pop().split('?')[0];return new Response(JSON.stringify({...video(id,'youtube'),aspectVerified:true,likeCount:10,description:'概要テスト'}));}
+  if(address.startsWith('/api/shorts/')){if(metadataUnavailable)throw new Error('Metadata offline');const id=address.split('/').pop().split('?')[0];return new Response(JSON.stringify({...video(id,'youtube'),aspectVerified:true,likeCount:10,description:'概要テスト'}));}
   throw new Error(`unexpected fetch ${address}`);
  };
  const settle=async()=>{await act(async()=>{await new Promise(resolve=>setTimeout(resolve,10));});};
@@ -43,11 +44,12 @@ test('shorts can leave for home, search, history, channel and browser back durin
  }
  try{
   for(const target of ['/','/results','/feed/history','/channel/test','back']){
+   metadataUnavailable=target==='/results';
    localStorage.clear();
    const root=createRoot(document.getElementById('root'));
    await act(async()=>root.render(React.createElement(MemoryRouter,{initialEntries:['/','/shorts/abcdefghijk?source=home'],initialIndex:1},React.createElement(Harness))));
    await settle();await settle();
-   const frame=document.querySelector('iframe');assert.ok(frame,'native iframe appears');
+   const frame=document.querySelector('iframe');assert.ok(frame,'native iframe appears even when metadata is unavailable');assert.equal(document.querySelector('.shorts-embed-error'),null);
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
    for(const embed of document.querySelectorAll('.shorts-iframe')) {
      const url = new URL(embed.src);
@@ -64,7 +66,7 @@ test('shorts can leave for home, search, history, channel and browser back durin
    assert.ok(document.querySelector('.shorts-frame .shorts-overlay-title'), 'title is layered inside video frame');
    assert.ok(document.querySelector('.shorts-frame .shorts-channel img'), 'channel avatar is layered inside video frame');
    await act(async()=>document.querySelector('[aria-label="概要欄を表示"]').click());
-   assert.ok(document.querySelector('.shorts-description').textContent.includes('概要テスト'));
+   if(!metadataUnavailable)assert.ok(document.querySelector('.shorts-description').textContent.includes('概要テスト'));
    await act(async()=>document.querySelector('[aria-label="パネルを閉じる"]').click());
    if(target==='/') {
     Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});

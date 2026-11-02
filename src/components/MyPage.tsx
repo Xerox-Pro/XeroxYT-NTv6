@@ -45,6 +45,8 @@ export default function MyPage(props: Props) {
     else dialog.current?.close();
   }, [editing]);
   const history = props.history.slice(0, 12);
+  if(library)return <div className="playlist-workspace"><button type="button" className="my-back" onClick={()=>setLibrary(false)}><ArrowLeft size={18}/>マイページに戻る</button>{isValidElement<{initialPlaylistId?:string;initialCreate?:boolean}>(props.children)?cloneElement(props.children,{initialPlaylistId:activeList,initialCreate:createList,key:activeList}):props.children}</div>;
+
   return (
     <div className="my-page">
       {debugOpen && <RecommendationDebug onClose={() => setDebugOpen(false)}/>}

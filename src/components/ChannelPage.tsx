@@ -288,7 +288,7 @@ export default function ChannelPage({
   };
 
   return (
-    <div className="flex-1 max-w-[1600px] w-full mx-auto pb-16 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)] select-none">
+    <div className="channel-page min-w-0 flex-1 max-w-[1600px] w-full mx-auto pb-16 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)] select-none">
       {/* 1. チャンネルバナー */}
       {channelData.banner ? (
         <div className="w-full h-32 sm:h-48 md:h-60 overflow-hidden bg-gray-100 relative">
@@ -311,7 +311,7 @@ export default function ChannelPage({
             className="w-20 h-20 sm:w-28 sm:h-28 text-3xl shadow-md ring-2 ring-gray-100 shrink-0"
           />
 
-          <div className="flex-1 min-w-0">
+          <div className="channel-profile-text flex-1 min-w-0">
             <div className="flex items-center gap-2 mb-1">
               <h1 className="text-2xl sm:text-3xl font-extrabold text-gray-900 tracking-tight truncate">
                 {channelData.title}
@@ -319,7 +319,7 @@ export default function ChannelPage({
               <span className="w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center text-white text-[9px] font-bold shrink-0">✓</span>
             </div>
             
-            <p className="text-xs sm:text-sm text-gray-600 font-normal mb-2 flex items-center gap-2">
+            <p className="channel-profile-meta text-xs sm:text-sm text-gray-600 font-normal mb-2 flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className="font-semibold text-gray-800">@{channelData.title.replace(/\s+/g, '').toLowerCase()}</span>
               <span>•</span>
               <span>{channelData.subCountText || '登録者数 非公開'}</span>
@@ -357,7 +357,7 @@ export default function ChannelPage({
 
       {/* 3. タブナビゲーション */}
       <div className="px-4 md:px-12 border-b border-gray-200 bg-white sticky top-14 z-20">
-        <div className="flex items-center gap-6 md:gap-8 overflow-x-auto no-scrollbar">
+        <div className="channel-tab-scroll min-w-0 w-full flex items-center gap-6 md:gap-8 overflow-x-auto no-scrollbar">
           {tabs.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -413,10 +413,10 @@ export default function ChannelPage({
           <div className="flex flex-col gap-10">
             {/* フィーチャード動画 */}
             {channelData.featuredVideo && (
-              <div className="flex flex-col md:flex-row gap-6 p-4 sm:p-6 bg-gray-50 rounded-2xl border border-gray-200/80 hover:border-gray-300 transition-all duration-300">
+              <div className="channel-featured min-w-0 flex flex-col md:flex-row gap-6 p-4 sm:p-6 bg-gray-50 rounded-2xl border border-gray-200/80 hover:border-gray-300 transition-all duration-300">
                 <div 
                   onClick={() => onVideoSelect(channelData.featuredVideo!.videoId)}
-                  className="w-full md:w-[480px] aspect-video rounded-xl overflow-hidden bg-black relative group cursor-pointer shrink-0 shadow-sm"
+                  className="w-full md:w-[480px] md:max-w-[55%] aspect-video rounded-xl overflow-hidden bg-black relative group cursor-pointer shrink-0 shadow-sm"
                 >
                   <img
                     src={channelData.featuredVideo.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${channelData.featuredVideo.videoId}/hqdefault.jpg`}

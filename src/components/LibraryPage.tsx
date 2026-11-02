@@ -1,3 +1,4 @@
+import PlaylistDetail from './PlaylistDetail';
 import VideoThumbnail from "./VideoThumbnail";
 import React, { useState, useEffect } from 'react';
 import { UserPlaylist, Video, WatchHistoryItem } from '../types';
@@ -50,7 +51,8 @@ export default function LibraryPage({
     initialPlaylistId || (playlists.length > 0 ? playlists[0].id : null)
   );
 
-  useEffect(() => {if(initialPlaylistId)setSelectedPlaylistId(initialPlaylistId);},[initialPlaylistId]);
+  const [detailOpen,setDetailOpen]=useState(!!initialPlaylistId);
+  useEffect(() => {if(initialPlaylistId){setSelectedPlaylistId(initialPlaylistId);setDetailOpen(true);}},[initialPlaylistId]);
   // モーダル・入力状態
   const [isCreating, setIsCreating] = useState(initialCreate);
   const [isImporting, setIsImporting] = useState(false);
@@ -77,7 +79,7 @@ export default function LibraryPage({
     e.preventDefault();
     if (!createTitle.trim()) return;
     const newId = onCreatePlaylist(createTitle.trim(), createDesc.trim());
-    setSelectedPlaylistId(newId);
+    setSelectedPlaylistId(newId);setDetailOpen(true);
     setCreateTitle('');
     setCreateDesc('');
     setIsCreating(false);
@@ -119,7 +121,7 @@ export default function LibraryPage({
             onAddVideosToPlaylist(createdId, newPl.videos);
           }
         }
-        setSelectedPlaylistId(newPl.id);
+        setSelectedPlaylistId(newPl.id);setDetailOpen(true);
         setImportUrl('');
         setIsImporting(false);
       } else {
@@ -179,6 +181,11 @@ export default function LibraryPage({
         v.author.toLowerCase().includes(playlistSearchQuery.toLowerCase())
       )
     : [];
+
+  if(!isCreating&&!isImporting){
+    if(detailOpen&&selectedPlaylist)return <PlaylistDetail playlist={selectedPlaylist} onBack={()=>setDetailOpen(false)} onPlay={onStartPlaylistPlay} onUpdate={onUpdatePlaylistInfo} onRemove={onRemoveVideoFromPlaylist} onMove={onReorderPlaylistVideo} onDelete={onDeletePlaylist} onDedupe={handleRemoveDuplicates}/>;
+    return <section className="playlist-overview"><header><h1>再生リスト</h1><div><button type="button" onClick={()=>setIsImporting(true)}><Download size={18}/>取り込む</button><button type="button" onClick={()=>setIsCreating(true)}><Plus size={18}/>新規作成</button></div></header><div className="playlist-overview-grid">{playlists.map(playlist=><button type="button" key={playlist.id} className="playlist-overview-card" onClick={()=>{setSelectedPlaylistId(playlist.id);setDetailOpen(true);}}><div className="playlist-overview-cover">{playlist.videos[0]?<VideoThumbnail videoId={playlist.videos[0].videoId} fallback={playlist.videos[0].videoThumbnails?.[0]?.url} sizes="(max-width:640px) 48vw, 320px"/>:<ListVideo size={36}/>}<span><ListVideo size={15}/>{playlist.videos.length} 本の動画</span></div><strong>{playlist.title}</strong><small>非公開 · 再生リスト</small></button>)}</div>{!playlists.length&&<p className="playlist-empty">再生リストを作って、お気に入りの動画を保存できます。</p>}{youtubePlaylists.length>0&&<section className="playlist-auth-section"><h2>YouTubeの再生リスト</h2><div className="playlist-overview-grid">{youtubePlaylists.map(pl=><button type="button" className="playlist-overview-card" key={pl.id} onClick={()=>{setImportUrl(pl.id);setIsImporting(true);}}><div className="playlist-overview-cover">{pl.thumbnails&&<img src={pl.thumbnails} alt="" className="w-full h-full object-cover"/>}<span><ListVideo size={15}/>{pl.videoCount} 本</span></div><strong>{pl.title}</strong><small>取り込んで開く</small></button>)}</div></section>}{watchLaterVideos.length>0&&<section className="playlist-auth-section"><h2>あとで見る</h2>{watchLaterVideos.map((video,index)=><button type="button" key={`${video.videoId}-${index}`} className="playlist-row-play playlist-auth-row" onClick={()=>onStartPlaylistPlay({id:'yt-watch-later',title:'あとで見る',videos:watchLaterVideos,createdAt:0,updatedAt:0},false,video.videoId)}><div className="playlist-row-thumbnail"><VideoThumbnail videoId={video.videoId} fallback={video.videoThumbnails?.[0]?.url} sizes="160px"/></div><div className="playlist-row-text"><h4>{video.title}</h4><p>{video.author}</p></div></button>)}</section>}</section>;
+  }
 
   return (
     <div className="playlist-library flex-1 max-w-[1600px] w-full mx-auto p-4 sm:p-6 lg:p-8 bg-white min-h-screen text-gray-900">

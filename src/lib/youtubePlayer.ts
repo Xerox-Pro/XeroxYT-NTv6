@@ -13,7 +13,7 @@ export function loadPlayerApi(): Promise<any> {
       resolve(win.YT);
     };
     const script = document.createElement('script');
-    script.src = '/api/youtube-player/iframe-api';
+    script.src = 'https://www.youtube.com/iframe_api';
     script.onerror = () => { window.clearTimeout(timeout); reject(new Error('Player API unavailable')); };
     document.head.appendChild(script);
   }).catch(error => { playerApiPromise = null; throw error; });

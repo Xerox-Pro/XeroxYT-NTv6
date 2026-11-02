@@ -22,12 +22,7 @@ test('embed requests share work, survive one cancellation, and reuse a successfu
   } finally { globalThis.fetch = previous; }
 });
 
-test('failed embeds are not cached and can be retried', async () => {
-  const previous = globalThis.fetch; let calls = 0;
-  globalThis.fetch = async url => { calls++; if (String(url).includes('raw.githubusercontent.com')) return new Response('', {status: 503}); return calls === 2 ? new Response('', {status: 503}) : new Response('https://www.youtube.com/embed/lmnopqrstuv'); };
-  try {
-    await assert.rejects(getShortEmbedUrl('lmnopqrstuv'));
-    assert.match(await getShortEmbedUrl('lmnopqrstuv'), /youtube/);
-    assert.equal(calls, 4);
-  } finally { globalThis.fetch = previous; }
+test('configuration failure uses a device fallback without calling our server', async () => {
+ const previous=globalThis.fetch;const calls=[];globalThis.fetch=async url=>{calls.push(String(url));return new Response('',{status:503});};
+ try{assert.match(await getShortEmbedUrl('lmnopqrstuv'),/youtube/);assert.equal(calls.length,1);assert.ok(calls.every(url=>url.startsWith('https://raw.githubusercontent.com/')));}finally{globalThis.fetch=previous;}
 });

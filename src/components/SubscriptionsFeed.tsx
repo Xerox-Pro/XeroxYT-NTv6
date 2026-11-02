@@ -1,3 +1,4 @@
+import {sortSubscriptions} from '../lib/subscriptionOrder.mjs';
 import {fetchSubscriptionPage} from '../lib/subscriptionFeed.mjs';
 import VideoThumbnail from './VideoThumbnail';
 import VideoSkeleton from './VideoSkeleton';
@@ -55,7 +56,7 @@ export default function SubscriptionsFeed({
         setFeedVideos(prev => {
           const existingIds = new Set(prev.map(v => v.videoId));
           const newVideos = (data || []).filter(v => v && v.videoId && !existingIds.has(v.videoId));
-          return [...prev, ...newVideos];
+          return sortSubscriptions([...prev, ...newVideos]);
         });
       } else {
         setFeedVideos(data || []);
