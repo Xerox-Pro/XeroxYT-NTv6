@@ -1,3 +1,4 @@
+import {learnedTerms} from '../lib/localRecommendations.mjs';
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
@@ -11,6 +12,8 @@ interface CategoryBarProps {
 const fallbackCategories = ['音楽', 'ゲーム', 'アニメ', 'ライブ', '料理', 'エンタメ', 'ニュース', 'テクノロジー', '教育', 'スポーツ'];
 
 export default function CategoryBar({ onSelectCategory, selectedCategory = 'すべて' }: CategoryBarProps) {
+  const [interests,setInterests] = useState<string[]>(() => learnedTerms(false,8));
+  useEffect(() => { const update=()=>setInterests(learnedTerms(false,8));window.addEventListener('xerox-recommendations-changed',update);window.addEventListener('storage',update);return()=>{window.removeEventListener('xerox-recommendations-changed',update);window.removeEventListener('storage',update);}; },[]);
   const [active, setActive] = useState(selectedCategory);
   const [homeCategories, setHomeCategories] = useState<string[]>(fallbackCategories);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
@@ -29,7 +32,7 @@ export default function CategoryBar({ onSelectCategory, selectedCategory = 'す�
     return () => { cancelled = true; };
   }, []);
 
-  const categories = Array.from(new Set(['すべて', ...homeCategories]));
+  const categories = Array.from(new Set(['すべて', ...interests.filter(term => !/^\d+$/.test(term)), ...homeCategories]));
 
   useEffect(() => {
     setActive(selectedCategory || 'すべて');

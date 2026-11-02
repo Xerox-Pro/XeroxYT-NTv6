@@ -1,10 +1,11 @@
+import {useAudioPreference,readMuted} from '../lib/audioPreference';
 import CompactError from './CompactError';
 import { createPlaybackTracker, learnInteraction, rankCandidates } from '../lib/localRecommendations.mjs';
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ArrowLeft, Search, Share2, MoreVertical, Captions } from 'lucide-react';
+import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ArrowLeft, Search, Share2, MoreVertical, Captions, Volume2, VolumeX } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
@@ -17,6 +18,7 @@ import { ShortsContext, shortsQuery } from './ShortsShelf';
 function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected, captionsEnabled }: {
   video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode; active: boolean; isSelected: () => boolean; captionsEnabled: boolean;
 }) {
+  const [muted] = useAudioPreference();
   const [url, setUrl] = useState('');
   const [error, setError] = useState('');
   const [attempt, setAttempt] = useState(0);
@@ -36,6 +38,12 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     const timers = [400, 1200, 2400].map(delay => window.setTimeout(syncCaptions, delay));
     return () => timers.forEach(clearTimeout);
   }, [captionsEnabled, url]);
+  useEffect(() => {
+    if (!url) return;
+    const sync = () => command(readMuted() ? 'mute' : 'unMute');
+    sync(); const timers = [300, 1000].map(delay => window.setTimeout(sync,delay));
+    return () => timers.forEach(clearTimeout);
+  }, [muted,url]);
   const record = () => { if (activeRef.current && detail.current && !recorded.current) { recorded.current = true; callbacks.current.onRecord(detail.current); } };
   const callbacks = useRef({ onRecord, onMetadata, isSelected }); callbacks.current = { onRecord, onMetadata, isSelected };
   useEffect(() => {
@@ -51,7 +59,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
       parsed.searchParams.set('enablejsapi', '1');
       parsed.searchParams.set('origin', window.location.origin);
-      for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: '1', rel: '0', cc_load_policy: captionsRef.current ? '1' : '0' })) parsed.searchParams.set(key, value);
+      for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: readMuted() ? '1' : '0', rel: '0', cc_load_policy: captionsRef.current ? '1' : '0' })) parsed.searchParams.set(key, value);
       detail.current = metadata; callbacks.current.onMetadata(metadata); setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
     return () => { cancelled = true; controller.abort(); };
@@ -79,7 +87,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     return () => { window.removeEventListener('message', receive); tracker.finish(callbacks.current.isSelected() ? 'leave' : 'skip'); };
   }, [active, url, video.videoId]);
   return <div className="shorts-frame">
-    {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(activeRef.current ? 'playVideo' : 'pauseVideo'); syncCaptions(); record(); }} />}
+    {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(readMuted() ? 'mute' : 'unMute'); command(activeRef.current ? 'playVideo' : 'pauseVideo'); syncCaptions(); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
     {error && <div className="shorts-embed-error"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/></div>}
@@ -114,6 +122,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [rankingError, setRankingError] = useState('');
   const [rankingUpdated, setRankingUpdated] = useState('');
   const [activeId, setActiveId] = useState(initialId || '');
+  const [muted,setMuted] = useAudioPreference();
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
   const [metadata, setMetadata] = useState<Record<string, Video>>({});
   const [loading, setLoading] = useState(true);
@@ -263,6 +272,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
             <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
             <button aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} title="字幕がある動画で切り替え" className={captionsEnabled ? 'shorts-captions-on' : ''} onClick={() => setCaptionsEnabled(value => !value)}><span><Captions size={25}/></span><small>{captionsEnabled ? '字幕オン' : '字幕オフ'}</small></button>
+            <button aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}><span>{muted ? <VolumeX size={25}/> : <Volume2 size={25}/>}</span><small>{muted ? '音声オン' : '音声オフ'}</small></button>
             <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
             <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>

@@ -1,3 +1,4 @@
+import VideoThumbnail from "./VideoThumbnail";
 import React, { useState } from 'react';
 import { UserPlaylist, Video, WatchHistoryItem } from '../types';
 import { localAI } from '../lib/intelligence';
@@ -333,11 +334,7 @@ export default function LibraryPage({
                 className="group cursor-pointer flex flex-col gap-1.5"
               >
                 <div className="aspect-video rounded-xl overflow-hidden bg-gray-100 relative border border-gray-200">
-                  <img
-                    src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
-                    alt={item.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                  />
+                  <VideoThumbnail videoId={item.videoId} fallback={item.thumbnailUrl} sizes="240px"/>
                 </div>
                 <h4 className="text-xs font-bold text-gray-900 line-clamp-1 group-hover:text-red-600 transition-colors">
                   {item.title}
@@ -560,11 +557,7 @@ export default function LibraryPage({
                           >
                             <span className="text-xs font-bold text-gray-400 w-6 text-center shrink-0">{idx + 1}</span>
                             <div className="w-20 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
-                              <img
-                                src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
-                                alt={video.title}
-                                className="w-full h-full object-cover"
-                              />
+                              <VideoThumbnail videoId={video.videoId} fallback={video.videoThumbnails?.[0]?.url} sizes="160px"/>
                             </div>
                             <div className="flex-1 min-w-0">
                               <h4 className="text-xs font-bold text-gray-900 truncate group-hover:text-red-600 transition-colors">
@@ -643,11 +636,7 @@ export default function LibraryPage({
                       className="flex items-center gap-3 p-2 bg-white rounded-xl border border-gray-100 hover:border-gray-200 cursor-pointer transition-all hover:shadow-xs group"
                     >
                       <div className="w-16 aspect-video rounded-lg overflow-hidden bg-gray-100 relative shrink-0 border border-gray-100">
-                        <img
-                          src={video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${video.videoId}/hqdefault.jpg`}
-                          alt={video.title}
-                          className="w-full h-full object-cover"
-                        />
+                        <VideoThumbnail videoId={video.videoId} fallback={video.videoThumbnails?.[0]?.url} sizes="160px"/>
                       </div>
                       <div className="flex-1 min-w-0">
                         <h4 className="text-xs font-bold text-gray-900 truncate group-hover:text-red-600 transition-colors">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { batchAvatarFetcher, BatchResponseItem } from '../utils/batchAvatarFetcher';
 
 interface AvatarProps {
@@ -16,6 +16,9 @@ const bgColors = [
 ];
 
 export default function Avatar({ src, name, channelId, videoId, className = "w-8 h-8 text-sm", onResolved }: AvatarProps) {
+  const resolvedCallback = useRef(onResolved); resolvedCallback.current = onResolved;
+  const failedUrls = useRef(new Set<string>());
+  const [refresh,setRefresh] = useState(0);
   const [imgError, setImgError] = useState(false);
   const [fetchedAvatar, setFetchedAvatar] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -24,36 +27,32 @@ export default function Avatar({ src, name, channelId, videoId, className = "w-8
     setImgError(false);
     setFetchedAvatar(null);
     setLoaded(false);
-  }, [src]);
+    setRefresh(0); failedUrls.current.clear();
+  }, [src, channelId, videoId, name]);
 
   const cleanName = (name || 'User').split(/、他|\s*and\s+\d+\s+other/i)[0].trim() || 'User';
 
-  // If src is missing, is a placeholder, or errored out, trigger batch avatar fetcher
   useEffect(() => {
-    const isPlaceholder = !src || src.includes('ui-avatars.com');
-    if ((isPlaceholder || imgError) && !fetchedAvatar) {
-      const searchAuthor = cleanName && cleanName !== 'チャンネル' && cleanName !== 'Unknown' ? cleanName : name;
-      const key = channelId || videoId || searchAuthor;
-      if (key) {
-        batchAvatarFetcher.register(
-          { key, channelId, videoId, author: searchAuthor },
-          (data) => {
-            if (data.authorAvatar) {
-              setFetchedAvatar(data.authorAvatar);
-              setImgError(false);
-            }
-            if (onResolved) {
-              onResolved(data);
-            }
-          }
-        );
-      }
-    }
-  }, [src, imgError, fetchedAvatar, channelId, videoId, name, cleanName, onResolved]);
+    const placeholder = !src || src.includes('ui-avatars.com');
+    if (!(placeholder || imgError) || refresh > 2) return;
+    const searchAuthor = cleanName !== 'チャンネル' && cleanName !== 'Unknown' ? cleanName : name;
+    const identity = channelId || videoId || searchAuthor;
+    if (!identity) return;
+    const key = `${identity}${refresh ? ':refresh:'+refresh : ''}`;
+    let active = true;
+    const cancel = batchAvatarFetcher.register({key,channelId,videoId,author:searchAuthor}, data => {
+      if (!active) return;
+      const avatar = data.authorAvatar?.startsWith('//') ? 'https:'+data.authorAvatar : data.authorAvatar;
+      if (avatar && !failedUrls.current.has(avatar) && !avatar.includes('ui-avatars.com')) { setFetchedAvatar(avatar);setImgError(false);setLoaded(false); }
+      resolvedCallback.current?.(data);
+    });
+    return () => {active=false;cancel();};
+  }, [src,imgError,refresh,channelId,videoId,name,cleanName]);
 
   // Do not show ui-avatars as a real image if we haven't resolved yet
   const isServerPlaceholder = src && src.includes('ui-avatars.com');
-  const activeSrc = fetchedAvatar || (!isServerPlaceholder ? src : null);
+  const rawSrc = fetchedAvatar || (!isServerPlaceholder ? src : null);
+  const activeSrc = rawSrc?.startsWith('//') ? 'https:'+rawSrc : rawSrc;
   const displayName = cleanName;
   const initial = displayName.charAt(0).toUpperCase();
   
@@ -72,7 +71,7 @@ export default function Avatar({ src, name, channelId, videoId, className = "w-8
         alt={displayName}
         referrerPolicy="no-referrer"
         onLoad={() => setLoaded(true)}
-        onError={() => setImgError(true)}
+        onError={() => { if(activeSrc)failedUrls.current.add(activeSrc);setImgError(true);setFetchedAvatar(null);setRefresh(n=>n+1);batchAvatarFetcher.invalidate(channelId || videoId || cleanName); }}
         className={`${className} rounded-full object-cover shrink-0 transition-opacity duration-200 ${
           loaded ? 'opacity-100' : 'opacity-80'
         }`}

@@ -28,7 +28,7 @@ export function learnInteraction(video, kind, value=1) {
   const strength=(kind==='unlike'||kind==='unsave')?0:kind==='watch'?Math.max(-2,Math.min(2,(old?.score||0)+weight)):weight;
   rows[id]={score:strength,at:Date.now(),terms:features(video),channel:String(video.authorId||video.author||'').slice(0,160)};
   model[lane]=Object.fromEntries(Object.entries(rows).sort((a,b)=>b[1].at-a[1].at).slice(0,500));
-  try{localStorage.setItem(storeKey(),JSON.stringify(model));}catch{}
+  try{localStorage.setItem(storeKey(),JSON.stringify(model));if(typeof window!=='undefined')window.dispatchEvent(new window.Event('xerox-recommendations-changed'));}catch{}
 }
 export function learnSearch(query) {
   const text=String(query||'').trim().slice(0,160);

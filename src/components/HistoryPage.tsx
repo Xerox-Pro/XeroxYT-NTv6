@@ -1,3 +1,4 @@
+import VideoThumbnail from "./VideoThumbnail";
 import React, { useState } from 'react';
 import { WatchHistoryItem, Video } from '../types';
 import { History, Trash2, Video as VideoIcon, Zap, Layers, Play } from 'lucide-react';
@@ -98,11 +99,7 @@ export default function HistoryPage({
                 onClick={() => onVideoSelect(item.videoId)}
                 className="aspect-[9/16] rounded-xl overflow-hidden bg-gray-100 relative shadow-2xs border border-gray-200"
               >
-                <img
-                  src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
-                  alt={item.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+                <VideoThumbnail videoId={item.videoId} fallback={item.thumbnailUrl} sizes="240px"/>
                 <div className="absolute inset-x-0 bottom-0 p-2.5 bg-gradient-to-t from-black/80 to-transparent text-white">
                   <p className="text-xs font-bold line-clamp-2 leading-snug">{item.title}</p>
                   <span className="text-[10px] text-gray-300 mt-1 block truncate">
@@ -134,11 +131,7 @@ export default function HistoryPage({
                 onClick={() => onVideoSelect(item.videoId)}
                 className="w-full sm:w-60 aspect-video rounded-xl overflow-hidden bg-gray-100 relative cursor-pointer shrink-0 border border-gray-200 shadow-2xs group-hover:shadow-sm"
               >
-                <img
-                  src={item.thumbnailUrl || `https://i.ytimg.com/vi/${item.videoId}/hqdefault.jpg`}
-                  alt={item.title}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                />
+                <VideoThumbnail videoId={item.videoId} fallback={item.thumbnailUrl} sizes="240px"/>
                 {item.lengthSeconds && (
                   <div className="absolute bottom-1.5 right-1.5 bg-black/80 text-white text-[10px] font-bold px-1.5 py-0.5 rounded">
                     {formatDuration(item.lengthSeconds)}

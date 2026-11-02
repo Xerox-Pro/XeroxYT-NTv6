@@ -1,3 +1,5 @@
+import VideoThumbnail from "./VideoThumbnail";
+import RecommendationDebug from "./RecommendationDebug";
 import TransportSettings from "./TransportSettings";
 import {
   useEffect,
@@ -29,6 +31,7 @@ export default function MyPage(props: Props) {
   const profile = useDeviceProfile(),
     account = useSiteAccount(),
     navigate = useNavigate();
+  const [debugOpen,setDebugOpen] = useState(false);
   const [activeList, setActiveList] = useState<string | undefined>();
   const [editing, setEditing] = useState(false),
     [library, setLibrary] = useState(false),
@@ -43,6 +46,7 @@ export default function MyPage(props: Props) {
   const history = props.history.slice(0, 12);
   return (
     <div className="my-page">
+      {debugOpen && <RecommendationDebug onClose={() => setDebugOpen(false)}/>}
       <section className="my-profile">
         <div className="my-profile-avatar">
           {profile.avatar ? (
@@ -79,6 +83,7 @@ export default function MyPage(props: Props) {
         </button>
       </section>
       <div className="my-account-actions">
+        <button type="button" onClick={() => setDebugOpen(true)}>おすすめ分析（デバッグ）</button>
         <button onClick={() => void account?.logout()}>
           <LogOut size={16} />
           アカウントを切り替える
@@ -107,14 +112,8 @@ export default function MyPage(props: Props) {
                     }
                   >
                     <div className="my-card-image">
-                      <img
-                        src={
-                          v.thumbnailUrl ||
-                          `https://i.ytimg.com/vi/${v.videoId}/hqdefault.jpg`
-                        }
-                        alt=""
-                        loading="lazy"
-                      />
+                      <VideoThumbnail videoId={v.videoId} fallback={v.thumbnailUrl} sizes="230px"/>
+
                       {v.type === "short" ? (
                         <span>ショート</span>
                       ) : (
@@ -153,11 +152,7 @@ export default function MyPage(props: Props) {
                 >
                   <div className="my-card-image">
                     {pl.videos[0]?.videoThumbnails?.[0]?.url ? (
-                      <img
-                        src={pl.videos[0].videoThumbnails[0].url}
-                        alt=""
-                        loading="lazy"
-                      />
+                      <VideoThumbnail videoId={pl.videos[0].videoId} fallback={pl.videos[0].videoThumbnails[0].url} sizes="230px"/>
                     ) : (
                       <ListVideo size={32} />
                     )}

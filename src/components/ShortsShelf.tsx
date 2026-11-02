@@ -1,3 +1,6 @@
+import VideoThumbnail from "./VideoThumbnail";
+import ShortsSkeleton from './ShortsSkeleton';
+import CompactError from './CompactError';
 import { rankCandidates } from '../lib/localRecommendations.mjs';
 import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
@@ -58,12 +61,12 @@ export default function ShortsShelf({ context, onSelect }: {
       <h2 className="flex items-center gap-2 text-lg font-bold"><Zap className="text-red-600 fill-red-600" size={22} />ショート</h2>
       <Link to={`/shorts?${query}`} className="flex items-center text-xs font-semibold text-gray-600 hover:text-black">すべて見る<ChevronRight size={16} /></Link>
     </div>
-    {loading ? <div className="flex items-center gap-2 text-sm text-gray-500 py-8"><Loader2 size={18} className="animate-spin" />ショートを読み込み中…</div>
-      : error ? <div className="text-sm text-gray-500"><p role="status">{error}</p><button className="mt-2 underline" onClick={() => setAttempt(a => a + 1)}>再試行</button></div>
+    {loading ? <ShortsSkeleton/>
+      : error ? <CompactError error={error} onRetry={() => setAttempt(a => a + 1)}/>
       : <div className="shorts-shelf-scroll" ref={shelf}>
         {videos.map(video => <button key={video.videoId} data-short-id={video.videoId} className="shorts-cover text-left group" onClick={() => onSelect(video, context)}>
           <div className="aspect-[9/16] overflow-hidden rounded-xl bg-gray-100 relative">
-            <img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover transition-transform group-hover:scale-105" />
+            <VideoThumbnail videoId={video.videoId} fallback={video.videoThumbnails[0]?.url} sizes="220px" className="transition-transform group-hover:scale-105"/>
             <span className="absolute bottom-2 left-2 text-[11px] bg-black/60 text-white rounded px-2 py-1">ショート</span>
           </div>
           <h3 className="font-semibold text-sm mt-2 line-clamp-2 leading-snug">{video.title}</h3>

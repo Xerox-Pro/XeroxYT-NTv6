@@ -1,9 +1,9 @@
 import React from 'react';
 
-export default function VideoSkeleton({ count = 12 }: { count?: number }) {
+export default function VideoSkeleton({ count = 12, gridClassName = "mobile-video-grid grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10" }: { count?: number; gridClassName?: string }) {
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-[1600px] mx-auto bg-white min-h-screen">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-10">
+      <div className={gridClassName}>
         {Array.from({ length: count }).map((_, i) => (
           <div key={i} className="flex flex-col select-none">
             <div className="w-full aspect-video rounded-xl animate-shimmer"></div>

@@ -1,3 +1,4 @@
+import {useAudioPreference,readMuted} from '../lib/audioPreference';
 import VideoDescriptionSheet from './VideoDescriptionSheet';
 import { createPlaybackTracker, learnInteraction } from '../lib/localRecommendations.mjs';
 import { prioritizeUnshown } from '../lib/recommendationImpressions.mjs';
@@ -199,7 +200,7 @@ export default function VideoPlayer({
 
   // 動画を開いた時・再読み込み時に毎回 video_config.json から params を取得してプレイヤーURLを構築
   const getEduPlayerUrl = async (id: string, playlist?: string): Promise<string> => {
-    let params = '?rel=0&autoplay=1&mute=1';
+    let params = `?rel=0&autoplay=1&mute=${readMuted() ? '1' : '0'}`;
     try {
       // 毎回最新の edu key (video_config.json) を取得 (キャッシュ無効化)
       const res = await fetch(`https://raw.githubusercontent.com/siawaseok3/wakame/master/video_config.json?t=${Date.now()}`, {
@@ -393,8 +394,9 @@ export default function VideoPlayer({
   const durationRef = useRef<number>(0);
   const playerStateRef = useRef<number>(1); // 1: playing, 2: paused
   const volumeRef = useRef<number>(100);
-  const isMutedRef = useRef<boolean>(true);
-  const [isMuted, setIsMuted] = useState(true);
+  const [isMuted, setIsMuted] = useAudioPreference();
+  const isMutedRef = useRef<boolean>(isMuted);
+  isMutedRef.current = isMuted;
   const playbackRateRef = useRef<number>(1);
 
   // HUD オーバーレイ状態 (K, J, L などのキー操作フィードバック)
@@ -450,10 +452,12 @@ export default function VideoPlayer({
     return () => window.removeEventListener('xerox-mini-toggle-play', toggle);
   }, [isMini, isPlaying, postPlayerCommand]);
 
+  useEffect(() => { isMutedRef.current = isMuted; postPlayerCommand(isMuted ? 'mute' : 'unMute'); }, [isMuted,postPlayerCommand]);
+
   // Player API scripts are loaded through the same-origin Vercel proxy.
   useEffect(() => {
     if (!iframeUrl || !iframeRef.current) return;
-    isMutedRef.current = true; setIsMuted(true);
+    isMutedRef.current = readMuted();
     let cancelled = false;
     let poll: ReturnType<typeof setInterval> | undefined;
     playerTimeReceivedRef.current = false;
@@ -515,8 +519,8 @@ export default function VideoPlayer({
             volumeRef.current = data.info.volume;
           }
           if (typeof data.info.muted === 'boolean') {
-            isMutedRef.current = data.info.muted;
-            setIsMuted(data.info.muted);
+            // Keep the explicit user preference when a newly loaded iframe reports its default mute state.
+            if (data.info.muted !== isMutedRef.current) postPlayerCommand(isMutedRef.current ? 'mute' : 'unMute');
           }
           if (typeof data.info.playbackRate === 'number') {
             playbackRateRef.current = data.info.playbackRate;

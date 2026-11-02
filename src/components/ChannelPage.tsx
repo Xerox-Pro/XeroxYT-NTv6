@@ -1,3 +1,5 @@
+import VideoSkeleton from './VideoSkeleton';
+import ShortsSkeleton from './ShortsSkeleton';
 import CompactError from './CompactError';
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -255,20 +257,10 @@ export default function ChannelPage({
   }, [activeTab, loadMore]);
 
   if (loading) {
-    return (
-      <CompactError error={error || '指定されたチャンネルの読み込みに失敗しました。'} message="チャンネルを読み込めませんでした。" onRetry={() => setRetryAttempt(n => n + 1)}/>
-
-    );
+    return activeTab === 'shorts' ? <div className="p-4 sm:p-6"><ShortsSkeleton grid/></div> : <VideoSkeleton gridClassName="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-x-4 gap-y-8"/>;
   }
-
   if (error || !channelData) {
-    return (
-      <div className="flex-1 flex flex-col items-center justify-center min-h-[60vh] p-4 text-center bg-white text-gray-900">
-        <AlertCircle className="w-12 h-12 text-red-500 mb-3" />
-        <h3 className="text-lg font-bold text-gray-900 mb-1">チャンネルが見つかりませんでした</h3>
-        <p className="text-sm text-gray-600 max-w-md mb-4">{error || '指定されたチャンネルの読み込みに失敗しました。'}</p>
-      </div>
-    );
+    return <CompactError error={error || 'チャンネルを読み込めませんでした。'} message="チャンネルを読み込めませんでした。" onRetry={() => setRetryAttempt(n => n + 1)}/>;
   }
 
   const isSubscribed = subscriptions.some(s => s.id === channelData.id || s.title === channelData.title);
