@@ -165,7 +165,7 @@ export default function MainApp() {
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [location.pathname, location.search, view, currentVideoId, selectedChannelId, selectedCategory]);
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     if (view === 'search' && searchQuery) {
