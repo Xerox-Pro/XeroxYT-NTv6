@@ -78,3 +78,11 @@ API_BASE_URL_3=https://your-api.onrender.com
 直接接続にはAPI側のCORS許可と、そのAPIのホストで有効な認証Cookieが必要です。ブラウザーの第三者Cookie制限やSameSite制約で401になる場合も、自動モードならサーバー経由に切り替わります。認証を弱めて直接接続を強制することはしません。ログイン・履歴保存などは常に同一サイト経由で行います。ゲートウェイが公開する接続設定にはAPIのOriginだけを含み、環境変数全体や秘密鍵は返しません。
 
 APIはCloudflare Workersに加え、Vercel / RenderのNode.jsにも対応しています。Node版の認証は同じD1へのREST接続、またはCloudflare APIを認証元にする設定が必要です。詳細はAPIリポジトリを参照してください。
+
+### APIへの接続元制限
+
+APIの `ALLOWED_ORIGINS` にフロントURLを登録し、**フロントのVercel環境変数とAPIサーバーの両方に、同じ `API_SHARED_SECRET` をSecretとして設定**してください。`VITE_` を付けず、ブラウザーには公開しません。共有鍵がなければVercelビルドで設定不足を案内します。
+
+API側は標準で `REQUIRE_PROXY_SECRET=true`。許可外のOrigin、Originなし、共有鍵がないリクエストを拒否します。ゲートウェイが許可Originと共有鍵をサーバー間通信に付けます。Originだけでは偽装可能なので、共有鍵の確認も併用します。
+
+秘密鍵必須時はブラウザーからの直接取得は403となり、自動モードはサーバー経由に切り替わります。API側で明示的にREQUIRE_PROXY_SECRET=falseにした場合だけ直接取得を試せますが、Originだけでは他サーバーを完全には制限できません。

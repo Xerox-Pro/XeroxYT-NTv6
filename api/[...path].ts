@@ -54,6 +54,8 @@ export default async function handler(request: Request) {
     const value = request.headers.get(name);
     if (value) headers.set(name, value);
   }
+  if (!headers.has('Origin')) headers.set('Origin', url.origin);
+  if (process.env.API_SHARED_SECRET) headers.set('Authorization','Bearer '+process.env.API_SHARED_SECRET);
   const readonly = ["GET", "HEAD"].includes(request.method);
   const body = readonly ? undefined : await request.arrayBuffer();
   if (body && body.byteLength > 1024 * 1024)

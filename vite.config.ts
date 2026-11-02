@@ -103,7 +103,7 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      proxy: apiBase ? Object.fromEntries(['/api','/stream','/360','/edu','/scratch-edu'].map(prefix=>[prefix,{target:apiBase,changeOrigin:true}])) : undefined,
+      proxy: apiBase ? Object.fromEntries(['/api','/stream','/360','/edu','/scratch-edu'].map(prefix=>[prefix,{target:apiBase,changeOrigin:true,configure:(proxy)=>{proxy.on('proxyReq',(outgoing,request)=>{if(localEnv.API_SHARED_SECRET)outgoing.setHeader('Authorization','Bearer '+localEnv.API_SHARED_SECRET);if(!request.headers.origin)outgoing.setHeader('Origin','http://localhost:5173');});}}])) : undefined,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
