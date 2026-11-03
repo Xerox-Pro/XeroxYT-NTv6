@@ -72,9 +72,9 @@ export default {
       }
       if (request.method === 'PUT' && path === '/history') {
         const body = await request.json();
-        if (!Array.isArray(body.history) || body.history.length > 100 || !Number.isSafeInteger(body.version) || body.version < 0) return json({ error: '履歴データが不正です。' }, 400);
+        if (!Array.isArray(body.history) || body.history.length > 400 || !Number.isSafeInteger(body.version) || body.version < 0) return json({ error: '履歴データが不正です。' }, 400);
         const data = JSON.stringify(body.history);
-        if (Buffer.byteLength(data) > 100000) return json({ error: '履歴データが大きすぎます。' }, 413);
+        if (Buffer.byteLength(data) > 600000) return json({ error: '履歴データが大きすぎます。' }, 413);
         await env.DB.prepare("INSERT OR IGNORE INTO history (user_id, data, version) VALUES (?, '[]', 0)").bind(user.id).run();
         const result = await env.DB.prepare('UPDATE history SET data = ?, version = version + 1 WHERE user_id = ? AND version = ?').bind(data, user.id, body.version).run();
         if (!result.meta.changes) return json({ error: '履歴が別の端末で更新されました。', conflict: true }, 409);
