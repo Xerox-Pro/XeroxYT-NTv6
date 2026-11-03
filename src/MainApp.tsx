@@ -240,6 +240,7 @@ export default function MainApp() {
   // 連続再生キュー
   const [currentPlaylistQueue, setCurrentPlaylistQueue] = useState<Video[]>([]);
   const [playlistQueueIndex, setPlaylistQueueIndex] = useState<number>(-1);
+  const [activeQueueListId,setActiveQueueListId]=useState('');
   const [queueTitle,setQueueTitle]=useState('再生リスト');
   const [originalQueue,setOriginalQueue]=useState<Video[]>([]);
   const [queueShuffle,setQueueShuffle]=useState(false);
@@ -421,7 +422,7 @@ export default function MainApp() {
         timestamp: Date.now(),
         type: 'video'
       };
-      return [newItem, ...filtered].slice(0, 50);
+      return [newItem, ...filtered].slice(0, 200);
     });
   };
 
@@ -438,7 +439,7 @@ export default function MainApp() {
         timestamp: Date.now(),
         type: 'short'
       };
-      return [newItem, ...filtered].slice(0, 50);
+      return [newItem, ...filtered].slice(0, 200);
     });
   };
 
@@ -1022,7 +1023,7 @@ export default function MainApp() {
 
   const handleQueueSelect = (index:number) => {
     const video=currentPlaylistQueue[index];if(!video?.videoId)return;
-    setPlaylistQueueIndex(index);updateCache([video]);navigate(`/watch?v=${encodeURIComponent(video.videoId)}`);
+    setPlaylistQueueIndex(index);updateCache([video]);navigate(`/watch?v=${encodeURIComponent(video.videoId)}&list=${encodeURIComponent(activeQueueListId)}`);
   };
   const handleQueueShuffle = () => {
     const current=currentPlaylistQueue[playlistQueueIndex]?.videoId;
@@ -1035,8 +1036,8 @@ export default function MainApp() {
     const queue=shuffle?shuffledQueue(original,startVideoId):[...original];
     if(!queue.length)return;
     const index=Math.max(0,startVideoId?queue.findIndex(video=>video.videoId===startVideoId):0);
-    setOriginalQueue(original);setQueueShuffle(shuffle);setQueueRepeat('off');setQueueTitle(playlist.title);setQueuePanelOpen(window.innerWidth>640);
-    setCurrentPlaylistQueue(queue);setPlaylistQueueIndex(index);updateCache(queue);navigate(`/watch?v=${encodeURIComponent(queue[index].videoId)}`);
+    setActiveQueueListId(playlist.id);setOriginalQueue(original);setQueueShuffle(shuffle);setQueueRepeat('off');setQueueTitle(playlist.title);setQueuePanelOpen(window.innerWidth>640);
+    setCurrentPlaylistQueue(queue);setPlaylistQueueIndex(index);updateCache(queue);navigate(`/watch?v=${encodeURIComponent(queue[index].videoId)}&list=${encodeURIComponent(playlist.id)}`);
   };
 
   const resultVideos = videos.filter(video => {if(video.isShort)return false;if(view!=='search'||!phoneLayout)return true;if(mobileSearchFilter==='ショート')return false;const watched=watchHistory.some(item=>item.videoId===video.videoId);return mobileSearchFilter==='未視聴'?!watched:mobileSearchFilter==='視聴済み'?watched:true;});
