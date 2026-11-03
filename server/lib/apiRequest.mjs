@@ -2,7 +2,11 @@
 // Media streams only time out while connecting; their bodies may run longer.
 export async function fetchApiResponse(url, options, timeoutMs, fetcher = fetch) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(new DOMException('API response timed out', 'TimeoutError')), timeoutMs);
+  // DOMException is not constructible in every Edge runtime. Abort with a
+  // regular Error whose name is stable across Node and Edge environments.
+  const timeoutError = new Error('API response timed out');
+  timeoutError.name = 'TimeoutError';
+  const timer = setTimeout(() => controller.abort(timeoutError), Math.max(1, timeoutMs));
   const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
   try {
     const response = await fetcher(url, {...options, signal});
