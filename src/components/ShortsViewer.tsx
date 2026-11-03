@@ -138,6 +138,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [likes, setLikes] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('xerox_shorts_likes_v1') || '{}'); } catch { return {}; } });
   const scroll = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
+  const touchStartY = useRef<number | null>(null);
   const activeRef = useRef(activeId); activeRef.current = activeId;
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
@@ -239,9 +240,22 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     setRegular(adapt); setRanking(adapt);
   }, [activeId]);
   const move = useCallback((direction: number) => {
+    // A failed next-page request must be recoverable with another downward
+    // swipe/scroll, including when there are no slides to scroll to yet.
+    if (direction > 0 && error && !pending.current && !loading) {
+      pending.current = true;
+      setAttempt(value => value + 1);
+      return;
+    }
     const index = videos.findIndex(video => video.videoId === activeRef.current);
     (scroll.current?.querySelectorAll<HTMLElement>('[data-short-id]')[index + direction])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [ids]);
+  }, [ids, error, loading]);
+  const retryOnScroll = (direction: number) => {
+    if (direction > 0 && error && !loading && !pending.current) {
+      pending.current = true;
+      setAttempt(value => value + 1);
+    }
+  };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && (commentsId || descriptionId)) { setCommentsId(''); setDescriptionId(''); return; }
@@ -252,7 +266,17 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   }, [move, commentsId, descriptionId]);
   return <section className={`shorts-viewer ${activeId && (commentsId === activeId || descriptionId === activeId) ? "shorts-has-panel" : ""}`} aria-label="ショート動画">
     <header className="shorts-mobile-header"><button aria-label="ショートを閉じる" onClick={()=>navigate('/')}><ArrowLeft size={27}/></button><div><button aria-label="検索" onClick={()=>navigate('/search')}><Search size={26}/></button><button aria-label="概要欄" onClick={()=>{setCommentsId('');setDescriptionId(activeId||'');}}><MoreVertical size={25}/></button></div></header>
-    <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え">
+    <div className="shorts-scroll" ref={scroll} tabIndex={0} aria-label="動画の外側を上下にスクロールして切り替え"
+      onWheel={event => retryOnScroll(event.deltaY)}
+      onTouchStart={event => { touchStartY.current = event.touches[0]?.clientY ?? null; }}
+      onTouchEnd={event => {
+        if (touchStartY.current !== null && event.changedTouches[0]) {
+          const delta = touchStartY.current - event.changedTouches[0].clientY;
+          if (delta > 40) retryOnScroll(delta);
+        }
+        touchStartY.current = null;
+      }}
+      onTouchCancel={() => { touchStartY.current = null; }}>
       {videos.map((video, index) => {
         const info = metadata[video.videoId!] || video;
         const active = video.videoId === activeId;
