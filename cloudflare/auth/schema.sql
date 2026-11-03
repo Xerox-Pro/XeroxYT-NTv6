@@ -21,3 +21,16 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   count INTEGER NOT NULL,
   window_start INTEGER NOT NULL
 );
+
+-- Unlimited per-user history: each unique video is a separate row.
+-- Keep the legacy history table for a non-destructive migration.
+CREATE TABLE IF NOT EXISTS history_items (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('video', 'short')),
+  video_id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  watched_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, type, video_id)
+);
+CREATE INDEX IF NOT EXISTS history_items_recent
+  ON history_items (user_id, type, watched_at DESC, video_id DESC);
