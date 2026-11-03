@@ -46,7 +46,7 @@ export default function FloatingPlayerFrame({mini,children,onRestore,onClose}:{m
    source.contentWindow?.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}),new URL(source.src).origin);
    pip.addEventListener('pagehide',()=>{
     pipWindow.current=null;
-    if(pipSource.current===source&&source.isConnected){source.contentWindow?.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}),new URL(source.src).origin);}
+    if(playing&&pipSource.current===source&&source.isConnected){source.contentWindow?.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}),new URL(source.src).origin);}
     pipSource.current=null;
    },{once:true});
   }catch{setPipError('PiPを開けませんでした。ブラウザの許可や対応状況を確認してください。');}
