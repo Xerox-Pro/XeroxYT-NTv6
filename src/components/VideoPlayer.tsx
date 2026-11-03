@@ -220,7 +220,7 @@ export default function VideoPlayer({
     apiUrl.searchParams.set('cc_load_policy','0');
     apiUrl.searchParams.set('autoplay', '1');
     apiUrl.searchParams.set('mute', readMuted() ? '1' : '0');
-    if(playlist)apiUrl.searchParams.set('list',playlist);
+    if (playlist && !playlist.startsWith('pl-')) apiUrl.searchParams.set('list',playlist);
     apiUrl.searchParams.set('playsinline', '1');
     apiUrl.searchParams.set('enablejsapi', '1');
     apiUrl.searchParams.set('origin', window.location.origin);

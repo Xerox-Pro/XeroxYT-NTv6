@@ -30,7 +30,7 @@ const merge = (...lists: Item[][]): Item[] => {
     if (!previous || Number(item.timestamp || 0) > Number(previous.timestamp || 0)) seen.set(`${item.type || 'video'}:${item.videoId}`, item);
   });
   const sorted = [...seen.values()].sort((a, b) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
-  return [...sorted.filter(item => item.type !== 'short').slice(0, 50), ...sorted.filter(item => item.type === 'short').slice(0, 50)];
+  return [...sorted.filter(item => item.type !== 'short').slice(0, 200), ...sorted.filter(item => item.type === 'short').slice(0, 200)];
 };
 async function api(path: string, method = 'GET', body?: unknown) {
   const response = await fetch(`/api/account${path}`, { method, credentials: 'same-origin', cache: 'no-store', ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }) });
@@ -104,7 +104,7 @@ export default function AccountGate({ children }: { children: ReactNode }) {
         try {
           const remote = await api('/history');
           cache.current = { history: merge(cache.current.history, remote.history), version: remote.version, dirty: true };
-          localStorage.setItem(LEGACY_KEY, JSON.stringify(cache.current.history)); persist(u);
+          localStorage.setItem(LEGACY_KEY, JSON.stringify(cache.current.history.filter(item => item.type !== 'short'))); localStorage.setItem('xerox_short_history', JSON.stringify(cache.current.history.filter(item => item.type === 'short'))); persist(u);
           window.dispatchEvent(new CustomEvent('xerox-history-remote', { detail: cache.current.history }));
           setMessage('他の端末の履歴と統合しました。更新すると表示に反映されます。');
         } catch { setMessage('履歴は端末に保存されています。同期を再試行します。'); }

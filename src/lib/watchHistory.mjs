@@ -5,7 +5,7 @@ export function splitWatchHistory(items = []) {
     const target = item.type === 'short' ? shorts : normal;
     if (!target.has(item.videoId) || (target.get(item.videoId).timestamp || 0) < (item.timestamp || 0)) target.set(item.videoId, item);
   }
-  const recent = map => [...map.values()].sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).slice(0,50);
+  const recent = map => [...map.values()].sort((a,b)=>(b.timestamp||0)-(a.timestamp||0)).slice(0,200);
   return { videos: recent(normal), shorts: recent(shorts) };
 }
 export function loadWatchHistories() {
