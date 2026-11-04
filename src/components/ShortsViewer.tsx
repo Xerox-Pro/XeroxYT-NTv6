@@ -360,7 +360,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
           <div className="shorts-side-actions">
             <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
-            <button aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} title="字幕がある動画で切り替え" className={captionsEnabled ? 'shorts-captions-on' : ''} onClick={() => setCaptionsEnabled(value => !value)}><span><Captions size={25}/></span><small>{captionsEnabled ? '字幕オン' : '字幕オフ'}</small></button>
             <button aria-label="その他の設定" aria-expanded={settingsId === video.videoId} onClick={() => setSettingsId(settingsId === video.videoId ? '' : video.videoId!)}><span><MoreVertical size={25}/></span><small>その他</small></button>
             <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
             <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
@@ -380,11 +379,30 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       </div>
     </div>
     {error && <div className="absolute bottom-9 left-1/2 z-20 w-[min(94%,480px)] -translate-x-1/2 pointer-events-auto touch-auto rounded-xl bg-white/95 shadow-lg [&_button]:min-h-11 [&_button]:min-w-16" role="alert"><CompactError error={error} onRetry={retryFeed}/></div>}
-    {settingsId === activeId && <div className="fixed right-4 bottom-20 z-[9999] w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 text-gray-900 shadow-2xl pointer-events-auto" role="group" aria-label="ショートの再生設定">
-      <div className="flex items-center justify-between mb-2"><strong className="text-sm">再生設定</strong><button type="button" aria-label="設定を閉じる" className="rounded-md p-2" onClick={() => setSettingsId('')}><X size={18}/></button></div>
-      <button type="button" className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}>{muted ? <VolumeX size={20}/> : <Volume2 size={20}/>} 音声 {muted ? 'オフ' : 'オン'}</button>
-      <button type="button" className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} onClick={() => setAutoScroll(value => !value)}><ChevronsDown size={20}/> 自動スクロール {autoScroll ? 'ON' : 'OFF'}</button>
-    </div>}
+    {settingsId === activeId && <>
+      <button type="button" aria-label="設定メニューの外側を閉じる" className="fixed inset-0 z-[9998] cursor-default bg-black/5" onClick={() => setSettingsId('')}/>
+      <div className="fixed right-4 bottom-16 z-[9999] w-[min(19rem,calc(100vw-2rem))] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 text-gray-900 shadow-xl" role="group" aria-label="ショートの再生設定">
+        <div className="mb-2 flex items-center justify-between border-b border-gray-100 px-2 pb-2">
+          <strong className="text-sm font-semibold">再生設定</strong>
+          <button type="button" aria-label="設定を閉じる" className="grid h-9 w-9 place-items-center rounded-full bg-gray-100 hover:bg-gray-200" onClick={() => setSettingsId('')}><X size={18}/></button>
+        </div>
+        <button type="button" className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-gray-100" aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gray-100">{muted ? <VolumeX size={19}/> : <Volume2 size={19}/>}</span>
+          <span className="flex-1 text-sm font-medium">音声</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${muted ? 'bg-gray-100 text-gray-600' : 'bg-gray-900 text-white'}`}>{muted ? 'OFF' : 'ON'}</span>
+        </button>
+        <button type="button" className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-gray-100" aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} onClick={() => setCaptionsEnabled(value => !value)}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gray-100"><Captions size={19}/></span>
+          <span className="flex-1 text-sm font-medium">字幕</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${captionsEnabled ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>{captionsEnabled ? 'ON' : 'OFF'}</span>
+        </button>
+        <button type="button" className="flex min-h-12 w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-gray-100" aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} onClick={() => setAutoScroll(value => !value)}>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gray-100"><ChevronsDown size={19}/></span>
+          <span className="flex-1 text-sm font-medium">自動スクロール</span>
+          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${autoScroll ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600'}`}>{autoScroll ? 'ON' : 'OFF'}</span>
+        </button>
+      </div>
+    </>}
     <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }
