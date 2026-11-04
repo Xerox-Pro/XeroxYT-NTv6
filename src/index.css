@@ -123,7 +123,10 @@ a, a:visited {
 .shorts-comment-disclosure { margin-top: 3px; }
 .shorts-comments-inline { display: flex; flex-direction: column; width: 100%; height: min(420px, 60dvh); background: white; border: 1px solid #e5e7eb; border-radius: 12px; }
 .shorts-feed-end { padding: 36px 20px; display: flex; align-items: center; flex-direction: column; font-size: 13px; color: #666; }
-.shorts-feed-source { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: 10px; line-height: 1.5; padding: 5px 12px; border-top: 1px solid #eee; color: #737373; }
+.shorts-feed-source { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: center; gap: 3px 12px; width: 100%; max-width: 100%; min-width: 0; font-size: 11px; line-height: 1.5; padding: 7px 12px; border-top: 1px solid #eee; color: #737373; text-align: center; }
+.shorts-feed-source > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+.shorts-feed-source strong { color: #444; font-variant-numeric: tabular-nums; }
+.shorts-feed-extra { display: inline; }
 .shorts-feed-source a { text-decoration: underline; }
 @media (max-height: 520px) { .shorts-frame { width: 160px; } }
 
@@ -219,6 +222,20 @@ a, a:visited {
   .mobile-video-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 18px; }
   .persistent-video-content > :nth-child(2) { min-width: 0; }
   .persistent-mini-player { width: min(320px, 38vw); }
+}
+/* iPad portrait/landscape, including large iPad Pro: fit the embed and action
+   rail inside the actual Shorts viewport with space for the source footer. */
+@media (min-width: 768px) and (max-width: 1400px) {
+  .shorts-viewer { max-width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+  .shorts-scroll { min-width: 0; }
+  .shorts-slide { height: 100%; min-height: 0; max-height: 100%; padding: 8px 12px; overflow: hidden; box-sizing: border-box; }
+  .shorts-player-row { width: min(100%, calc((100dvh - 220px) * 9 / 16 + 68px), 640px); max-height: calc(100dvh - 170px); min-width: 0; align-items: center; gap: 10px; }
+  .shorts-player-row .shorts-frame { min-width: 0; max-height: calc(100dvh - 180px); flex: 1 1 0%; }
+  .shorts-side-actions { min-width: 52px; max-height: calc(100dvh - 180px); gap: clamp(8px, 1.5dvh, 16px); padding-bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .shorts-side-actions button > span { width: 42px; height: 42px; }
+  .shorts-side-actions small { max-width: 62px; line-height: 1.3; overflow-wrap: anywhere; }
+  .shorts-overlay { padding: 8px 12px; }
+  .shorts-feed-source { grid-template-columns: minmax(0, 1fr); padding: 7px 12px; }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   .persistent-video-content { flex-direction: column; padding: 16px; }

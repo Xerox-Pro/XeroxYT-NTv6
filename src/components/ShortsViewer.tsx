@@ -403,6 +403,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         </button>
       </div>
     </>}
-    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
+    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span className="shorts-feed-ranking">{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> <strong>{ranking.length}件</strong><span className="shorts-feed-extra">（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</span></>}</span>}</footer>
   </section>;
 }
