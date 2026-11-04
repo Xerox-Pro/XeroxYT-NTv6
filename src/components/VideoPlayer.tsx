@@ -137,6 +137,10 @@ export default function VideoPlayer({
   watchHistory = []
 }: VideoPlayerProps) {
   const endedCallback=useRef(onPlaybackEnded);endedCallback.current=onPlaybackEnded;
+  const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('xerox_video_auto_next_v1') !== 'off'; } catch { return true; } });
+  const autoNextRef = useRef(autoNext); autoNextRef.current = autoNext;
+  const nextRelatedRef = useRef<Video | null>(null);
+  useEffect(() => { try { localStorage.setItem('xerox_video_auto_next_v1', autoNext ? 'on' : 'off'); } catch {} }, [autoNext]);
   const endedHandled=useRef(false);
   const repeatModeRef=useRef(playlistRepeat);repeatModeRef.current=!playlistQueue.length?'off':playlistRepeat==='all'&&playlistQueue.length===1?'one':playlistRepeat;
   useEffect(()=>{endedHandled.current=false;},[requestedVideoId]);
@@ -406,7 +410,7 @@ export default function VideoPlayer({
     }
   }, []);
 
-  const handlePlaybackEnd=useCallback(()=>{if(endedHandled.current)return;endedHandled.current=true;if(repeatModeRef.current==='one'){postPlayerCommand('seekTo',[0,true]);postPlayerCommand('playVideo');}else endedCallback.current?.();},[postPlayerCommand]);
+  const handlePlaybackEnd=useCallback(()=>{if(endedHandled.current)return;endedHandled.current=true;if(repeatModeRef.current==='one'){postPlayerCommand('seekTo',[0,true]);postPlayerCommand('playVideo');}else if (playlistRef.current || playlistQueue.length) endedCallback.current?.(); else if (autoNextRef.current && nextRelatedRef.current?.videoId) onVideoSelect(nextRelatedRef.current.videoId, nextRelatedRef.current);},[postPlayerCommand, onVideoSelect, playlistQueue.length]);
   useEffect(() => {
     if (!isMini) return;
     window.dispatchEvent(new CustomEvent('xerox-mini-play-state', { detail: isPlaying }));
@@ -1128,8 +1132,11 @@ export default function VideoPlayer({
     }
   }
 
+  nextRelatedRef.current = blendedRecommendations.find((item: Video) => item.videoId && item.videoId !== videoId && !item.isShort) || null;
+
   return (
     <div className="persistent-video-content flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
+      {!playlistId && !playlistQueue.length && !isMini && <div className="absolute right-4 top-2 z-10"><button type="button" role="switch" aria-checked={autoNext} aria-label="次の動画を自動再生" onClick={() => setAutoNext(value => !value)} className="rounded-full border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">自動再生 {autoNext ? 'ON' : 'OFF'}</button></div>}
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div
