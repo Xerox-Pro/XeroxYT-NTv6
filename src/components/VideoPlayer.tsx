@@ -1136,7 +1136,6 @@ export default function VideoPlayer({
 
   return (
     <div className="persistent-video-content flex-1 w-full max-w-[2400px] mx-auto p-2 sm:p-4 lg:p-6 flex flex-col md:flex-row gap-6 bg-white text-gray-900 min-h-[calc(100vh-3.5rem)]">
-      {!playlistId && !playlistQueue.length && !isMini && <div className="absolute right-4 top-2 z-10"><button type="button" role="switch" aria-checked={autoNext} aria-label="次の動画を自動再生" onClick={() => setAutoNext(value => !value)} className="rounded-full border border-gray-200 bg-white px-3 py-2 text-sm shadow-sm">自動再生 {autoNext ? 'ON' : 'OFF'}</button></div>}
       {/* メイン動画プレイヤーセクション */}
       <div className="flex-1 min-w-0 md:flex-[1_1_72%] lg:flex-[1_1_75%] xl:flex-[1_1_78%]">
         <div
@@ -1297,6 +1296,23 @@ export default function VideoPlayer({
                   <ThumbsDown size={15} className={`${isDisliked ? 'fill-blue-600 text-blue-600 animate-yt-pop' : ''}`} />
                 </motion.button>
               </div>
+
+              {/* 通常動画の自動再生は高評価などと同じ操作列に置く。 */}
+              {!playlistId && !playlistQueue.length && !isMini && (
+                <motion.button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoNext}
+                  aria-label="次の動画を自動再生"
+                  title={autoNext ? '動画終了後に次の関連動画を再生します' : '動画終了後に自動で次へ進みません'}
+                  onClick={() => setAutoNext(value => !value)}
+                  whileTap={{ scale: 0.92 }}
+                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors shadow-2xs ${autoNext ? 'bg-gray-900 text-white border-gray-900 hover:bg-gray-800' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-200'}`}
+                >
+                  <SkipForward size={16} />
+                  <span>自動再生 {autoNext ? 'ON' : 'OFF'}</span>
+                </motion.button>
+              )}
 
               <motion.button
                 aria-label="共有"
