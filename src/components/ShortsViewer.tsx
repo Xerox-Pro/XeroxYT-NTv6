@@ -124,7 +124,7 @@ function ShortEmbed({ video, onRecord, onMetadata, onEnded, autoScroll, children
     {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(readMuted() ? 'mute' : 'unMute'); command(activeRef.current ? 'playVideo' : 'pauseVideo'); syncCaptions(); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
-    {error && <div className="shorts-embed-error !z-10 pointer-events-auto touch-auto [&_button]:min-h-11 [&_button]:min-w-16"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/></div>}
+    {error && <div className="shorts-embed-error !z-10 pointer-events-auto touch-auto"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)} retryLabel="再読み込み"/></div>}
   </div>;
 }
 
@@ -376,7 +376,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>
     </div>
-    {error && <div className="absolute bottom-9 left-1/2 z-20 w-[min(94%,480px)] -translate-x-1/2 pointer-events-auto touch-auto rounded-xl bg-white/95 shadow-lg [&_button]:min-h-11 [&_button]:min-w-16" role="alert"><CompactError error={error} onRetry={retryFeed}/></div>}
+    {error && <div className="shorts-feed-retry" role="alert"><CompactError error={error} onRetry={retryFeed} retryLabel="再読み込み"/></div>}
     {settingsId === activeId && <>
       <button type="button" aria-label="設定メニューの外側を閉じる" className="fixed inset-0 z-[9998] cursor-default bg-black/5" onClick={() => setSettingsId('')}/>
       <div className="fixed right-4 bottom-16 z-[9999] w-[min(19rem,calc(100vw-2rem))] max-h-[calc(100dvh-5rem)] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3 text-gray-900 shadow-xl" role="group" aria-label="ショートの再生設定">

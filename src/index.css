@@ -270,6 +270,17 @@ a, a:visited {
 .floating-mini-player>.mini-player-resize{position:absolute;bottom:0;right:0;z-index:4;width:32px;height:32px;padding:0;touch-action:none;cursor:nwse-resize;display:grid;place-items:center;background:transparent}.mini-player-resize span{width:10px;height:10px;border-right:2px solid #fffa;border-bottom:2px solid #fffa;border-radius:0 0 3px;filter:drop-shadow(0 1px 2px #000)}
 
 .compact-error{margin:16px;padding:12px 14px;border:1px solid #e5e7eb;border-radius:12px;background:#fafafa;color:#6b7280;font-size:12px;text-align:left;max-width:640px}.compact-error-line{display:flex;gap:9px;align-items:center}.compact-error-line>svg{flex-shrink:0}.compact-error-line>p{flex:1;margin:0;line-height:1.5}.compact-error-line>button{flex-shrink:0;color:#2563eb;white-space:nowrap;padding:6px;font-weight:600}.compact-error details{margin:5px 0 0 26px}.compact-error summary{cursor:pointer;font-size:11px;color:#9ca3af}.compact-error details>p{max-height:100px;overflow:auto;overflow-wrap:anywhere;white-space:normal;font:11px/1.6 monospace;margin-top:6px}.shorts-embed-error{padding:8px!important;font-size:12px!important}.shorts-embed-error .compact-error{margin:0;background:#181818e6;color:#ddd;border-color:#444}.shorts-embed-error .compact-error-line{flex-wrap:wrap}
+/* Shorts failures: place the retry action in the center, away from the side controls. */
+.shorts-feed-retry{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:16px;background:#0005;pointer-events:none}
+.shorts-feed-retry .compact-error,.shorts-embed-error .compact-error{width:min(100%,370px);max-height:100%;overflow-y:auto;margin:0;padding:20px;border-radius:18px;box-shadow:0 12px 40px #0005;pointer-events:auto}
+.shorts-feed-retry .compact-error{background:#fff;color:#222;border-color:#ddd}
+.shorts-embed-error{display:grid;place-items:center;padding:16px!important}
+.shorts-feed-retry .compact-error-line,.shorts-embed-error .compact-error-line{flex-direction:column;flex-wrap:nowrap;gap:12px;text-align:center}
+.shorts-feed-retry .compact-error-line>svg,.shorts-embed-error .compact-error-line>svg{width:28px;height:28px}
+.shorts-feed-retry .compact-error-line>p,.shorts-embed-error .compact-error-line>p{flex:none;font-size:14px;line-height:1.6}
+.shorts-feed-retry .compact-error-line>button,.shorts-embed-error .compact-error-line>button{display:grid;place-items:center;min-height:46px;min-width:170px;max-width:100%;padding:10px 22px;border-radius:999px;background:#171717;color:white;font-size:14px;font-weight:700;box-shadow:0 2px 8px #0002}
+.shorts-embed-error .compact-error-line>button{background:white;color:#111}
+.shorts-feed-retry .compact-error details,.shorts-embed-error .compact-error details{margin:12px 0 0}
 
 .shorts-side-actions .shorts-captions-on{color:#60a5fa}.shorts-captions-on>span svg{stroke-width:2.5!important}
 
