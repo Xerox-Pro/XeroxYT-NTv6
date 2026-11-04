@@ -362,10 +362,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
             <button aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} title="字幕がある動画で切り替え" className={captionsEnabled ? 'shorts-captions-on' : ''} onClick={() => setCaptionsEnabled(value => !value)}><span><Captions size={25}/></span><small>{captionsEnabled ? '字幕オン' : '字幕オフ'}</small></button>
             <button aria-label="その他の設定" aria-expanded={settingsId === video.videoId} onClick={() => setSettingsId(settingsId === video.videoId ? '' : video.videoId!)}><span><MoreVertical size={25}/></span><small>その他</small></button>
-            {settingsId === video.videoId && <div className="absolute right-full bottom-2 z-30 mr-2 w-52 rounded-xl bg-white p-2 text-gray-900 shadow-xl border border-gray-200" role="group" aria-label="ショートの再生設定">
-              <button className="flex w-full items-center gap-2 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}>{muted ? <VolumeX size={20}/> : <Volume2 size={20}/>} 音声 {muted ? 'オフ' : 'オン'}</button>
-              <button className="flex w-full items-center gap-2 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} onClick={() => setAutoScroll(value => !value)}><ChevronsDown size={20}/> 自動スクロール {autoScroll ? 'ON' : 'OFF'}</button>
-            </div>}
             <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
             <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
@@ -384,6 +380,11 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       </div>
     </div>
     {error && <div className="absolute bottom-9 left-1/2 z-20 w-[min(94%,480px)] -translate-x-1/2 pointer-events-auto touch-auto rounded-xl bg-white/95 shadow-lg [&_button]:min-h-11 [&_button]:min-w-16" role="alert"><CompactError error={error} onRetry={retryFeed}/></div>}
+    {settingsId === activeId && <div className="fixed right-4 bottom-20 z-[9999] w-64 max-w-[calc(100vw-2rem)] rounded-xl border border-gray-200 bg-white p-3 text-gray-900 shadow-2xl pointer-events-auto" role="group" aria-label="ショートの再生設定">
+      <div className="flex items-center justify-between mb-2"><strong className="text-sm">再生設定</strong><button type="button" aria-label="設定を閉じる" className="rounded-md p-2" onClick={() => setSettingsId('')}><X size={18}/></button></div>
+      <button type="button" className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}>{muted ? <VolumeX size={20}/> : <Volume2 size={20}/>} 音声 {muted ? 'オフ' : 'オン'}</button>
+      <button type="button" className="flex w-full items-center gap-3 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} onClick={() => setAutoScroll(value => !value)}><ChevronsDown size={20}/> 自動スクロール {autoScroll ? 'ON' : 'OFF'}</button>
+    </div>}
     <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }
