@@ -295,7 +295,9 @@ export async function fetchJSON(url: string, options?: RequestInit) {
         localStorage.removeItem('xerox_user_info');
       }
 
-      throw new Error(errorMessage);
+      const responseError = new Error(errorMessage) as Error & {status?: number};
+      responseError.status = res.status;
+      throw responseError;
     }
 
     if (!contentType || !contentType.includes('application/json')) {

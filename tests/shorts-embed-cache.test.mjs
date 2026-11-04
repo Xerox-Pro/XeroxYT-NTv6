@@ -22,7 +22,7 @@ test('embed requests share work, survive one cancellation, and reuse a successfu
   } finally { globalThis.fetch = previous; }
 });
 
-test('configuration failure uses a device fallback without calling our server', async () => {
+test('a different Short reuses the cached device configuration without another network request', async () => {
  const previous=globalThis.fetch;const calls=[];globalThis.fetch=async url=>{calls.push(String(url));return new Response('',{status:503});};
- try{assert.match(await getShortEmbedUrl('lmnopqrstuv'),/youtube/);assert.equal(calls.length,1);assert.ok(calls.every(url=>url.startsWith('https://raw.githubusercontent.com/')));}finally{globalThis.fetch=previous;}
+ try{const url=new URL(await getShortEmbedUrl('lmnopqrstuv'));assert.equal(url.hostname,'www.youtubeeducation.com');assert.equal(url.searchParams.get('key'),'sample');assert.equal(calls.length,0);}finally{globalThis.fetch=previous;}
 });

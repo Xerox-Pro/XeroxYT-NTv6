@@ -16,6 +16,23 @@ import ShortsComments from './ShortsComments';
 import { getShortEmbedUrl } from '../lib/shortsEmbedCache.mjs';
 import { ShortsContext, shortsQuery } from './ShortsShelf';
 
+async function fetchShortsPage(url: string, signal: AbortSignal) {
+  try {
+    return await fetchJSON(url, { signal });
+  } catch (reason: any) {
+    // Retry transient network/upstream failures once without retrying account
+    // errors or daily limits. Keep the same URL/session so paging is stable.
+    if (signal.aborted || reason?.isDailyLimit || [400, 401, 403, 404, 429].includes(reason?.status)) throw reason;
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => { signal.removeEventListener('abort', cancel); resolve(); }, 450);
+      const cancel = () => { clearTimeout(timer); reject(signal.reason); };
+      signal.addEventListener('abort', cancel, { once: true });
+      if (signal.aborted) cancel();
+    });
+    return fetchJSON(url, { signal });
+  }
+}
+
 function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected, captionsEnabled }: {
   video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode; active: boolean; isSelected: () => boolean; captionsEnabled: boolean;
 }) {
@@ -93,7 +110,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     {url && <iframe ref={frame} tabIndex={active ? 0 : -1} aria-hidden={!active} src={url} title={video.title} className="shorts-iframe" allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" onLoad={() => { frame.current?.contentWindow?.postMessage(JSON.stringify({ event: 'listening' }), new URL(url).origin); command(readMuted() ? 'mute' : 'unMute'); command(activeRef.current ? 'playVideo' : 'pauseVideo'); syncCaptions(); record(); }} />}
     {!url && !error && <div className="absolute inset-0 grid place-items-center"><Loader2 className="animate-spin" size={28} /></div>}
     {children}
-    {error && <div className="shorts-embed-error"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/></div>}
+    {error && <div className="shorts-embed-error !z-10 pointer-events-auto touch-auto [&_button]:min-h-11 [&_button]:min-w-16"><CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/></div>}
   </div>;
 }
 
@@ -155,8 +172,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   }, []);
   useEffect(() => {
     let cancelled = false; pending.current = true; setLoading(true); setError('');
+    const controller = new AbortController();
     if (channelMode) {
-      fetchJSON(`/api/channel/${encodeURIComponent(context.channelId!)}/tab/shorts?page=${page}&sort=latest`).then(data => {
+      fetchShortsPage(`/api/channel/${encodeURIComponent(context.channelId!)}/tab/shorts?page=${page}&sort=latest`, controller.signal).then(data => {
         if (cancelled) return;
         const current = scroll.current?.querySelector<HTMLElement>(`[data-short-id="${activeRef.current}"]`);
         if (current) anchor.current = { id: activeRef.current, top: current.getBoundingClientRect().top };
@@ -167,17 +185,17 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         setHasMore(Boolean(data.hasMore));
       }).catch(reason => { if (!cancelled) setError(reason.message || 'チャンネルのショートを取得できませんでした。'); })
         .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
-      return () => { cancelled = true; };
+      return () => { cancelled = true; controller.abort(); };
     }
     const excluded = [...regularRef.current.map(video => video.videoId!), ...readSeenShorts()];
-    fetchJSON(discoveryRequest(withShortsInterests(query, page), page, session, excluded)).then(data => {
+    fetchShortsPage(discoveryRequest(withShortsInterests(query, page), page, session, excluded), controller.signal).then(data => {
       if (cancelled) return;
       const items: Video[] = rankCandidates(excludeSeenShorts((data.videos || []).filter((video: Video) => video.isShort), readSeenShorts(), seed.current?.videoId), { short: true, seed: session, seen: readSeenShorts() });
       setRegular(previous => [...new Map([...previous, ...items].map(video => [video.videoId, video])).values()]);
       setHasMore(Boolean(data.hasMore));
     }).catch(reason => { if (!cancelled) setError(reason.message || 'ショートを読み込めませんでした。'); })
       .finally(() => { if (!cancelled) { pending.current = false; setLoading(false); } });
-    return () => { cancelled = true; };
+    return () => { cancelled = true; controller.abort(); };
   }, [query, page, session, attempt]);
   useLayoutEffect(() => {
     if (!channelMode || !scroll.current || !videos.length) return;
@@ -256,6 +274,11 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       setAttempt(value => value + 1);
     }
   };
+  const retryFeed = () => {
+    if (loading || pending.current) return;
+    pending.current = true;
+    setAttempt(value => value + 1);
+  };
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && (commentsId || descriptionId)) { setCommentsId(''); setDescriptionId(''); return; }
@@ -313,11 +336,11 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       })}
       <div className={channelMode && videos.length ? "shorts-channel-status" : "shorts-feed-end"}>
         {(loading || !rankingReady) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
-        {error && <CompactError error={error} onRetry={() => setAttempt(value => value + 1)}/>}
         {!loading && rankingReady && !error && (!channelMode || !videos.length) && <p>{videos.length ? 'ここまでのショートを表示しました。' : '表示できる縦長ショートがありません。'}</p>}
         {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>
     </div>
+    {error && <div className="absolute bottom-9 left-1/2 z-20 w-[min(94%,480px)] -translate-x-1/2 pointer-events-auto touch-auto rounded-xl bg-white/95 shadow-lg [&_button]:min-h-11 [&_button]:min-w-16" role="alert"><CompactError error={error} onRetry={retryFeed}/></div>}
     <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span>{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> {ranking.length}件（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</>}</span>}</footer>
   </section>;
 }
