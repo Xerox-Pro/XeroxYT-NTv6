@@ -11,6 +11,9 @@ test('failover retries only read-only data failures, never account writes or aut
  assert.equal(canRetry('POST','/api/account/register',503),false);
  assert.equal(canRetry('GET','/api/auth/signin',503),false);
  assert.equal(canRetry('GET','/api/search',401),false);
+ assert.equal(canRetry('GET','/api/video/abcdefghijk',404),true,'temporary failures on the old Worker must reach backup API');
+ assert.equal(canRetry('GET','/api/video/abcdefghijk/comments',404),false);
+ assert.equal(canRetry('GET','/api/search',404),false);
 });
 test('automatic transport falls back after direct authentication failure and remembers proxy mode',async()=>{
  const originalFetch=globalThis.fetch,originalStorage=globalThis.localStorage,originalWindow=globalThis.window;
