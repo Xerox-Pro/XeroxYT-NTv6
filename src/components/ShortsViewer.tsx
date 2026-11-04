@@ -170,6 +170,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [attempt, setAttempt] = useState(0);
   const [commentsId, setCommentsId] = useState('');
   const [descriptionId, setDescriptionId] = useState('');
+  const [settingsId, setSettingsId] = useState('');
   const [likes, setLikes] = useState<Record<string, boolean>>(() => { try { return JSON.parse(localStorage.getItem('xerox_shorts_likes_v1') || '{}'); } catch { return {}; } });
   const scroll = useRef<HTMLDivElement>(null);
   const pending = useRef(false);
@@ -338,7 +339,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
       }}
       onTouchCancel={() => { touchStartY.current = null; }}>
       {videos.map((video, index) => {
-        const info = metadata[video.videoId!] || video;
+        const detail = metadata[video.videoId!];
+        const info = detail ? { ...video, ...detail, viewCount: detail.viewCount || video.viewCount, description: detail.description || video.description, publishedText: detail.publishedText || video.publishedText } : video;
         const active = video.videoId === activeId;
         const activeIndex = videos.findIndex(item => item.videoId === activeId);
         const prepare = index >= activeIndex && index <= activeIndex + 2;
@@ -359,15 +361,18 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
             <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
             <button aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} title="字幕がある動画で切り替え" className={captionsEnabled ? 'shorts-captions-on' : ''} onClick={() => setCaptionsEnabled(value => !value)}><span><Captions size={25}/></span><small>{captionsEnabled ? '字幕オン' : '字幕オフ'}</small></button>
-            <button aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}><span>{muted ? <VolumeX size={25}/> : <Volume2 size={25}/>}</span><small>{muted ? '音声オン' : '音声オフ'}</small></button>
-            <button aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} title="動画の終了時に次のショートへ移動" onClick={() => setAutoScroll(value => !value)}><span><ChevronsDown size={25}/></span><small>自動スクロール {autoScroll ? 'ON' : 'OFF'}</small></button>
+            <button aria-label="その他の設定" aria-expanded={settingsId === video.videoId} onClick={() => setSettingsId(settingsId === video.videoId ? '' : video.videoId!)}><span><MoreVertical size={25}/></span><small>その他</small></button>
+            {settingsId === video.videoId && <div className="absolute right-full bottom-2 z-30 mr-2 w-52 rounded-xl bg-white p-2 text-gray-900 shadow-xl border border-gray-200" role="group" aria-label="ショートの再生設定">
+              <button className="flex w-full items-center gap-2 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}>{muted ? <VolumeX size={20}/> : <Volume2 size={20}/>} 音声 {muted ? 'オフ' : 'オン'}</button>
+              <button className="flex w-full items-center gap-2 rounded-lg p-3 text-left hover:bg-gray-100" aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} onClick={() => setAutoScroll(value => !value)}><ChevronsDown size={20}/> 自動スクロール {autoScroll ? 'ON' : 'OFF'}</button>
+            </div>}
             <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
             <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
           </div>
           {active && (commentsId === video.videoId || descriptionId === video.videoId) && <><button className="shorts-panel-backdrop" aria-label="背景を押してパネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }} /><aside className="shorts-info-panel" aria-label={commentsId ? 'コメント' : '概要欄'}>
             <header><strong>{commentsId ? 'コメント' : '概要欄'}</strong><button aria-label="パネルを閉じる" onClick={() => { setCommentsId(''); setDescriptionId(''); }}><X size={22} /></button></header>
-            {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{formatNumberJP(info.viewCount || 0)}回視聴 {info.publishedText}</p><p className="whitespace-pre-wrap break-words"><RichText text={info.description || '概要欄はありません。'} onSelectChannel={onSelectChannel} onSelectVideo={id=>navigate('/watch?v='+id)}/></p></div>}
+            {commentsId ? <ShortsComments videoId={video.videoId!} inline onSelectChannel={onSelectChannel} /> : <div className="shorts-description"><h2>{info.title}</h2><p>{info.author}</p><p>{info.viewCount > 0 ? `${formatNumberJP(info.viewCount)}回視聴` : '再生数を取得できませんでした'} {info.publishedText || ''}</p><p className="whitespace-pre-wrap break-words"><RichText text={info.description || '概要欄はありません。'} onSelectChannel={onSelectChannel} onSelectVideo={id=>navigate('/watch?v='+id)}/></p></div>}
           </aside></>}
 
         </article>;
