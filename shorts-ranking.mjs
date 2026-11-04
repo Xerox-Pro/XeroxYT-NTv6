@@ -16,23 +16,51 @@ export function parseRanking(data) {
   }).slice(0, 200);
   return { videos, count: videos.length, limit: 200, updatedAt: typeof data.updated_at === 'string' ? data.updated_at.slice(0, 100) : '', sourceUrl: 'https://shorts-ranking.com/' };
 }
-export function createRankingLoader(fetchUpstream = fetch) {
+export function createRankingLoader(fetchUpstream = fetch, { retryDelays = [400, 1000] } = {}) {
   let pending;
   return async () => {
     if (pending) return pending;
     pending = (async () => {
-      const response = await fetchUpstream(`${RANKING_URL}?t=${Date.now()}`, { cache: 'no-store', signal: AbortSignal.timeout(10000), redirect: 'manual', headers: { accept: 'application/json' } });
-      if (!response.ok) throw new Error(`ランキング取得失敗（${response.status}）`);
-      if (Number(response.headers.get('content-length')) > 2 * 1024 * 1024) throw new Error('ランキングのデータが大きすぎます。');
-      const reader = response.body.getReader();
-      const chunks = []; let size = 0;
-      try {
-        for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > 2 * 1024 * 1024) throw new Error('ランキングのデータが大きすぎます。'); chunks.push(value); }
-      } finally { await reader.cancel().catch(() => {}); }
-      const bytes = new Uint8Array(size);
-      let offset = 0;
-      for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
-      return parseRanking(JSON.parse(new TextDecoder().decode(bytes)));
+      for (let attempt = 0; ; attempt++) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        let retryable = true;
+        try {
+          // The browser contacts the ranking site directly; no Vercel or
+          // Cloudflare API is involved, and no user credentials are sent.
+          const response = await fetchUpstream(`${RANKING_URL}?t=${Date.now()}`, {
+            cache: 'no-store', signal: controller.signal, credentials: 'omit',
+            mode: 'cors', redirect: 'follow', headers: { accept: 'application/json' },
+          });
+          if (!response.ok) {
+            retryable = [408, 429].includes(response.status) || response.status >= 500;
+            throw new Error(`ランキング取得失敗（${response.status}）`);
+          }
+          const limit = 2 * 1024 * 1024;
+          if (Number(response.headers.get('content-length')) > limit) throw new Error('ランキングのデータが大きすぎます。');
+          const reader = response.body?.getReader?.();
+          if (!reader) {
+            const raw = await response.text();
+            if (new TextEncoder().encode(raw).length > limit) throw new Error('ランキングのデータが大きすぎます。');
+            return parseRanking(JSON.parse(raw));
+          }
+          const chunks = []; let size = 0;
+          try {
+            for (;;) { const { done, value } = await reader.read(); if (done) break; size += value.length; if (size > limit) throw new Error('ランキングのデータが大きすぎます。'); chunks.push(value); }
+          } finally { await reader.cancel().catch(() => {}); }
+          const bytes = new Uint8Array(size);
+          let offset = 0;
+          for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+          return parseRanking(JSON.parse(new TextDecoder().decode(bytes)));
+        } catch (error) {
+          // A malformed response will not be fixed by a retry. Network errors,
+          // timeouts and temporary upstream errors often will.
+          if (!retryable || attempt >= retryDelays.length || (error instanceof SyntaxError) || /データが大きすぎ|データ形式/.test(String(error?.message))) throw error;
+          await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
+        } finally {
+          clearTimeout(timeout);
+        }
+      }
     })();
     try { return await pending; } finally { pending = undefined; }
   };

@@ -179,7 +179,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
   const ranked = unseenRankingFirst(excludeSeenShorts(ranking, seenOnEntry, seed.current?.videoId), seenOnEntry, seed.current?.videoId);
-  const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
+  const videos: Video[] = !rankingReady ? regular : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     try { localStorage.setItem('xerox_shorts_auto_scroll_v1', autoScroll ? 'on' : 'off'); } catch {}

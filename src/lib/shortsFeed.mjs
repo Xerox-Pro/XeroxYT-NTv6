@@ -12,7 +12,11 @@ export function mixShorts(regular, ranking, startId = '') {
   const first = rankingIds.has(startId) ? rotate(ranked) : rotate(native);
   const second = rankingIds.has(startId) ? native : ranked;
   const result = [];
-  for (let i = 0; i < Math.min(first.length, second.length); i++) result.push(first[i], second[i]);
+  const pairs = Math.min(first.length, second.length);
+  for (let i = 0; i < pairs; i++) result.push(first[i], second[i]);
+  // If the YouTube discovery API is unavailable (or provides fewer clips),
+  // do not throw away perfectly usable ranking videos fetched by the device.
+  result.push(...first.slice(pairs), ...second.slice(pairs));
   return result;
 }
 export function isShortsLocation(pathname) {
