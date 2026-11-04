@@ -42,7 +42,9 @@ export default async function handler(request: Request) {
   }
   if (url.pathname === "/api/transport-config")
     return respond(Response.json(
-      { origins: pool },
+      // Browser requests cannot send the server-only shared secret. When the
+      // API is protected, use the gateway instead of repeatedly getting 403s.
+      { origins: pool, preferProxy: Boolean(process.env.API_SHARED_SECRET) },
       { headers: { "Cache-Control": "no-store" } },
     ));
   if (!pool.length)

@@ -116,3 +116,15 @@ test('simultaneous details share upstream work and failed work is retried', asyn
  assert.equal((await retry('/api/shorts/:id',{}, {id:'abcdefghijk'})).code,200);
  assert.equal(attempts,2);
 });
+test('Shorts metadata uses basic info when the full YouTube watch request fails', async () => {
+ let fullCalls = 0, basicCalls = 0;
+ const call = harness({
+  getInfo: async () => { fullCalls++; throw new Error('transient watch metadata error'); },
+  getBasicInfo: async () => { basicCalls++; return {basic_info:{title:'Recovered title',author:'Recovered author'}}; },
+ });
+ const response = await call('/api/shorts/:id',{}, {id:'abcdefghijk'});
+ assert.equal(response.code,200);
+ assert.equal(response.body.title,'Recovered title');
+ assert.equal(response.body.author,'Recovered author');
+ assert.equal(fullCalls,1);assert.equal(basicCalls,1);
+});

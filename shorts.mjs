@@ -276,7 +276,16 @@ export function registerShortsRoutes(app, getYoutube) {
   app.get('/api/shorts/:id', async (req, res) => {
     if (!/^[\w-]{11}$/.test(req.params.id)) return res.status(400).json({ error: '動画IDが正しくありません。' });
     try {
-      const info = await cached(`info:${req.params.id}`, async () => (await getYoutube()).getInfo(req.params.id));
+      const info = await cached(`info:${req.params.id}`, async () => {
+        const youtube = await getYoutube();
+        try { return await youtube.getInfo(req.params.id); }
+        catch (error) {
+          // Some videos still expose title/owner through the lightweight API
+          // when watch-next metadata is temporarily rejected.
+          try { return await youtube.getBasicInfo(req.params.id); }
+          catch { throw error; }
+        }
+      });
       let original = originalAspects.get(req.params.id);
       if (original?.expires < Date.now()) original = undefined;
       const fallbackTitle = typeof req.query.title === 'string' ? req.query.title.slice(0, 500) : '';

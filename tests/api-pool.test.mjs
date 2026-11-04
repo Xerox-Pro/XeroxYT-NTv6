@@ -19,3 +19,12 @@ test('automatic transport falls back after direct authentication failure and rem
  try{const transport=await import('../src/lib/apiTransport.mjs?test');const first=await transport.apiFetch('/api/search?q=x');assert.equal(first.status,200);assert.equal(transport.readTransportState().automatic,true);await transport.apiFetch('/api/video/abcdefghijk');assert.deepEqual(calls,['/api/transport-config','https://worker.example/api/search?q=x','/api/search?q=x','/api/video/abcdefghijk']);transport.setTransportMode('direct');await assert.rejects(transport.apiFetch('/api/search?q=x'),/直接接続できません/);}
  finally{globalThis.fetch=originalFetch;globalThis.localStorage=originalStorage;globalThis.window=originalWindow;}
 });
+test('protected APIs go through the Vercel gateway without browser-side 403 probes',async()=>{
+ const originalFetch=globalThis.fetch,originalStorage=globalThis.localStorage,originalWindow=globalThis.window;
+ const values=new Map(),calls=[];
+ globalThis.localStorage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value),removeItem:key=>values.delete(key)};
+ globalThis.window=new EventTarget();
+ globalThis.fetch=async url=>{calls.push(String(url));if(url==='/api/transport-config')return Response.json({origins:['https://protected.example'],preferProxy:true});if(url==='/api/video/abcdefghijk')return Response.json({videoId:'abcdefghijk'});throw Error('Unexpected direct request');};
+ try{const transport=await import('../src/lib/apiTransport.mjs?protected');const response=await transport.apiFetch('/api/video/abcdefghijk');assert.equal(response.status,200);assert.deepEqual(calls,['/api/transport-config','/api/video/abcdefghijk']);}
+ finally{globalThis.fetch=originalFetch;globalThis.localStorage=originalStorage;globalThis.window=originalWindow;}
+});

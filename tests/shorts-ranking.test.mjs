@@ -20,6 +20,9 @@ test('mix alternates sources exactly, deduplicates overlapping videos, keeps sel
  const extended=mixShorts([...regular,clip('c','youtube')],ranking);
  assert.deepEqual(extended.slice(0,result.length),result);
  assert.deepEqual(mixShorts(regular,ranking,'x').map(v=>v.videoId),['x','a','t','b']);
+ assert.deepEqual(mixShorts([],ranking).map(v=>v.videoId),['r','x','t'],'ranking-only feed is still available');
+ assert.deepEqual(mixShorts(regular,[]).map(v=>v.videoId),['a','b','x'],'native-only feed is still available');
+ assert.deepEqual(mixShorts(regular,ranking,'',true).map(v=>v.videoId),['a','r','b','x','t'],'the exhausted source does not hide remaining clips');
 });
 test('ranking refreshes on each visit; only concurrent requests share in-flight fetch and no cache survives',async()=>{
  let calls=0;

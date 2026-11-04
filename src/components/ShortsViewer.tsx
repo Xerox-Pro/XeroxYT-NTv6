@@ -179,7 +179,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const query = shortsQuery(context).toString();
   regularRef.current = regular;
   const ranked = unseenRankingFirst(excludeSeenShorts(ranking, seenOnEntry, seed.current?.videoId), seenOnEntry, seed.current?.videoId);
-  const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
+  // The independent ranking service must not hold YouTube's Shorts feed hostage.
+  const videos: Video[] = ranked.length ? mixShorts(regular, ranked, seed.current?.videoId, !hasMore || Boolean(error)) : regular;
   const ids = videos.map(video => video.videoId).join(',');
   useEffect(() => {
     try { localStorage.setItem('xerox_shorts_auto_scroll_v1', autoScroll ? 'on' : 'off'); } catch {}
@@ -265,7 +266,7 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     const index = videos.findIndex(video => video.videoId === activeId);
     const filledRanking = ranking.length > 0 && videos.length >= ranking.length * 2;
-    if (rankingReady && !filledRanking && (channelMode ? videos.length > 0 && index >= videos.length - 3 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
+    if (videos.length && !filledRanking && (channelMode ? index >= videos.length - 3 : index >= videos.length - 6) && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) setPage(value => value + 1);
   }, [activeId, ids, rankingReady, ranking.length, hasMore, loading, error, page]);
   useEffect(() => {
     if (channelMode || context.source === 'search' || !activeId) return;
@@ -373,9 +374,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         </article>;
       })}
       <div className={channelMode && videos.length ? "shorts-channel-status" : "shorts-feed-end"}>
-        {(loading || !rankingReady) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
+        {(loading || (!videos.length && !rankingReady)) && <p className="flex gap-2"><Loader2 size={18} className="animate-spin" />読み込み中…</p>}
         {!loading && rankingReady && !error && (!channelMode || !videos.length) && <p>{videos.length ? 'ここまでのショートを表示しました。' : '表示できる縦長ショートがありません。'}</p>}
-        {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && (!ranking.length || videos.length < ranking.length * 2) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
+        {!loading && !error && hasMore && (!channelMode || activeId === videos[videos.length - 1]?.videoId) && page < (channelMode ? 100 : MAX_SHORT_PAGES) && <button className="underline mt-3" onClick={() => setPage(value => value + 1)}>{channelMode ? '古いショートを読み込む' : '続きを読み込む'}</button>}
       </div>
     </div>
     {error && <div className="absolute bottom-9 left-1/2 z-20 w-[min(94%,480px)] -translate-x-1/2 pointer-events-auto touch-auto rounded-xl bg-white/95 shadow-lg [&_button]:min-h-11 [&_button]:min-w-16" role="alert"><CompactError error={error} onRetry={retryFeed}/></div>}
