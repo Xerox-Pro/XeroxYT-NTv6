@@ -1307,10 +1307,13 @@ export default function VideoPlayer({
                   title={autoNext ? '動画終了後に次の関連動画を再生します' : '動画終了後に自動で次へ進みません'}
                   onClick={() => setAutoNext(value => !value)}
                   whileTap={{ scale: 0.92 }}
-                  className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-colors shadow-2xs ${autoNext ? 'bg-gray-900 text-white border-gray-900 hover:bg-gray-800' : 'bg-gray-100 hover:bg-gray-200 text-gray-800 border-gray-200'}`}
+                  className="shrink-0 inline-flex items-center gap-2 rounded-full border border-gray-200 bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-800 shadow-2xs transition-colors hover:bg-gray-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600"
                 >
-                  <SkipForward size={16} />
-                  <span>自動再生 {autoNext ? 'ON' : 'OFF'}</span>
+                  <SkipForward size={16} className="text-gray-700" />
+                  <span>自動再生</span>
+                  <span aria-hidden="true" className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full transition-colors ${autoNext ? 'bg-gray-800' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-[3px] h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${autoNext ? 'translate-x-[17px]' : 'translate-x-[3px]'}`} />
+                  </span>
                 </motion.button>
               )}
 
