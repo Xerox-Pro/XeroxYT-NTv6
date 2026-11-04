@@ -53,9 +53,12 @@ test('shorts can leave for home, search, history, channel and browser back durin
    assert.equal(new URL(frame.src).searchParams.get('controls'),'1');
    for(const embed of document.querySelectorAll('.shorts-iframe')) {
      const url = new URL(embed.src);
-     assert.equal(url.searchParams.get('loop'), '1');
+     assert.equal(url.searchParams.get('loop'), '0','the end event is not suppressed by native looping');
      assert.equal(url.searchParams.get('playlist'), url.pathname.split('/').pop());
    }
+   const autoScrollButton=document.querySelector('[aria-label="自動スクロールをオフにする"]');
+   assert.ok(autoScrollButton,'auto-scroll control is visible');
+   assert.equal(autoScrollButton.getAttribute('aria-pressed'),'true','auto-scroll defaults to on');
    assert.equal(document.querySelector('.shorts-tap-area'),null);
    assert.equal(document.querySelector('.shorts-actions'),null);
    const frames=[...document.querySelectorAll('iframe')];assert.equal(frames.length,3,'active and next two embeds are prepared');
@@ -69,6 +72,19 @@ test('shorts can leave for home, search, history, channel and browser back durin
    if(!metadataUnavailable)assert.ok(document.querySelector('.shorts-description').textContent.includes('概要テスト'));
    await act(async()=>document.querySelector('[aria-label="パネルを閉じる"]').click());
    if(target==='/') {
+    let endedTarget='';
+    dom.window.HTMLElement.prototype.scrollIntoView=function(){endedTarget=this.dataset.shortId||'';};
+    const activeIframe=document.querySelector('article[data-short-id="abcdefghijk"] iframe');
+    const nextArticle=document.querySelectorAll('article[data-short-id]')[1];
+    const deliverState=state=>window.dispatchEvent(new dom.window.MessageEvent('message',{source:activeIframe.contentWindow,origin:new URL(activeIframe.src).origin,data:JSON.stringify({event:'infoDelivery',info:{playerState:state,currentTime:state===0?20:1,duration:20}})}));
+    await act(async()=>deliverState(0));
+    assert.equal(endedTarget,nextArticle.dataset.shortId,'video completion advances one Short');
+    await act(async()=>deliverState(1));
+    await act(async()=>document.querySelector('[aria-label="自動スクロールをオフにする"]').click());
+    assert.equal(localStorage.getItem('xerox_shorts_auto_scroll_v1'),'off','choice is persisted');
+    endedTarget='';
+    await act(async()=>window.dispatchEvent(new dom.window.MessageEvent('message',{source:activeIframe.contentWindow,origin:new URL(activeIframe.src).origin,data:JSON.stringify({event:'onStateChange',info:0})})));
+    assert.equal(endedTarget,'','disabled auto-scroll does not advance');
     Object.defineProperty(document,'visibilityState',{value:'visible',configurable:true});
     const originalNow=Date.now;
     try {

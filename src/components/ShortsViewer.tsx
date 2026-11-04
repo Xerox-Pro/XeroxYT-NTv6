@@ -6,7 +6,7 @@ import { loadShortsRanking } from '../lib/rankingClient.mjs';
 import { withShortsInterests } from '../lib/shortsInterests.mjs';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ArrowLeft, Search, Share2, MoreVertical, Captions, Volume2, VolumeX } from 'lucide-react';
+import { Loader2, ThumbsUp, MessageCircle, AlignLeft, X, ArrowLeft, Search, Share2, MoreVertical, Captions, Volume2, VolumeX, ChevronsDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import Avatar from './Avatar';
 import { Video } from '../types';
@@ -33,8 +33,8 @@ async function fetchShortsPage(url: string, signal: AbortSignal) {
   }
 }
 
-function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected, captionsEnabled }: {
-  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; children?: ReactNode; active: boolean; isSelected: () => boolean; captionsEnabled: boolean;
+function ShortEmbed({ video, onRecord, onMetadata, onEnded, autoScroll, children, active, isSelected, captionsEnabled }: {
+  video: Video; onRecord: (video: Video) => void; onMetadata: (video: Video) => void; onEnded: (id: string) => boolean; autoScroll: boolean; children?: ReactNode; active: boolean; isSelected: () => boolean; captionsEnabled: boolean;
 }) {
   const [muted] = useAudioPreference();
   const [url, setUrl] = useState('');
@@ -63,7 +63,7 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     return () => timers.forEach(clearTimeout);
   }, [muted,url]);
   const record = () => { if (activeRef.current && detail.current && !recorded.current) { recorded.current = true; callbacks.current.onRecord(detail.current); } };
-  const callbacks = useRef({ onRecord, onMetadata, isSelected }); callbacks.current = { onRecord, onMetadata, isSelected };
+  const callbacks = useRef({ onRecord, onMetadata, onEnded, autoScroll, isSelected }); callbacks.current = { onRecord, onMetadata, onEnded, autoScroll, isSelected };
   useEffect(() => {
     let cancelled = false;
     const controller = new AbortController();
@@ -79,7 +79,8 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
       if (parsed.protocol !== 'https:' || !['www.youtubeeducation.com', 'www.youtube.com', 'www.youtube-nocookie.com'].includes(parsed.hostname)) throw new Error('埋め込みURLが正しくありません。');
       parsed.searchParams.set('enablejsapi', '1');
       parsed.searchParams.set('origin', window.location.origin);
-      for (const [key, value] of Object.entries({ loop: '1', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: readMuted() ? '1' : '0', rel: '0', cc_load_policy: captionsRef.current ? '1' : '0' })) parsed.searchParams.set(key, value);
+      // Handle repeat ourselves so an ended event can advance when enabled.
+      for (const [key, value] of Object.entries({ loop: '0', playlist: video.videoId!, controls: '1', playsinline: '1', autoplay: activeRef.current ? '1' : '0', mute: readMuted() ? '1' : '0', rel: '0', cc_load_policy: captionsRef.current ? '1' : '0' })) parsed.searchParams.set(key, value);
       setUrl(parsed.toString());
     }).catch(reason => { if (!cancelled) setError(reason.message || '動画を読み込めませんでした。'); });
     return () => { cancelled = true; controller.abort(); };
@@ -94,13 +95,26 @@ function ShortEmbed({ video, onRecord, onMetadata, children, active, isSelected,
     if (!active || !url) return;
     const tracker = createPlaybackTracker(detail.current || video);
     let playing = false;
+    let handledEnd = false;
     const receive = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow || event.origin !== new URL(url).origin) return;
       try {
         const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-        if (!['infoDelivery', 'initialDelivery'].includes(data?.event) || !data.info) return;
-        if (typeof data.info.playerState === 'number') playing = data.info.playerState === 1;
-        if (typeof data.info.currentTime === 'number') tracker.update(data.info.currentTime, data.info.duration || detail.current?.lengthSeconds, playing, document.visibilityState !== 'hidden');
+        if (!['infoDelivery', 'initialDelivery', 'onStateChange'].includes(data?.event)) return;
+        const info = data.info && typeof data.info === 'object' ? data.info : {};
+        const playerState = data.event === 'onStateChange' && typeof data.info === 'number' ? data.info : info.playerState;
+        if (typeof playerState === 'number') {
+          playing = playerState === 1;
+          if (playing) handledEnd = false;
+          if (playerState === 0 && !handledEnd && activeRef.current && callbacks.current.isSelected()) {
+            handledEnd = true;
+            if (!callbacks.current.autoScroll || !callbacks.current.onEnded(video.videoId!)) {
+              command('seekTo', [0, true]);
+              command('playVideo');
+            }
+          }
+        }
+        if (typeof info.currentTime === 'number') tracker.update(info.currentTime, info.duration || detail.current?.lengthSeconds, playing, document.visibilityState !== 'hidden');
       } catch {}
     };
     window.addEventListener('message', receive);
@@ -144,6 +158,10 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [activeId, setActiveId] = useState(initialId || '');
   const [muted,setMuted] = useAudioPreference();
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(() => {
+    try { return localStorage.getItem('xerox_shorts_auto_scroll_v1') !== 'off'; }
+    catch { return true; }
+  });
   const [metadata, setMetadata] = useState<Record<string, Video>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -162,6 +180,9 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const ranked = unseenRankingFirst(excludeSeenShorts(ranking, seenOnEntry, seed.current?.videoId), seenOnEntry, seed.current?.videoId);
   const videos: Video[] = !rankingReady ? [] : ranked.length ? mixShorts(regular, ranked, seed.current?.videoId) : regular;
   const ids = videos.map(video => video.videoId).join(',');
+  useEffect(() => {
+    try { localStorage.setItem('xerox_shorts_auto_scroll_v1', autoScroll ? 'on' : 'off'); } catch {}
+  }, [autoScroll]);
   useEffect(() => {
     let cancelled = false;
     ((context.source === 'search' || channelMode) ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
@@ -268,6 +289,22 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
     const index = videos.findIndex(video => video.videoId === activeRef.current);
     (scroll.current?.querySelectorAll<HTMLElement>('[data-short-id]')[index + direction])?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [ids, error, loading]);
+  const advanceOnEnd = useCallback((id: string) => {
+    if (!isShortsLocation(route.current.pathname) || activeRef.current !== id) return false;
+    const nodes = scroll.current?.querySelectorAll<HTMLElement>('[data-short-id]');
+    const index = videos.findIndex(video => video.videoId === id);
+    const next = index >= 0 ? nodes?.[index + 1] : undefined;
+    if (next) {
+      next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return true;
+    }
+    // At the end of a partially fetched feed, request another page. Replay
+    // this clip meanwhile so the player does not stop on an empty frame.
+    if (index >= 0 && hasMore && !loading && !pending.current && !error && page < (channelMode ? 100 : MAX_SHORT_PAGES)) {
+      setPage(value => value + 1);
+    }
+    return false;
+  }, [ids, hasMore, loading, error, page, channelMode]);
   const retryOnScroll = (direction: number) => {
     if (direction > 0 && error && !loading && !pending.current) {
       pending.current = true;
@@ -316,13 +353,14 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         </div>;
         return <article className="shorts-slide" key={video.videoId} data-short-id={video.videoId} aria-label={info.title}>
           <div className="shorts-player-row">
-          {prepare ? <ShortEmbed video={video} active={active} captionsEnabled={captionsEnabled} isSelected={() => !isShortsLocation(route.current.pathname) || activeRef.current === video.videoId} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
+          {prepare ? <ShortEmbed video={video} active={active} captionsEnabled={captionsEnabled} autoScroll={autoScroll} onEnded={advanceOnEnd} isSelected={() => !isShortsLocation(route.current.pathname) || activeRef.current === video.videoId} onRecord={detail => { recordSeenShort(detail.videoId!); onRecord(detail); }} onMetadata={detail => setMetadata(previous => ({ ...previous, [detail.videoId!]: detail }))}>{overlay}</ShortEmbed>
             : <div className="shorts-frame"><img src={video.videoThumbnails[0]?.url} alt="" loading="lazy" className="w-full h-full object-cover" />{overlay}</div>}
           <div className="shorts-side-actions">
             <button aria-label="高評価（この端末に保存）" aria-pressed={!!likes[video.videoId!]} title="この端末に保存・YouTubeには送信されません" onClick={() => { learnInteraction(info, likes[video.videoId!] ? 'unlike' : 'like'); const next = { ...likes, [video.videoId!]: !likes[video.videoId!] }; setLikes(next); try { localStorage.setItem('xerox_shorts_likes_v1', JSON.stringify(next)); } catch {} }}><span><ThumbsUp size={24} fill={likes[video.videoId!] ? 'currentColor' : 'none'} /></span><small>{info.likeCount == null ? '高評価' : formatNumberJP(info.likeCount)}</small></button>
             <button aria-label="コメントを表示" onClick={() => { if (commentsId !== video.videoId) learnInteraction(info, 'comment'); setDescriptionId(''); setCommentsId(commentsId === video.videoId ? '' : video.videoId!); }}><span><MessageCircle size={24} /></span><small>コメント</small></button>
             <button aria-label={captionsEnabled ? '字幕をオフにする' : '字幕をオンにする'} aria-pressed={captionsEnabled} title="字幕がある動画で切り替え" className={captionsEnabled ? 'shorts-captions-on' : ''} onClick={() => setCaptionsEnabled(value => !value)}><span><Captions size={25}/></span><small>{captionsEnabled ? '字幕オン' : '字幕オフ'}</small></button>
             <button aria-label={muted ? 'ミュート解除' : 'ミュート'} aria-pressed={!muted} onClick={() => setMuted(!muted)}><span>{muted ? <VolumeX size={25}/> : <Volume2 size={25}/>}</span><small>{muted ? '音声オン' : '音声オフ'}</small></button>
+            <button aria-label={autoScroll ? '自動スクロールをオフにする' : '自動スクロールをオンにする'} aria-pressed={autoScroll} title="動画の終了時に次のショートへ移動" onClick={() => setAutoScroll(value => !value)}><span><ChevronsDown size={25}/></span><small>自動スクロール {autoScroll ? 'ON' : 'OFF'}</small></button>
             <button aria-label="共有" onClick={async()=>{const url=new URL(`/shorts/${video.videoId}`,window.location.origin).href;try{if(navigator.share)await navigator.share({title:info.title,url});else await navigator.clipboard.writeText(url);}catch{}}}><span><Share2 size={25}/></span><small>共有</small></button>
             <button className="shorts-description-action" aria-label="概要欄を表示" onClick={() => { setCommentsId(''); setDescriptionId(descriptionId === video.videoId ? '' : video.videoId!); }}><span><AlignLeft size={24} /></span><small>概要</small></button>
           </div>
