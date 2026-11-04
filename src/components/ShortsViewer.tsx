@@ -153,8 +153,6 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   const [regular, setRegular] = useState<Video[]>(channelMode && channelStart ? [...channelStart.videos] : seed.current ? [seed.current] : []);
   const [ranking, setRanking] = useState<Video[]>([]);
   const [rankingReady, setRankingReady] = useState(false);
-  const [rankingError, setRankingError] = useState('');
-  const [rankingUpdated, setRankingUpdated] = useState('');
   const [activeId, setActiveId] = useState(initialId || '');
   const [muted,setMuted] = useAudioPreference();
   const [captionsEnabled, setCaptionsEnabled] = useState(false);
@@ -187,8 +185,8 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
   useEffect(() => {
     let cancelled = false;
     ((context.source === 'search' || channelMode) ? Promise.resolve({ videos: [], updatedAt: '' }) : loadShortsRanking()).then(data => {
-      if (!cancelled) { setRanking(rankCandidates(excludeSeenShorts(data.videos || [], readSeenShorts(), seed.current?.videoId), { short: true, seed: session, seen: seenOnEntry })); setRankingUpdated(data.updatedAt || ''); }
-    }).catch(reason => { if (!cancelled) setRankingError(reason.message || 'ランキングを取得できませんでした。'); })
+      if (!cancelled) setRanking(rankCandidates(excludeSeenShorts(data.videos || [], readSeenShorts(), seed.current?.videoId), { short: true, seed: session, seen: seenOnEntry }));
+    }).catch(reason => { if (!cancelled) console.warn('[Shorts ranking]', reason); })
       .finally(() => { if (!cancelled) setRankingReady(true); });
     return () => { cancelled = true; };
   }, []);
@@ -403,6 +401,5 @@ export default function ShortsViewer({ initialId, initialVideo, context, onRecor
         </button>
       </div>
     </>}
-    <footer className="shorts-feed-source"><span>動画の外側を上下にスクロール</span>{rankingReady && context.source !== 'search' && !channelMode && <span className="shorts-feed-ranking">{rankingError ? rankingError : <><a href="https://shorts-ranking.com/" target="_blank" rel="noreferrer">Shortsランキング</a> <strong>{ranking.length}件</strong><span className="shorts-feed-extra">（当日取得分を保持）{rankingUpdated ? `（${rankingUpdated}）` : ''}</span></>}</span>}</footer>
   </section>;
 }

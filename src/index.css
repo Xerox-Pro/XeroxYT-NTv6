@@ -123,11 +123,6 @@ a, a:visited {
 .shorts-comment-disclosure { margin-top: 3px; }
 .shorts-comments-inline { display: flex; flex-direction: column; width: 100%; height: min(420px, 60dvh); background: white; border: 1px solid #e5e7eb; border-radius: 12px; }
 .shorts-feed-end { padding: 36px 20px; display: flex; align-items: center; flex-direction: column; font-size: 13px; color: #666; }
-.shorts-feed-source { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; justify-items: center; gap: 3px 12px; width: 100%; max-width: 100%; min-width: 0; font-size: 11px; line-height: 1.5; padding: 7px 12px; border-top: 1px solid #eee; color: #737373; text-align: center; }
-.shorts-feed-source > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
-.shorts-feed-source strong { color: #444; font-variant-numeric: tabular-nums; }
-.shorts-feed-extra { display: inline; }
-.shorts-feed-source a { text-decoration: underline; }
 @media (max-height: 520px) { .shorts-frame { width: 160px; } }
 
 .shorts-overlay { position: absolute; z-index: 2; inset: auto 0 44px; padding: 48px 16px 16px; background: linear-gradient(transparent, rgba(0,0,0,.72)); color: #fff; pointer-events: none; text-shadow: 0 1px 3px rgba(0,0,0,.65); }
@@ -191,7 +186,6 @@ a, a:visited {
   .shorts-panel-backdrop { display: block; position: fixed; inset: 56px 0 0; background: #0005; z-index: 44; }
   .shorts-info-panel { height: min(65dvh, 580px); padding-bottom: env(safe-area-inset-bottom); }
   .shorts-info-panel > header button { min-width: 44px; min-height: 44px; display: grid; place-items: center; }
-  .shorts-feed-source { display: none; }
 }
 
 .mobile-bottom-nav, .mobile-comments-preview, .mobile-comments-close, .mobile-comments-backdrop { display: none; }
@@ -223,19 +217,18 @@ a, a:visited {
   .persistent-video-content > :nth-child(2) { min-width: 0; }
   .persistent-mini-player { width: min(320px, 38vw); }
 }
-/* iPad portrait/landscape, including large iPad Pro: fit the embed and action
-   rail inside the actual Shorts viewport with space for the source footer. */
+/* iPad portrait/landscape, including large iPad Pro: make the player as large
+   as the viewport allows without letting the action rail spill outside. */
 @media (min-width: 768px) and (max-width: 1400px) {
   .shorts-viewer { max-width: 100%; min-width: 0; min-height: 0; overflow: hidden; }
   .shorts-scroll { min-width: 0; }
   .shorts-slide { height: 100%; min-height: 0; max-height: 100%; padding: 8px 12px; overflow: hidden; box-sizing: border-box; }
-  .shorts-player-row { width: min(100%, calc((100dvh - 220px) * 9 / 16 + 68px), 640px); max-height: calc(100dvh - 170px); min-width: 0; align-items: center; gap: 10px; }
-  .shorts-player-row .shorts-frame { min-width: 0; max-height: calc(100dvh - 180px); flex: 1 1 0%; }
-  .shorts-side-actions { min-width: 52px; max-height: calc(100dvh - 180px); gap: clamp(8px, 1.5dvh, 16px); padding-bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .shorts-player-row { width: min(100%, calc((100dvh - 130px) * 9 / 16 + 68px), 720px); max-height: calc(100dvh - 100px); min-width: 0; align-items: center; gap: 10px; }
+  .shorts-player-row .shorts-frame { min-width: 0; max-height: calc(100dvh - 100px); flex: 1 1 0%; }
+  .shorts-side-actions { min-width: 52px; max-height: calc(100dvh - 110px); gap: clamp(8px, 1.5dvh, 16px); padding-bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
   .shorts-side-actions button > span { width: 42px; height: 42px; }
   .shorts-side-actions small { max-width: 62px; line-height: 1.3; overflow-wrap: anywhere; }
   .shorts-overlay { padding: 8px 12px; }
-  .shorts-feed-source { grid-template-columns: minmax(0, 1fr); padding: 7px 12px; }
 }
 @media (min-width: 768px) and (max-width: 1023px) {
   .persistent-video-content { flex-direction: column; padding: 16px; }
