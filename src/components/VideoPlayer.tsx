@@ -140,7 +140,18 @@ export default function VideoPlayer({
   const [autoNext, setAutoNext] = useState(() => { try { return localStorage.getItem('xerox_video_auto_next_v1') !== 'off'; } catch { return true; } });
   const autoNextRef = useRef(autoNext); autoNextRef.current = autoNext;
   const nextRelatedRef = useRef<Video | null>(null);
+  const onVideoSelectRef = useRef(onVideoSelect); onVideoSelectRef.current = onVideoSelect;
+  const [autoNextCountdown, setAutoNextCountdown] = useState<{ video: Video; remaining: number } | null>(null);
+  const autoNextTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cancelAutoNextCountdown = useCallback(() => {
+    if (autoNextTimer.current !== null) clearInterval(autoNextTimer.current);
+    autoNextTimer.current = null;
+    setAutoNextCountdown(null);
+  }, []);
   useEffect(() => { try { localStorage.setItem('xerox_video_auto_next_v1', autoNext ? 'on' : 'off'); } catch {} }, [autoNext]);
+  useEffect(() => { if (!autoNext) cancelAutoNextCountdown(); }, [autoNext, cancelAutoNextCountdown]);
+  useEffect(() => { cancelAutoNextCountdown(); }, [requestedVideoId, playlistId, playlistQueue.length, cancelAutoNextCountdown]);
+  useEffect(() => () => { if (autoNextTimer.current !== null) clearInterval(autoNextTimer.current); }, []);
   const endedHandled=useRef(false);
   const repeatModeRef=useRef(playlistRepeat);repeatModeRef.current=!playlistQueue.length?'off':playlistRepeat==='all'&&playlistQueue.length===1?'one':playlistRepeat;
   useEffect(()=>{endedHandled.current=false;},[requestedVideoId]);
@@ -410,7 +421,27 @@ export default function VideoPlayer({
     }
   }, []);
 
-  const handlePlaybackEnd=useCallback(()=>{if(endedHandled.current)return;endedHandled.current=true;if(repeatModeRef.current==='one'){postPlayerCommand('seekTo',[0,true]);postPlayerCommand('playVideo');}else if (playlistRef.current || playlistQueue.length) endedCallback.current?.(); else if (autoNextRef.current && nextRelatedRef.current?.videoId) onVideoSelect(nextRelatedRef.current.videoId, nextRelatedRef.current);},[postPlayerCommand, onVideoSelect, playlistQueue.length]);
+  const handlePlaybackEnd=useCallback(()=>{
+    if(endedHandled.current)return;
+    endedHandled.current=true;
+    if(repeatModeRef.current==='one'){
+      postPlayerCommand('seekTo',[0,true]);postPlayerCommand('playVideo');
+    }else if(playlistRef.current || playlistQueue.length){
+      endedCallback.current?.();
+    }else if(autoNextRef.current && nextRelatedRef.current?.videoId){
+      const next=nextRelatedRef.current;
+      cancelAutoNextCountdown();
+      const endsAt=Date.now()+10000;
+      setAutoNextCountdown({video:next,remaining:10});
+      autoNextTimer.current=setInterval(()=>{
+        const remaining=Math.max(0,Math.ceil((endsAt-Date.now())/1000));
+        if(remaining===0){
+          cancelAutoNextCountdown();
+          if(autoNextRef.current && !playlistRef.current) onVideoSelectRef.current(next.videoId!,next);
+        }else setAutoNextCountdown({video:next,remaining});
+      },200);
+    }
+  },[postPlayerCommand,playlistQueue.length,cancelAutoNextCountdown]);
   useEffect(() => {
     if (!isMini) return;
     window.dispatchEvent(new CustomEvent('xerox-mini-play-state', { detail: isPlaying }));
@@ -439,7 +470,7 @@ export default function VideoPlayer({
       if (cancelled || !iframeRef.current) return;
       const player = new YT.Player(iframeRef.current, {
         events: {
-          onStateChange: (event:any) => { if(cancelled)return;playerStateRef.current=event.data;setIsPlaying(event.data===1);if(event.data===1)endedHandled.current=false;if(event.data===0)handlePlaybackEnd(); },
+          onStateChange: (event:any) => { if(cancelled)return;playerStateRef.current=event.data;setIsPlaying(event.data===1);if(event.data===1){endedHandled.current=false;cancelAutoNextCountdown();}if(event.data===0)handlePlaybackEnd(); },
           onReady: () => {
             if (cancelled) return;
             apiPlayerRef.current = player;
@@ -488,7 +519,7 @@ export default function VideoPlayer({
             durationRef.current = data.info.duration;
           }
           if (typeof data.info.playerState === 'number') {
-            if(data.info.playerState===1)endedHandled.current=false;if(data.info.playerState===0)handlePlaybackEnd();
+            if(data.info.playerState===1){endedHandled.current=false;cancelAutoNextCountdown();}if(data.info.playerState===0)handlePlaybackEnd();
             playerStateRef.current = data.info.playerState;
             setIsPlaying(data.info.playerState === 1);
           }
@@ -1160,6 +1191,26 @@ export default function VideoPlayer({
             </div>
           )}
 
+          {autoNextCountdown && !playlistId && !playlistQueue.length && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/80 p-4 text-white" role="status" aria-live="polite">
+              <div className="w-full max-w-[420px] overflow-hidden rounded-xl border border-white/20 bg-zinc-900 shadow-2xl">
+                <div className="flex items-center gap-3 p-4">
+                  <img className="h-[72px] w-32 shrink-0 rounded-lg bg-zinc-800 object-cover" src={autoNextCountdown.video.videoThumbnails?.[0]?.url || `https://i.ytimg.com/vi/${autoNextCountdown.video.videoId}/mqdefault.jpg`} alt="" />
+                  <div className="min-w-0">
+                    <p className="text-xs text-zinc-300">次の動画まで {autoNextCountdown.remaining} 秒</p>
+                    <p className="mt-1 line-clamp-2 text-sm font-semibold">{autoNextCountdown.video.title}</p>
+                    <p className="mt-1 truncate text-xs text-zinc-400">{autoNextCountdown.video.author}</p>
+                  </div>
+                </div>
+                <div className="h-1 bg-zinc-700"><div className="h-full bg-red-500 transition-[width] duration-200" style={{width:`${(10-autoNextCountdown.remaining)*10}%`}} /></div>
+                <div className="flex justify-end gap-2 p-3">
+                  <button type="button" className="rounded-full px-4 py-2 text-sm hover:bg-white/15" onClick={cancelAutoNextCountdown}>キャンセル</button>
+                  <button type="button" className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-black hover:bg-zinc-200" onClick={()=>{const next=autoNextCountdown.video;cancelAutoNextCountdown();onVideoSelectRef.current(next.videoId!,next);}}>今すぐ再生</button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* HUD (ショートカットキー入力時の視覚フィードバック) */}
           <AnimatePresence>
             {hud && (
@@ -1304,7 +1355,7 @@ export default function VideoPlayer({
                   role="switch"
                   aria-checked={autoNext}
                   aria-label="次の動画を自動再生"
-                  title={autoNext ? '動画終了後に次の関連動画を再生します' : '動画終了後に自動で次へ進みません'}
+                  title={autoNext ? '動画終了後10秒で次の関連動画を再生します' : '動画終了後に自動で次へ進みません'}
                   onClick={() => setAutoNext(value => !value)}
                   whileTap={{ scale: 0.92 }}
                   className={`shrink-0 inline-grid h-9 w-9 place-items-center rounded-full border shadow-2xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600 ${autoNext ? 'border-gray-900 bg-gray-900 text-white hover:bg-gray-800' : 'border-gray-200 bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
